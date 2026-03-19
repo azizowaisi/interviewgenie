@@ -9,6 +9,27 @@ npm start
 
 Backend must be running (e.g. `docker compose --profile ollama up -d` from the repo root).
 
+### Point the app at a remote server (e.g. k8s + HTTPS)
+
+The desktop app defaults to `http://127.0.0.1:8001` (API) and `ws://127.0.0.1:8000/ws/audio` (audio). If nothing is listening locally you’ll see `ECONNREFUSED 127.0.0.1:8001`.
+
+Set these **environment variables** when starting Electron (same values are injected into the UI):
+
+| Variable | Example |
+|----------|---------|
+| `INTERVIEWGENIE_API_BASE` | `https://interviewgenie.teckiz.com` |
+| `INTERVIEWGENIE_AUDIO_BASE` | `https://interviewgenie.teckiz.com` |
+| `INTERVIEWGENIE_WS_URL` | `wss://interviewgenie.teckiz.com/ws/audio` |
+
+```bash
+export INTERVIEWGENIE_API_BASE='https://interviewgenie.teckiz.com'
+export INTERVIEWGENIE_AUDIO_BASE='https://interviewgenie.teckiz.com'
+export INTERVIEWGENIE_WS_URL='wss://interviewgenie.teckiz.com/ws/audio'
+npm start
+```
+
+The main process uses Node’s `https` module for `https://` URLs automatically.
+
 ## If the app fails with `ipcMain` / "Cannot read properties of undefined"
 
 Some setups see `require('electron')` return the binary path instead of the Electron API, so `ipcMain` is undefined.

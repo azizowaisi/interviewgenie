@@ -366,10 +366,24 @@
       </div>
     </main>
   </div>
+  <!-- Injected at runtime by Electron main.js from INTERVIEWGENIE_* env (defaults below) -->
+  <script type="application/json" id="interviewgenie-backend-config">{"apiBase":"http://127.0.0.1:8001","audioBase":"http://127.0.0.1:8000","wsUrl":"ws://127.0.0.1:8000/ws/audio"}</script>
   <script>
 (function () {
-  var DEFAULT_WS_URL = 'ws://127.0.0.1:8000/ws/audio';
-  var DEFAULT_AUDIO_BASE = 'http://127.0.0.1:8000';
+  var DEFAULT_WS_URL;
+  var DEFAULT_AUDIO_BASE;
+  var DEFAULT_API_BASE;
+  try {
+    var el = document.getElementById('interviewgenie-backend-config');
+    var cfg = el ? JSON.parse(el.textContent) : {};
+    DEFAULT_API_BASE = cfg.apiBase || 'http://127.0.0.1:8001';
+    DEFAULT_AUDIO_BASE = cfg.audioBase || 'http://127.0.0.1:8000';
+    DEFAULT_WS_URL = cfg.wsUrl || 'ws://127.0.0.1:8000/ws/audio';
+  } catch (e) {
+    DEFAULT_API_BASE = 'http://127.0.0.1:8001';
+    DEFAULT_AUDIO_BASE = 'http://127.0.0.1:8000';
+    DEFAULT_WS_URL = 'ws://127.0.0.1:8000/ws/audio';
+  }
   var startBtn = document.getElementById('startBtn');
   var stopBtn = document.getElementById('stopBtn');
   var statusEl = document.getElementById('status');
