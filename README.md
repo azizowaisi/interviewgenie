@@ -254,7 +254,7 @@ Tests mock external HTTP (e.g. Whisper, Ollama) so they run offline.
 - **Test**: On push/PR, runs backend unit tests (pytest) then builds.
 - **Build**: Builds all backend Docker images.
 - **Push**: On push to `main`, logs in to Docker Hub (if `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` are set) and pushes images.
-- **Deploy**: If `KUBE_CONFIG` (base64 kubeconfig) is set, runs `kubectl apply -k k8s/` (and, when `DOCKERHUB_USERNAME` is set, uses your registry images). See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
+- **Deploy**: Set repository **variable** `DEPLOY_MODE` to `ssh`, `remote`, or `self_hosted` (GitHub does not allow `secrets` in workflow `if:`). Add matching secrets (`KUBE_CONFIG`, SSH secrets, or a self-hosted runner). See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 
 ---
 
