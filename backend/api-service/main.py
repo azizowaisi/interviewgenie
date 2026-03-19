@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
 
 from db import (
@@ -155,7 +155,61 @@ async def get_user_id(
 
 @app.get("/")
 async def root():
-    return JSONResponse({"service": "interviewgenie-api", "docs": "/docs", "openapi": "/openapi.json"})
+    # Browser-friendly landing page for the main domain.
+    # (Most API consumers use /health, /docs, and the REST endpoints below.)
+    html = """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Interview Genie</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#0b0f17; color:#e8eefc; margin:0; }
+      header { padding: 32px 16px; border-bottom:1px solid rgba(255,255,255,.08); }
+      h1 { margin:0 0 8px 0; font-size: 22px; }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 18px 16px 34px; }
+      .card { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 16px; margin-top: 14px; }
+      a { color:#9ad6ff; text-decoration:none; }
+      a:hover { text-decoration:underline; }
+      code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 8px; }
+      ul { margin: 10px 0 0 20px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <h1>Interview Genie API</h1>
+        <div>Backend is up. Use the links below to confirm endpoints and start interviews.</div>
+      </div>
+    </header>
+    <div class="wrap">
+      <div class="card">
+        <h3 style="margin:0 0 8px 0;">Quick checks</h3>
+        <ul>
+          <li><a href="/health" target="_blank" rel="noopener">/health</a></li>
+          <li><a href="/docs" target="_blank" rel="noopener">/docs (Swagger)</a></li>
+          <li><a href="/openapi.json" target="_blank" rel="noopener">/openapi.json</a></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px 0;">WebSocket</h3>
+        <div>Audio streaming endpoint:</div>
+        <div style="margin-top:8px;"><code>/ws/audio</code></div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px 0;">Client</h3>
+        <div>
+          The Electron app should be pointed to:
+          <div style="margin-top:8px;">
+            API: <code>/health</code> and REST paths like <code>/history</code>
+          </div>
+          <div style="margin-top:6px;">WebSocket: <code>/ws/audio</code></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>"""
+    return HTMLResponse(html)
 
 
 @app.get("/health")
