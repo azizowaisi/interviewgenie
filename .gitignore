@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pub-cache/
+
+# Build / IDE
+dist/
+build/
+*.log
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.local
+*.pem
+
+# Flutter
+clients/flutter-app/.dart_tool/
+clients/flutter-app/.packages
+clients/flutter-app/build/
+
+# Electron
+clients/electron-app/out/
+clients/electron-app/dist/
+
+# Kubernetes
+*.kubeconfig

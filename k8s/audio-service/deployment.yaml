@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audio-service
+  namespace: interview-ai
+  labels:
+    app: audio-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audio-service
+  template:
+    metadata:
+      labels:
+        app: audio-service
+    spec:
+      containers:
+        - name: audio-service
+          image: interview-ai/audio-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: STT_SERVICE_URL
+              value: "http://stt-service:8000"
+            - name: QUESTION_SERVICE_URL
+              value: "http://question-service:8000"
+            - name: LLM_SERVICE_URL
+              value: "http://llm-service:8000"
+            - name: FORMATTER_SERVICE_URL
+              value: "http://formatter-service:8000"
+            - name: API_SERVICE_URL
+              value: "http://api-service:8001"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10

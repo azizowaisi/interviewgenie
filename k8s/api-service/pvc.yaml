@@ -1,0 +1,14 @@
+# CV uploads are stored on this PVC so they persist across pod/container updates.
+# Updates to the api-service deployment (e.g. new image) do not affect stored files.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cv-uploads
+  namespace: interview-ai
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: optional
