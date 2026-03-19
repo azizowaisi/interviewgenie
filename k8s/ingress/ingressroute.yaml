@@ -7,22 +7,18 @@ metadata:
 spec:
   entryPoints:
     - web
+    - websecure
   routes:
     - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws`)
       kind: Rule
       services:
         - name: audio-service
           port: 8000
-    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/api`)
+    - match: Host(`interviewgenie.teckiz.com`)
       kind: Rule
       services:
         - name: api-service
           port: 8001
-    - match: Host(`interviewgenie.teckiz.com`)
-      kind: Rule
-      services:
-        - name: audio-service
-          port: 8000
 ---
 # WebSocket support: use IngressRoute with responseForwarding for long-lived connections
 apiVersion: traefik.io/v1alpha1
@@ -33,6 +29,7 @@ metadata:
 spec:
   entryPoints:
     - web
+    - websecure
   routes:
     - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws/audio`)
       kind: Rule
