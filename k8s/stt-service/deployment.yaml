@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stt-service
+  namespace: interview-ai
+  labels:
+    app: stt-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stt-service
+  template:
+    metadata:
+      labels:
+        app: stt-service
+    spec:
+      containers:
+        - name: stt-service
+          image: interview-ai/stt-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10

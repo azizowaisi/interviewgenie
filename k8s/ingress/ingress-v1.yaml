@@ -1,0 +1,22 @@
+# Standard Ingress (use if Traefik IngressRoute CRD is not available)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: interview-ai
+  namespace: interview-ai
+  annotations:
+    # Traefik: enable WebSocket
+    traefik.ingress.kubernetes.io/router.middlewares: ""
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: interview-ai.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: audio-service
+                port:
+                  number: 8000

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: stt-service
+  namespace: interview-ai
+  labels:
+    app: stt-service
+spec:
+  selector:
+    app: stt-service
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http

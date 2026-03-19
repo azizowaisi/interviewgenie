@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+  namespace: interview-ai
+  labels:
+    app: api-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-service
+  template:
+    metadata:
+      labels:
+        app: api-service
+    spec:
+      containers:
+        - name: api-service
+          image: interview-ai/api-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          volumeMounts:
+            - name: cv-storage
+              mountPath: /cv_storage
+          env:
+            - name: MONGODB_URI
+              value: "mongodb://mongo:27017"
+            - name: MONGODB_DB
+              value: "interview_ai"
+            - name: UPLOAD_DIR
+              value: "/cv_storage"
+            # AUTH0_DOMAIN / AUTH0_AUDIENCE left unset for no-login; use X-User-Id: default
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: cv-storage
+          persistentVolumeClaim:
+            claimName: cv-uploads

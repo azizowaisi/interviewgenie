@@ -1,0 +1,41 @@
+# Traefik IngressRoute: expose API and WebSocket (k3s includes Traefik)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: interview-ai-http
+  namespace: interview-ai
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws`)
+      kind: Rule
+      services:
+        - name: audio-service
+          port: 8000
+    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/api`)
+      kind: Rule
+      services:
+        - name: api-service
+          port: 8001
+    - match: Host(`interviewgenie.teckiz.com`)
+      kind: Rule
+      services:
+        - name: audio-service
+          port: 8000
+---
+# WebSocket support: use IngressRoute with responseForwarding for long-lived connections
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: interview-ai-ws
+  namespace: interview-ai
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws/audio`)
+      kind: Rule
+      services:
+        - name: audio-service
+          port: 8000

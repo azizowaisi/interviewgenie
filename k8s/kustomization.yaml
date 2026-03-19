@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: interview-ai
+resources:
+  - namespace.yaml
+  - ingress/ingressroute.yaml
+  - traefik/helmchartconfig.yaml
+  # MongoDB (persistent); deploy before api-service
+  - mongo/statefulset.yaml
+  - mongo/service.yaml
+  # API: CV upload, history, sessions (mounts cv-uploads PVC)
+  - api-service/pvc.yaml
+  - api-service/deployment.yaml
+  - api-service/service.yaml
+  - audio-service/deployment.yaml
+  - audio-service/service.yaml
+  - stt-service/deployment.yaml
+  - stt-service/service.yaml
+  - question-service/deployment.yaml
+  - question-service/service.yaml
+  - llm-service/deployment.yaml
+  - llm-service/service.yaml
+  - formatter-service/deployment.yaml
+  - formatter-service/service.yaml
+  - ollama/pvc.yaml
+  - ollama/deployment.yaml
+  - ollama/service.yaml

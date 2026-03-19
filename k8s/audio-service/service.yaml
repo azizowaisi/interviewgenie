@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: audio-service
+  namespace: interview-ai
+  labels:
+    app: audio-service
+spec:
+  selector:
+    app: audio-service
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http

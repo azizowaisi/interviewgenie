@@ -1,0 +1,110 @@
+# Local development: run all backend services + Ollama + API (MongoDB, CV, history).
+# Build: docker compose build
+# Run: docker compose --profile ollama up -d
+# Pull ultra-light model once: docker compose exec ollama ollama pull qwen2.5:0.5b
+# Clients: ws://localhost:8000/ws/audio (audio), http://localhost:8001 (API)
+
+services:
+  api-service:
+    build:
+      context: ./backend/api-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: interviewgenie
+      UPLOAD_DIR: /cv_storage
+      # AUTH0_DOMAIN: your-tenant.auth0.com
+      # AUTH0_AUDIENCE: https://your-api
+    volumes:
+      - cv_uploads:/cv_storage
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  audio-service:
+    build:
+      context: ./backend/audio-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      STT_SERVICE_URL: http://stt-service:8000
+      QUESTION_SERVICE_URL: http://question-service:8000
+      LLM_SERVICE_URL: http://llm-service:8000
+      FORMATTER_SERVICE_URL: http://formatter-service:8000
+      API_SERVICE_URL: http://api-service:8001
+    depends_on:
+      - stt-service
+      - question-service
+      - llm-service
+      - formatter-service
+      - api-service
+
+  whisper-service:
+    platform: linux/amd64
+    build:
+      context: ./backend/whisper-service
+      dockerfile: Dockerfile
+    environment:
+      WHISPER_MODEL: base
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  stt-service:
+    build:
+      context: ./backend/stt-service
+      dockerfile: Dockerfile
+    environment:
+      WHISPER_URL: http://whisper-service:8000
+    depends_on:
+      - whisper-service
+
+  question-service:
+    build:
+      context: ./backend/question-service
+      dockerfile: Dockerfile
+
+  llm-service:
+    build:
+      context: ./backend/llm-service
+      dockerfile: Dockerfile
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: qwen2.5:0.5b
+    # Start Ollama when needed: docker compose --profile ollama up -d
+
+  formatter-service:
+    build:
+      context: ./backend/formatter-service
+      dockerfile: Dockerfile
+
+  ollama:
+    profiles:
+      - ollama
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      OLLAMA_HOST: "0.0.0.0"
+    # Qwen 0.5B ~1GB; for larger models (llama3.2:1b, phi3) use 4–6G
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  ollama_models: {}
+  mongo_data: {}
+  cv_uploads: {}  # CV files; persists across api-service restarts
