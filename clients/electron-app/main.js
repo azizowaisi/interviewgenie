@@ -1,7 +1,40 @@
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 const WebSocket = require('ws');
+
+/** Override with env when using a remote backend (e.g. k8s + HTTPS). */
+const DEFAULT_API_BASE = process.env.INTERVIEWGENIE_API_BASE || 'http://127.0.0.1:8001';
+const DEFAULT_AUDIO_BASE = process.env.INTERVIEWGENIE_AUDIO_BASE || 'http://127.0.0.1:8000';
+
+function httpModuleForUrlString(urlString) {
+  try {
+    return new URL(urlString).protocol === 'https:' ? https : http;
+  } catch {
+    return http;
+  }
+}
+
+/** hostname, port, path (incl. query) for Node http/https.request */
+function requestOptionsFromUrl(fullUrlString, extra = {}) {
+  const url = new URL(fullUrlString);
+  const isHttps = url.protocol === 'https:';
+  let port = url.port;
+  if (!port) {
+    if (isHttps) port = '443';
+    else {
+      const h = url.hostname;
+      port = h === 'localhost' || h === '127.0.0.1' ? '8001' : '80';
+    }
+  }
+  return {
+    hostname: url.hostname,
+    port,
+    path: url.pathname + (url.search || ''),
+    ...extra,
+  };
+}
 
 const { app, BrowserWindow, session, ipcMain } = require('electron');
 
@@ -45,8 +78,19 @@ function startServer() {
             res.end('Error loading app');
             return;
           }
+          const backendCfg = JSON.stringify({
+            apiBase: process.env.INTERVIEWGENIE_API_BASE || 'http://127.0.0.1:8001',
+            audioBase: process.env.INTERVIEWGENIE_AUDIO_BASE || 'http://127.0.0.1:8000',
+            wsUrl:
+              process.env.INTERVIEWGENIE_WS_URL || 'ws://127.0.0.1:8000/ws/audio',
+          });
+          let html = data.toString('utf8');
+          html = html.replace(
+            /<script type="application\/json" id="interviewgenie-backend-config">[\s\S]*?<\/script>/,
+            `<script type="application/json" id="interviewgenie-backend-config">${backendCfg}</script>`,
+          );
           res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(data);
+          res.end(html);
         });
       });
       server.on('error', (err) => {
@@ -318,7 +362,6 @@ ipcMain.handle('send-text-question', async (event, url, text, cvId, topicId) => 
 });
 
 // Fetch Q&A history from API (no CORS in renderer)
-const DEFAULT_API_BASE = 'http://127.0.0.1:8001';
 ipcMain.handle('save-history', async (_event, apiBase, question, answer, topicId, source, feedback) => {
   const base = (apiBase || DEFAULT_API_BASE).replace(/\/$/, '');
   const body = {
@@ -331,7 +374,6 @@ ipcMain.handle('save-history', async (_event, apiBase, question, answer, topicId
   return httpPostJson(base, '/history', body);
 });
 
-const DEFAULT_AUDIO_BASE = 'http://127.0.0.1:8000';
 ipcMain.handle('get-mock-answer-feedback', async (_event, audioBase, question, answer) => {
   const base = (audioBase || DEFAULT_AUDIO_BASE).replace(/\/$/, '');
   return httpPostJson(base, '/mock/analyze', { question: question || '', answer: answer || '' }, {}, 120000);
@@ -346,8 +388,13 @@ ipcMain.handle('get-history', async (_event, apiBase, limit, topicId) => {
   const base = (apiBase || DEFAULT_API_BASE).replace(/\/$/, '');
   let url = `${base}/history?limit=${Math.min(Number(limit) || 50, 100)}`;
   if (topicId) url += `&topic_id=${encodeURIComponent(topicId)}`;
-  return new Promise((resolve, reject) => {
-    const req = http.get(url, { headers: { 'X-User-Id': 'default' } }, (res) => {
+  return new Promise((resolve) => {
+    const opts = requestOptionsFromUrl(url, {
+      method: 'GET',
+      headers: { 'X-User-Id': 'default' },
+    });
+    const client = httpModuleForUrlString(url);
+    const req = client.request(opts, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -364,6 +411,7 @@ ipcMain.handle('get-history', async (_event, apiBase, limit, topicId) => {
     });
     req.on('error', (e) => resolve({ error: 'network', message: e.message }));
     req.setTimeout(10000, () => { req.destroy(); resolve({ error: 'timeout' }); });
+    req.end();
   });
 });
 
@@ -371,7 +419,12 @@ ipcMain.handle('get-cv-list', async (_event, apiBase) => {
   const base = (apiBase || DEFAULT_API_BASE).replace(/\/$/, '');
   const url = `${base}/cv`;
   return new Promise((resolve) => {
-    const req = http.get(url, { headers: { 'X-User-Id': 'default' } }, (res) => {
+    const opts = requestOptionsFromUrl(url, {
+      method: 'GET',
+      headers: { 'X-User-Id': 'default' },
+    });
+    const client = httpModuleForUrlString(url);
+    const req = client.request(opts, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -388,6 +441,7 @@ ipcMain.handle('get-cv-list', async (_event, apiBase) => {
     });
     req.on('error', (e) => resolve({ error: 'network', message: e.message }));
     req.setTimeout(10000, () => { req.destroy(); resolve({ error: 'timeout' }); });
+    req.end();
   });
 });
 
@@ -398,12 +452,9 @@ ipcMain.handle('get-cv', async (_event, apiBase, cvId) => {
 
 function httpPostJson(apiBase, path, body, headers = {}, timeoutMs = 15000) {
   return new Promise((resolve) => {
-    const url = new URL(apiBase + path);
+    const fullUrl = apiBase + path;
     const data = JSON.stringify(body);
-    const opts = {
-      hostname: url.hostname,
-      port: url.port || 8001,
-      path: url.pathname,
+    const opts = requestOptionsFromUrl(fullUrl, {
       method: 'POST',
       headers: {
         'X-User-Id': 'default',
@@ -411,8 +462,9 @@ function httpPostJson(apiBase, path, body, headers = {}, timeoutMs = 15000) {
         'Content-Length': Buffer.byteLength(data),
         ...headers,
       },
-    };
-    const req = http.request(opts, (res) => {
+    });
+    const client = httpModuleForUrlString(fullUrl);
+    const req = client.request(opts, (res) => {
       let chunks = '';
       res.on('data', (c) => { chunks += c; });
       res.on('end', () => {
@@ -433,20 +485,18 @@ function httpPostJson(apiBase, path, body, headers = {}, timeoutMs = 15000) {
 
 function httpPatchJson(apiBase, path, body) {
   return new Promise((resolve) => {
-    const url = new URL(apiBase + path);
+    const fullUrl = apiBase + path;
     const data = JSON.stringify(body);
-    const opts = {
-      hostname: url.hostname,
-      port: url.port || 8001,
-      path: url.pathname,
+    const opts = requestOptionsFromUrl(fullUrl, {
       method: 'PATCH',
       headers: {
         'X-User-Id': 'default',
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
       },
-    };
-    const req = http.request(opts, (res) => {
+    });
+    const client = httpModuleForUrlString(fullUrl);
+    const req = client.request(opts, (res) => {
       let chunks = '';
       res.on('data', (c) => { chunks += c; });
       res.on('end', () => {
@@ -469,7 +519,12 @@ ipcMain.handle('get-topics', async (_event, apiBase) => {
   const base = (apiBase || DEFAULT_API_BASE).replace(/\/$/, '');
   const url = `${base}/topics`;
   return new Promise((resolve) => {
-    const req = http.get(url, { headers: { 'X-User-Id': 'default' } }, (res) => {
+    const opts = requestOptionsFromUrl(url, {
+      method: 'GET',
+      headers: { 'X-User-Id': 'default' },
+    });
+    const client = httpModuleForUrlString(url);
+    const req = client.request(opts, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -486,6 +541,7 @@ ipcMain.handle('get-topics', async (_event, apiBase) => {
     });
     req.on('error', (e) => resolve({ error: 'network', message: e.message }));
     req.setTimeout(10000, () => { req.destroy(); resolve({ error: 'timeout' }); });
+    req.end();
   });
 });
 
@@ -494,20 +550,17 @@ ipcMain.handle('create-topic', async (_event, apiBase, topic, jobDescription) =>
   const requestUrl = base + '/topics';
   const body = { topic: topic || '', job_description: jobDescription || '', interview_type: 'technical', duration_minutes: 30 };
   return new Promise((resolve) => {
-    const url = new URL(requestUrl);
     const data = JSON.stringify(body);
-    const opts = {
-      hostname: url.hostname,
-      port: url.port || '8001',
-      path: url.pathname || '/topics',
+    const opts = requestOptionsFromUrl(requestUrl, {
       method: 'POST',
       headers: {
         'X-User-Id': 'default',
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
       },
-    };
-    const req = http.request(opts, (res) => {
+    });
+    const client = httpModuleForUrlString(requestUrl);
+    const req = client.request(opts, (res) => {
       let chunks = '';
       res.on('data', (c) => { chunks += c; });
       res.on('end', () => {
@@ -539,7 +592,13 @@ ipcMain.handle('get-ats', async (_event, apiBase, topicId) => {
   const base = (apiBase || DEFAULT_API_BASE).replace(/\/$/, '');
   const path = topicId ? `/ats?topic_id=${encodeURIComponent(topicId)}` : '/ats';
   return new Promise((resolve) => {
-    const req = http.get(base + path, { headers: { 'X-User-Id': 'default' } }, (res) => {
+    const url = base + path;
+    const opts = requestOptionsFromUrl(url, {
+      method: 'GET',
+      headers: { 'X-User-Id': 'default' },
+    });
+    const client = httpModuleForUrlString(url);
+    const req = client.request(opts, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -556,6 +615,7 @@ ipcMain.handle('get-ats', async (_event, apiBase, topicId) => {
     });
     req.on('error', (e) => resolve({ error: 'network', message: e.message }));
     req.setTimeout(10000, () => { req.destroy(); resolve({ error: 'timeout' }); });
+    req.end();
   });
 });
 
@@ -571,19 +631,17 @@ ipcMain.handle('upload-cv', async (_event, apiBase, filename, fileBuffer) => {
   const bodyEnd = `\r\n--${boundary}--\r\n`;
   const body = Buffer.concat([Buffer.from(bodyStart, 'utf8'), buf, Buffer.from(bodyEnd, 'utf8')]);
   return new Promise((resolve) => {
-    const url = new URL(`${base}/cv/upload`);
-    const opts = {
-      hostname: url.hostname,
-      port: url.port || 8001,
-      path: url.pathname,
+    const fullUrl = `${base}/cv/upload`;
+    const opts = requestOptionsFromUrl(fullUrl, {
       method: 'POST',
       headers: {
         'X-User-Id': 'default',
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
         'Content-Length': body.length,
       },
-    };
-    const req = http.request(opts, (res) => {
+    });
+    const client = httpModuleForUrlString(fullUrl);
+    const req = client.request(opts, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -617,19 +675,17 @@ ipcMain.handle('upload-topic-cv', async (_event, apiBase, topicId, filename, fil
   const bodyEnd = `\r\n--${boundary}--\r\n`;
   const body = Buffer.concat([Buffer.from(bodyStart, 'utf8'), buf, Buffer.from(bodyEnd, 'utf8')]);
   return new Promise((resolve) => {
-    const url = new URL(`${base}/topics/${encodeURIComponent(topicId)}/cv`);
-    const opts = {
-      hostname: url.hostname,
-      port: url.port || 8001,
-      path: url.pathname,
+    const fullUrl = `${base}/topics/${encodeURIComponent(topicId)}/cv`;
+    const opts = requestOptionsFromUrl(fullUrl, {
       method: 'POST',
       headers: {
         'X-User-Id': 'default',
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
         'Content-Length': body.length,
       },
-    };
-    const req = http.request(opts, (res) => {
+    });
+    const client = httpModuleForUrlString(fullUrl);
+    const req = client.request(opts, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -653,15 +709,13 @@ ipcMain.handle('upload-topic-cv', async (_event, apiBase, topicId, filename, fil
 
 function httpGetJson(apiBase, path, timeoutMs = 15000) {
   return new Promise((resolve) => {
-    const url = new URL(apiBase + path);
-    const opts = {
-      hostname: url.hostname,
-      port: url.port || 8001,
-      path: url.pathname + (url.search || ''),
+    const fullUrl = apiBase + path;
+    const opts = requestOptionsFromUrl(fullUrl, {
       method: 'GET',
       headers: { 'X-User-Id': 'default' },
-    };
-    const req = http.request(opts, (res) => {
+    });
+    const client = httpModuleForUrlString(fullUrl);
+    const req = client.request(opts, (res) => {
       let chunks = '';
       res.on('data', (c) => { chunks += c; });
       res.on('end', () => {
