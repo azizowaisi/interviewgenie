@@ -1,6 +1,6 @@
 # Build Docker images for all backend services.
 # Push to registry on main (set DOCKERHUB_USERNAME, DOCKERHUB_TOKEN).
-# Deploy to k3s on push to main (set KUBE_CONFIG = base64-encoded kubeconfig from your single-VM cluster).
+# Deploy: set repo variable DEPLOY_MODE to ssh | remote | self_hosted (secrets cannot be used in job if:).
 # See docs/DEPLOY-GIT-K8S.md for full setup.
 
 name: Build and Deploy
@@ -59,26 +59,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        if: secrets.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push
-        if: secrets.DOCKERHUB_TOKEN != ''
+      # secrets.* is not allowed in step if: — gate inside the script instead
+      - name: Log in and push to Docker Hub
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
+          if [ -z "${DH_TOKEN}" ]; then
+            echo "No DOCKERHUB_TOKEN; skipping Docker Hub push."
+            exit 0
+          fi
+          echo "${DH_TOKEN}" | docker login -u "${DH_USER}" --password-stdin
           for s in ${{ env.SERVICES }}; do
-            docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/interview-ai-$s:latest ./backend/$s
-            docker push ${{ secrets.DOCKERHUB_USERNAME }}/interview-ai-$s:latest
+            docker build -t "${DH_USER}/interview-ai-${s}:latest" "./backend/${s}"
+            docker push "${DH_USER}/interview-ai-${s}:latest"
           done
 
   # Option A (recommended): deploy from GitHub-hosted runner using KUBE_CONFIG.
   # This requires your cluster API (port 6443) to be reachable from the runner (publicly or via VPN).
   deploy_remote:
     needs: [build, push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.KUBE_CONFIG != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_MODE == 'remote'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,11 +91,16 @@ jobs:
           chmod 600 $HOME/.kube/config
 
       - name: Set images for registry (if Docker Hub used)
-        if: secrets.DOCKERHUB_USERNAME != ''
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
+          if [ -z "${DH_USER}" ]; then
+            echo "No DOCKERHUB_USERNAME; applying default image names."
+            exit 0
+          fi
           cd k8s
           for s in ${{ env.SERVICES }}; do
-            kustomize edit set image interview-ai/$s:latest=${{ secrets.DOCKERHUB_USERNAME }}/interview-ai-$s:latest
+            kustomize edit set image "interview-ai/${s}:latest=${DH_USER}/interview-ai-${s}:latest"
           done
 
       - name: Deploy to Kubernetes
@@ -112,7 +118,7 @@ jobs:
   # No need to expose the Kubernetes API publicly; runner can use local k3s kubeconfig.
   deploy_self_hosted:
     needs: [build, push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.DEPLOY_SELF_HOSTED == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_MODE == 'self_hosted'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -133,11 +139,17 @@ jobs:
           chmod 600 "$HOME/.kube/config"
 
       - name: Set images for registry (Docker Hub)
-        if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
+          if [ -z "${DH_USER}" ] || [ -z "${DH_TOKEN}" ]; then
+            echo "Skip kustomize image override (set DOCKERHUB_* secrets)."
+            exit 0
+          fi
           cd k8s
           for s in ${{ env.SERVICES }}; do
-            kustomize edit set image interview-ai/$s:latest=${{ secrets.DOCKERHUB_USERNAME }}/interview-ai-$s:latest
+            kustomize edit set image "interview-ai/${s}:latest=${DH_USER}/interview-ai-${s}:latest"
           done
 
       - name: Deploy to Kubernetes
@@ -153,10 +165,10 @@ jobs:
 
   # Option C (zero manual server setup): GitHub Actions SSHes into the VM,
   # installs k3s/traefik TLS config, and applies manifests.
-  # Requires: SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, DOCKERHUB_USERNAME, DOCKERHUB_TOKEN, LETSENCRYPT_EMAIL
+  # Requires: repo variable DEPLOY_MODE=ssh + secrets SSH_*, DOCKERHUB_*, LETSENCRYPT_EMAIL
   deploy_ssh_bootstrap:
     needs: [build, push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.SSH_HOST != '' && secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_USER != '' && secrets.LETSENCRYPT_EMAIL != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_MODE == 'ssh'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
