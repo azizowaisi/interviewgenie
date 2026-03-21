@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>InterviewGenie — Admin</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7edf4;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --ok: #22c55e;
+      --warn: #eab308;
+      --bad: #ef4444;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    header h1 { font-size: 1rem; font-weight: 600; margin: 0; }
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      margin-right: 1rem;
+      font-size: 0.875rem;
+    }
+    nav a:hover, nav a.active { color: var(--accent); }
+    .token-bar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      font-size: 0.75rem;
+    }
+    .token-bar input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      width: 200px;
+    }
+    main { padding: 1.25rem; max-width: 1200px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+    .card h3 { margin: 0 0 0.5rem; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .card .val { font-size: 1.5rem; font-weight: 700; }
+    .pill { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+    .pill.ok { background: rgba(34,197,94,0.2); color: var(--ok); }
+    .pill.bad { background: rgba(239,68,68,0.2); color: var(--bad); }
+    .pill.warn { background: rgba(234,179,8,0.2); color: var(--warn); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    button.danger { background: var(--bad); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .section { margin-top: 2rem; }
+    .section h2 { font-size: 1rem; margin-bottom: 0.75rem; }
+    .err { color: var(--bad); font-size: 0.875rem; margin: 0.5rem 0; }
+    pre.logs {
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow: auto;
+      max-height: 420px;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .hidden { display: none !important; }
+    footer { padding: 1rem; text-align: center; color: var(--muted); font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>InterviewGenie — Monitoring</h1>
+    <nav>
+      <a href="#/" data-route>Overview</a>
+      <a href="#/services" data-route>Services</a>
+      <a href="#/pods" data-route>Pods</a>
+      <a href="#/logs" data-route>Logs</a>
+    </nav>
+    <div class="token-bar">
+      <label for="adm">Token</label>
+      <input id="adm" type="password" placeholder="X-Admin-Token if set" autocomplete="off" />
+    </div>
+  </header>
+  <main>
+    <p id="global-err" class="err hidden"></p>
+
+    <section id="view-overview" class="view">
+      <div class="grid" id="overview-cards"></div>
+      <div class="section">
+        <h2>Nodes</h2>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table><thead><tr><th>Name</th><th>Ready</th><th>CPU %</th><th>Mem %</th></tr></thead>
+            <tbody id="nodes-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-services" class="view hidden">
+      <div class="section">
+        <h2>Services</h2>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table>
+            <thead><tr><th>Service</th><th>Status</th><th>Pods</th><th>CPU (m)</th><th>Memory</th><th>Uptime</th><th>Restart</th></tr></thead>
+            <tbody id="services-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-pods" class="view hidden">
+      <div class="section">
+        <h2>Pods</h2>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table>
+            <thead><tr><th>Pod</th><th>Status</th><th>CPU</th><th>Memory</th><th>Restarts</th><th>Logs</th><th>Restart deploy</th></tr></thead>
+            <tbody id="pods-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-logs" class="view hidden">
+      <div class="section">
+        <h2>Logs</h2>
+        <p class="muted" style="color:var(--muted);font-size:0.875rem">Select a pod from <a href="#/pods" style="color:var(--accent)">Pods</a> or enter name:</p>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.75rem 0">
+          <input id="log-pod" placeholder="pod name" style="flex:1;min-width:180px;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:0.5rem;border-radius:6px" />
+          <input id="log-container" placeholder="container (optional)" style="flex:1;min-width:140px;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:0.5rem;border-radius:6px" />
+          <button type="button" id="btn-fetch-logs">Fetch logs</button>
+        </div>
+        <pre class="logs" id="log-out">(no logs loaded)</pre>
+      </div>
+    </section>
+  </main>
+  <footer>Lightweight in-cluster monitor · metrics-server required for CPU/RAM columns</footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    function token() { return ($('adm').value || '').trim(); }
+    function headers() {
+      const h = { 'Accept': 'application/json' };
+      const t = token();
+      if (t) h['X-Admin-Token'] = t;
+      return h;
+    }
+    function showErr(msg) {
+      const el = $('global-err');
+      if (!msg) { el.classList.add('hidden'); el.textContent = ''; return; }
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+    async function api(path, opts = {}) {
+      const r = await fetch(path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
+      if (r.status === 401) throw new Error('Unauthorized — set admin token');
+      if (!r.ok) throw new Error(await r.text() || r.statusText);
+      const ct = r.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return r.json();
+      return r.text();
+    }
+    function fmtBytes(n) {
+      if (n == null || !n) return '—';
+      const u = ['B','KB','MB','GB'];
+      let v = n, i = 0;
+      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return (i ? v.toFixed(1) : v) + ' ' + u[i];
+    }
+    function fmtUptime(s) {
+      if (s == null) return '—';
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+      return h ? `${h}h ${m}m` : `${m}m`;
+    }
+    function deployFromPod(podName) {
+      const base = podName.replace(/-[a-f0-9]{6,10}-[a-z0-9]{5}$/i, '')
+        .replace(/-\d+$/, '');
+      const known = ['api-service','audio-service','stt-service','question-service','llm-service','formatter-service','ollama','mongo','mongodb'];
+      for (const k of known) if (podName.startsWith(k)) return k;
+      return base.split('-').slice(0, 2).join('-') || base;
+    }
+
+    async function loadOverview() {
+      showErr('');
+      const d = await api('/api/cluster');
+      const cards = $('overview-cards');
+      cards.innerHTML = '';
+      const add = (h, v, sub) => {
+        const c = document.createElement('div');
+        c.className = 'card';
+        c.innerHTML = `<h3>${h}</h3><div class="val">${v}</div>${sub ? `<div style="margin-top:0.35rem;font-size:0.8rem;color:var(--muted)">${sub}</div>` : ''}`;
+        cards.appendChild(c);
+      };
+      add('Pods running', d.pods_running, `${d.pods_total} total · ${d.pods_failed} failed`);
+      add('Nodes', d.nodes.filter(n => n.ready).length + ' / ' + d.nodes.length, d.nodes.every(n => n.ready) ? 'All ready' : 'Check nodes');
+      const n0 = d.nodes[0] || {};
+      add('CPU (node)', n0.cpu_percent != null ? n0.cpu_percent + '%' : (d.metrics_available ? '—' : 'N/A'), !d.metrics_available ? 'Install metrics-server' : '');
+      add('Memory (node)', n0.memory_percent != null ? n0.memory_percent + '%' : (d.metrics_available ? '—' : 'N/A'), '');
+      const nb = $('nodes-body');
+      nb.innerHTML = '';
+      d.nodes.forEach(n => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${escapeHtml(n.name)}</td><td><span class="pill ${n.ready ? 'ok' : 'bad'}">${n.ready ? 'Ready' : 'NotReady'}</span></td>
+          <td>${n.cpu_percent != null ? n.cpu_percent + '%' : '—'}</td><td>${n.memory_percent != null ? n.memory_percent + '%' : '—'}</td>`;
+        nb.appendChild(tr);
+      });
+    }
+
+    async function loadServices() {
+      showErr('');
+      const d = await api('/api/services');
+      const tb = $('services-body');
+      tb.innerHTML = '';
+      d.services.forEach(s => {
+        const tr = document.createElement('tr');
+        const dep = s.name;
+        const noDeployRestart = /^(mongo|mongodb)$/i.test(s.name);
+        const st = s.status === 'Running' ? 'ok' : (s.status === 'CrashLoop' ? 'bad' : 'warn');
+        tr.innerHTML = `<td>${escapeHtml(s.name)}</td><td><span class="pill ${st}">${escapeHtml(s.status)}</span></td>
+          <td>${escapeHtml(s.pods_ready)}</td>
+          <td>${s.cpu_millicores != null ? s.cpu_millicores : '—'}</td>
+          <td>${fmtBytes(s.memory_bytes)}</td>
+          <td>${fmtUptime(s.uptime_seconds)}</td>
+          <td>${noDeployRestart ? '<span style="color:var(--muted);font-size:0.8rem">StatefulSet</span>' : '<button type="button" class="danger" data-restart="' + escapeHtml(dep) + '">Restart</button>'}</td>`;
+        tb.appendChild(tr);
+      });
+      tb.querySelectorAll('[data-restart]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const dep = btn.getAttribute('data-restart');
+          if (!confirm('Rollout restart deployment ' + dep + '?')) return;
+          btn.disabled = true;
+          try {
+            await api('/api/restart?deployment=' + encodeURIComponent(dep), { method: 'POST' });
+            await loadServices();
+          } catch (e) { showErr(e.message); }
+          btn.disabled = false;
+        });
+      });
+    }
+
+    async function loadPods() {
+      showErr('');
+      const d = await api('/api/pods');
+      const tb = $('pods-body');
+      tb.innerHTML = '';
+      d.pods.forEach(p => {
+        const tr = document.createElement('tr');
+        const dep = deployFromPod(p.name);
+        tr.innerHTML = `<td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.status)}</td>
+          <td>${escapeHtml(p.cpu || '—')}</td><td>${escapeHtml(p.memory || '—')}</td><td>${p.restarts}</td>
+          <td><button type="button" class="secondary" data-logs="${escapeHtml(p.name)}">Logs</button></td>
+          <td><button type="button" class="danger" data-roll="${escapeHtml(dep)}" title="deployment guess: ${escapeHtml(dep)}">Restart</button></td>`;
+        tb.appendChild(tr);
+      });
+      tb.querySelectorAll('[data-logs]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          $('log-pod').value = btn.getAttribute('data-logs');
+          location.hash = '#/logs';
+          $('btn-fetch-logs').click();
+        });
+      });
+      tb.querySelectorAll('[data-roll]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const dep = btn.getAttribute('data-roll');
+          if (!confirm('Rollout restart deployment ' + dep + '?')) return;
+          btn.disabled = true;
+          try {
+            await api('/api/restart?deployment=' + encodeURIComponent(dep), { method: 'POST' });
+            await loadPods();
+          } catch (e) { showErr(e.message); }
+          btn.disabled = false;
+        });
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function fetchLogs() {
+      showErr('');
+      const pod = $('log-pod').value.trim();
+      const c = $('log-container').value.trim();
+      if (!pod) { showErr('Enter pod name'); return; }
+      let url = '/api/logs?pod=' + encodeURIComponent(pod) + '&tail=800';
+      if (c) url += '&container=' + encodeURIComponent(c);
+      const r = await fetch(url, { headers: { ...headers(), Accept: 'text/plain' } });
+      if (r.status === 401) { showErr('Unauthorized — set admin token'); return; }
+      const text = await r.text();
+      if (!r.ok) { showErr(text || r.statusText); return; }
+      $('log-out').textContent = text;
+    }
+
+    function route() {
+      const h = (location.hash || '#/').slice(1) || '/';
+      document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+      document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + h || (h === '/' && a.getAttribute('href') === '#/')));
+      if (h === '/' || h === '') { $('view-overview').classList.remove('hidden'); loadOverview().catch(e => showErr(e.message)); }
+      else if (h === '/services') { $('view-services').classList.remove('hidden'); loadServices().catch(e => showErr(e.message)); }
+      else if (h === '/pods') { $('view-pods').classList.remove('hidden'); loadPods().catch(e => showErr(e.message)); }
+      else if (h === '/logs') { $('view-logs').classList.remove('hidden'); }
+    }
+
+    $('btn-fetch-logs').addEventListener('click', () => fetchLogs().catch(e => showErr(e.message)));
+    window.addEventListener('hashchange', route);
+    const tok = localStorage.getItem('adminToken');
+    if (tok) $('adm').value = tok;
+    $('adm').addEventListener('change', () => localStorage.setItem('adminToken', $('adm').value));
+    route();
+  </script>
+</body>
+</html>

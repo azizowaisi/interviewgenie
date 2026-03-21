@@ -43,6 +43,7 @@ Microphone
 | **Formatter Service** | Parses LLM output into STAR fields | FastAPI |
 | **Ollama** | Local LLM; run once (`ollama serve`) so model stays loaded | Ollama (Qwen 0.5B / Llama 3.2 1B / Phi-3) |
 | **Ingress** | (Optional) Exposes API and WebSocket | Traefik (k3s default) |
+| **Monitoring** | (Optional) Lightweight admin UI + JSON API for pods/services/logs/restart | FastAPI + in-cluster RBAC (`monitoring-service`) |
 
 ---
 
@@ -148,6 +149,20 @@ kubectl apply -k k8s/
 # Pull LLM model inside cluster (after Ollama pod is running; Qwen 0.5B for low latency)
 kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 ```
+
+### Rolling updates & autoscaling (k3s)
+
+- Deployments use **readiness probes** and **rolling update** strategies: stateless services allow **`maxSurge: 1`** so traffic can move to a new pod before the old one terminates (when the node has capacity).
+- **`api-service`** / **ollama** use **ReadWriteOnce** volumes → **`maxSurge: 0`** (only one pod can mount the volume). There may be a **brief** gap on image updates; for stricter HA use shared/RWX storage or S3 for uploads.
+- **HPA** (`k8s/hpa/stateless-services.yaml`) scales **audio, stt, question, llm, formatter** on CPU/memory (needs **metrics-server**, included with k3s). Tune **`maxReplicas`** to your VM size — HPA does **not** grow the VM itself.
+- Details: **`docs/K8S-SCALING-AND-ROLLING.md`**.
+
+### Admin monitoring dashboard
+
+- **Host**: `https://admin.interviewgenie.teckiz.com` (add DNS **A** record → same IP as the main site; Traefik IngressRoute: `k8s/ingress/admin-ingressroute.yaml`).
+- **Stack**: single pod **`monitoring-service`** (API + static UI), **metrics-server** for CPU/RAM columns, **no** Prometheus/Grafana.
+- **Security**: optional `kubectl create secret generic monitoring-admin -n interview-ai --from-literal=ADMIN_TOKEN=...` — then set the token in the UI header.
+- Full setup: **`docs/MONITORING-ADMIN.md`**.
 
 ### Web UI (same flows as Electron)
 

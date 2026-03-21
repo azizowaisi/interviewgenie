@@ -7,6 +7,11 @@ metadata:
     app: ollama
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app: ollama
@@ -34,6 +39,12 @@ spec:
             limits:
               memory: "12Gi"
               cpu: "4000m"
+          readinessProbe:
+            tcpSocket:
+              port: 11434
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 6
           livenessProbe:
             tcpSocket:
               port: 11434

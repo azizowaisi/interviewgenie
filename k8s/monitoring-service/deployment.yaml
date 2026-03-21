@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring-service
+  namespace: interview-ai
+  labels:
+    app: monitoring-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitoring-service
+  template:
+    metadata:
+      labels:
+        app: monitoring-service
+    spec:
+      serviceAccountName: monitoring-service
+      containers:
+        - name: monitoring-service
+          image: interview-ai/monitoring-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+              name: http
+          env:
+            - name: TARGET_NAMESPACE
+              value: interview-ai
+            # Optional: lock down /api/* (set via Secret monitoring-admin)
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: monitoring-admin
+                  key: ADMIN_TOKEN
+                  optional: true
+            # Comma-separated deployment names allowed for POST /api/restart
+            - name: RESTARTABLE_DEPLOYMENTS
+              value: api-service,audio-service,stt-service,question-service,llm-service,formatter-service,ollama,whisper-service
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3001
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3001
+            initialDelaySeconds: 15
+            periodSeconds: 30

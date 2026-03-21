@@ -13,7 +13,7 @@ on:
 
 env:
   # Image names in k8s manifests (must match k8s/*/deployment.yaml)
-  SERVICES: api-service audio-service stt-service question-service llm-service formatter-service
+  SERVICES: api-service audio-service stt-service question-service llm-service formatter-service monitoring-service
 
 jobs:
   test:
@@ -257,6 +257,7 @@ jobs:
             sed -i \"s|image: interview-ai/question-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-question-service:latest|g\" ~/interviewgenie-k8s/k8s/question-service/deployment.yaml
             sed -i \"s|image: interview-ai/llm-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-llm-service:latest|g\" ~/interviewgenie-k8s/k8s/llm-service/deployment.yaml
             sed -i \"s|image: interview-ai/formatter-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-formatter-service:latest|g\" ~/interviewgenie-k8s/k8s/formatter-service/deployment.yaml
+            sed -i \"s|image: interview-ai/monitoring-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-monitoring-service:latest|g\" ~/interviewgenie-k8s/k8s/monitoring-service/deployment.yaml
 
             # Apply manifests
             kubectl apply -k ~/interviewgenie-k8s/k8s/
