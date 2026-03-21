@@ -1,6 +1,32 @@
 """
 Lightweight in-cluster monitoring API + admin UI for k3s/Kubernetes.
-Uses ServiceAccount + RBAC; optional X-Admin-Token when ADMIN_TOKEN is set.
+
+Runs inside the cluster with a ServiceAccount; RBAC grants read access to pods,
+services, nodes, logs, and patch on allowlisted Deployments. The Vue admin UI is
+served from ``static/`` (Vite build) at ``/admin/``.
+
+Environment
+-----------
+TARGET_NAMESPACE
+    Namespace to inspect (default ``interview-ai``).
+ADMIN_TOKEN
+    If set, all ``/api/*`` routes require ``X-Admin-Token`` or ``Authorization: Bearer``.
+    If unset, /api is reachable without auth on the cluster network — use only behind ingress.
+DASHBOARD_ENV_LABEL, DASHBOARD_SERVER_LABEL
+    Shown in the admin UI header (non-secret).
+RESTARTABLE_DEPLOYMENTS
+    Comma-separated deployment names allowed for ``POST /api/restart``.
+
+API surface (JSON unless noted)
+-------------------------------
+GET  /healthz           Liveness.
+GET  /api/config        UI labels + whether auth is required.
+GET  /api/cluster       Node summary, pod counts, metrics when metrics-server is installed.
+GET  /api/infrastructure  Per-node capacity / allocatable / usage (metrics optional).
+GET  /api/pods          Pod list with phase, restarts, optional cpu/mem from metrics.
+GET  /api/services      Services with endpoint health-style status and aggregated metrics.
+GET  /api/logs          Pod logs (query: pod, optional container, tail).
+POST /api/restart       Rollout restart for allowlisted deployments only.
 """
 from __future__ import annotations
 
@@ -14,8 +40,9 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from starlette.staticfiles import StaticFiles
 
-# --- Config ---
+# --- Config (see module docstring) ---
 NAMESPACE = os.environ.get("TARGET_NAMESPACE", "interview-ai")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "").strip()
 DASHBOARD_ENV_LABEL = os.environ.get("DASHBOARD_ENV_LABEL", "Production").strip()
@@ -50,6 +77,7 @@ def _init_k8s() -> None:
 
 
 def _run_sync(fn, *args, **kwargs):
+    """Run blocking kubernetes-client calls off the asyncio event loop."""
     loop = asyncio.get_event_loop()
     return loop.run_in_executor(None, lambda: fn(*args, **kwargs))
 
@@ -163,6 +191,7 @@ async def _pod_metrics_map(ns: str) -> dict[tuple[str, str], dict[str, str]]:
 
 
 async def _node_metrics_list() -> list[dict[str, Any]]:
+    """Raw metrics.k8s.io Node metrics; empty if metrics-server missing or forbidden."""
     if _custom is None:
         return []
     try:
@@ -179,6 +208,7 @@ async def _node_metrics_list() -> list[dict[str, Any]]:
 
 @app.get("/api/cluster")
 async def api_cluster():
+    """High-level cluster snapshot: nodes, pod totals, optional node CPU/mem % from metrics-server."""
     if _core_v1 is None:
         raise HTTPException(503, "K8s not ready")
     pods = await _run_sync(
@@ -325,6 +355,7 @@ async def api_infrastructure():
 
 @app.get("/api/pods")
 async def api_pods():
+    """All pods in TARGET_NAMESPACE with status and first-container metrics if available."""
     if _core_v1 is None:
         raise HTTPException(503, "K8s not ready")
     pods = await _run_sync(
@@ -364,6 +395,7 @@ async def api_pods():
 
 @app.get("/api/services")
 async def api_services():
+    """Services matched to pods via spec.selector; derives ready counts and roll-up resource hints."""
     if _core_v1 is None:
         raise HTTPException(503, "K8s not ready")
     svcs = await _run_sync(
@@ -451,6 +483,7 @@ async def api_logs(
     container: Optional[str] = Query(None),
     tail: int = Query(500, ge=1, le=10000),
 ):
+    """Stream recent pod logs; pod name validated to reduce injection risk."""
     if _core_v1 is None:
         raise HTTPException(503, "K8s not ready")
     if not re.match(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", pod, re.I):
@@ -476,6 +509,7 @@ async def api_restart(
     deployment: str = Query(..., description="Deployment name"),
     namespace: str = Query(NAMESPACE),
 ):
+    """kubectl rollout restart via patched restartedAt annotation; RESTARTABLE_DEPLOYMENTS only."""
     if _apps_v1 is None:
         raise HTTPException(503, "K8s not ready")
     if namespace != NAMESPACE:
