@@ -1,4 +1,4 @@
-# Admin dashboard: https://admin.interviewgenie.teckiz.com
+# Operations UI: https://admin.interviewgenie.teckiz.com → Next.js web (proxies /api/mon → monitoring-service).
 # DNS: A record admin → same IP as main site (e.g. 132.226.198.193).
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -17,6 +17,6 @@ spec:
     - match: Host(`admin.interviewgenie.teckiz.com`)
       kind: Rule
       services:
-        - name: monitoring-service
-          port: 3001
+        - name: web
+          port: 3002
           nativeLB: true

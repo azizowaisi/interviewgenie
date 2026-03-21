@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Mic, BarChart3, Users, Cpu, Sparkles, Zap, LineChart, MessageSquare, Target } from "lucide-react";
+import { Mic, BarChart3, Users, Sparkles, Zap, LineChart, MessageSquare, Target, Shield } from "lucide-react";
 
 const features = [
   "Real-time interview simulation",
@@ -72,9 +72,9 @@ export default function LandingPage() {
               <p className="text-xs text-muted-foreground">Pick the mode that fits your role</p>
             </div>
             <div className="rounded-xl bg-background/50 p-4 shadow-md">
-              <Cpu className="mb-2 h-5 w-5 text-primary" />
-              <p className="text-sm font-medium">Ops dashboard</p>
-              <p className="text-xs text-muted-foreground">Monitor stack health in /admin</p>
+              <Shield className="mb-2 h-5 w-5 text-primary" />
+              <p className="text-sm font-medium">Private by design</p>
+              <p className="text-xs text-muted-foreground">Your CV and sessions stay under your control</p>
             </div>
           </CardContent>
         </Card>

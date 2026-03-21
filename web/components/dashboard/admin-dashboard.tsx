@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { monFetch } from "@/lib/api-fetch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,16 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
-import {
-  Activity,
-  Cpu,
-  HardDrive,
-  LayoutDashboard,
-  RefreshCw,
-  Server,
-  ScrollText,
-  Boxes,
-} from "lucide-react";
+import { Activity, Cpu, HardDrive, RefreshCw, Server, ScrollText, Boxes } from "lucide-react";
+import { publicAppUrl } from "@/lib/public-urls";
 
 const RESTART_DEPLOYMENTS = [
   "api-service",
@@ -176,21 +167,24 @@ export function AdminDashboard() {
     <div className="flex min-h-screen">
       <aside className="hidden w-56 shrink-0 border-r border-border bg-card p-4 md:block">
         <div className="mb-8 flex items-center gap-2 font-semibold">
-          <LayoutDashboard className="h-5 w-5 text-primary" />
-          Admin
+          <Server className="h-5 w-5 text-primary" />
+          Infrastructure
         </div>
         <nav className="grid gap-1 text-sm">
-          <span className="rounded-lg bg-secondary px-3 py-2 font-medium">Dashboard</span>
-          <Link href="/" className="rounded-lg px-3 py-2 text-muted-foreground hover:bg-secondary hover:text-foreground">
-            Main site
-          </Link>
+          <span className="rounded-lg bg-secondary px-3 py-2 font-medium">Overview</span>
+          <a
+            href={publicAppUrl}
+            className="rounded-lg px-3 py-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            InterviewGenie
+          </a>
         </nav>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border bg-background/95 px-4 py-4 backdrop-blur">
           <div>
-            <h1 className="text-lg font-semibold">Monitoring</h1>
+            <h1 className="text-lg font-semibold">Cluster</h1>
             <p className="text-xs text-muted-foreground">
               {config?.environment_label ?? "—"} · NS {config?.namespace ?? "—"}
             </p>
@@ -198,10 +192,10 @@ export function AdminDashboard() {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" onClick={refresh} disabled={loading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh Data
+              Refresh
             </Button>
             <Button size="sm" variant="outline" asChild>
-              <Link href="/">Exit</Link>
+              <a href={publicAppUrl}>Close</a>
             </Button>
           </div>
         </header>

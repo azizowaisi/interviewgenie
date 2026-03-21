@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: interview-ai
+  labels:
+    app: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: interview-ai/web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3002
+          env:
+            - name: API_URL
+              value: "http://api-service:8001"
+            - name: AUDIO_URL
+              value: "http://audio-service:8000"
+            - name: MONITORING_URL
+              value: "http://monitoring-service:3001"
+            # Optional: if monitoring API uses ADMIN_TOKEN
+            # - name: MONITORING_ADMIN_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: monitoring-admin
+            #       key: token
+            # NEXT_PUBLIC_* for host routing + outbound links are set at docker build (see web/Dockerfile).
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3002
+            initialDelaySeconds: 15
+            periodSeconds: 20

@@ -173,16 +173,16 @@ kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 - **HPA** (`k8s/hpa/stateless-services.yaml`) scales **audio, stt, question, llm, formatter** on CPU/memory (needs **metrics-server**, included with k3s). Tune **`maxReplicas`** to your VM size — HPA does **not** grow the VM itself.
 - Details: **`docs/K8S-SCALING-AND-ROLLING.md`**.
 
-### Admin monitoring dashboard
+### Operations host (admin subdomain)
 
-- **Host**: `https://admin.interviewgenie.teckiz.com` (add DNS **A** record → same IP as the main site; Traefik IngressRoute: `k8s/ingress/admin-ingressroute.yaml`).
-- **Stack**: single pod **`monitoring-service`** (FastAPI + **Vue**-built admin UI), **metrics-server** for CPU/RAM columns, **no** Prometheus/Grafana.
-- **Security**: optional `kubectl create secret generic monitoring-admin -n interview-ai --from-literal=ADMIN_TOKEN=...` — then set the token in the UI header.
+- **Host**: `https://admin.interviewgenie.teckiz.com` → **`web`** (Next.js) on port **3002**; IngressRoute: `k8s/ingress/admin-ingressroute.yaml`. DNS **A** record → same IP as the main site.
+- **Data**: Next.js proxies **`/api/mon/*`** to **`monitoring-service`** (FastAPI + Kubernetes API). **metrics-server** supplies CPU/RAM when available; no Prometheus/Grafana.
+- **Security**: optional `ADMIN_TOKEN` on **monitoring-service** — mirror with **`MONITORING_ADMIN_TOKEN`** on the **`web`** deployment for the BFF.
 - Full setup: **`docs/MONITORING-ADMIN.md`**.
 
 ### Web UI (same flows as Electron)
 
-- **Vue 3 + Vite** apps: **`backend/api-service/frontend/`** (marketing + `/app` shell) and **`backend/monitoring-service/frontend/`** (admin). See **`docs/VUE-FRONTENDS.md`**.
+- **Next.js** app: **`web/`** (optional local / future main-site host). **Vue 3 + Vite**: **`backend/api-service/frontend/`** (marketing + `/app` shell); **`backend/monitoring-service/frontend/`** (legacy admin bundle — API used by Next BFF). See **`docs/VUE-FRONTENDS.md`**.
 - **`/`** — Landing (Vue); CTA → **`/app`**.
 - **`/app`** — Interview workspace (Vue route; loads **`workspace.js`** + **`web-bridge.js`** — same behavior as the former single `app.html`).
 

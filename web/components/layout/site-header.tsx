@@ -18,9 +18,6 @@ export function SiteHeader() {
           <Button variant="ghost" size="sm" asChild>
             <Link href="/history">History</Link>
           </Button>
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/admin">Admin</Link>
-          </Button>
         </nav>
         <div className="flex items-center gap-2">
           <Button size="sm" className="hidden sm:inline-flex" asChild>
