@@ -162,7 +162,7 @@ k8s/
 ├── namespace.yaml
 ├── kustomization.yaml
 ├── mongo/
-│   ├── statefulset.yaml      # MongoDB 7; volumeClaimTemplate mongo-data (10Gi) → /data/db
+│   ├── statefulset.yaml      # MongoDB 8; volumeClaimTemplate mongo-data (10Gi) → /data/db
 │   └── service.yaml          # Headless, port 27017
 ├── api-service/
 │   ├── pvc.yaml              # cv-uploads (5Gi)
