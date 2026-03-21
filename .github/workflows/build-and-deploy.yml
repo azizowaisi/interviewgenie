@@ -75,7 +75,7 @@ jobs:
 
       # Always run (do not skip): downstream env must read steps.filter.outputs; deploy_only/force_build are applied in resolve script.
       - name: Paths filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
