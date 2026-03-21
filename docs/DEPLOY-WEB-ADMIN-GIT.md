@@ -24,18 +24,19 @@ Ingress uses **Traefik** + **Let’s Encrypt** (`certResolver: le`). Ports **80*
 |--------|---------|
 | `DOCKERHUB_USERNAME` | Docker Hub user |
 | `DOCKERHUB_TOKEN` | **Required** for image push (without it, push step skips and deploy won’t get new images) |
+| `DEPLOY_MODE` | *(optional)* Same values as the variable below. If you only use **Secrets** (no Variable), this is read by CI. **Repository Variable `DEPLOY_MODE` overrides** the secret when both are set. |
 
-Plus **one** deploy path:
+Plus **one** deploy path (set as **Variable** *or* **Secret** `DEPLOY_MODE`; variable wins if both exist):
 
-| `DEPLOY_MODE` (Variable) | Also need |
-|--------------------------|-----------|
-| *(unset)* **default** | Secret **`KUBE_CONFIG`** — same as `remote`; full deploy on every merge to `main`. If the secret is **missing**, the workflow **skips** `kubectl apply` (warning only; images may still push). |
-| `remote` | Secret `KUBE_CONFIG` (base64 kubeconfig; API must be reachable from GitHub). Same skip-with-warning behavior if secret absent. |
+| `DEPLOY_MODE` | Also need |
+|---------------|-----------|
+| *(unset)* **default** | **`KUBE_CONFIG`** → remote `kubectl` on merge. **No `KUBE_CONFIG`** but **SSH_HOST / SSH_USER / SSH_PRIVATE_KEY** → **SSH deploy** automatically (same as `ssh`). |
+| `remote` | Requires **`KUBE_CONFIG`**; remote job skipped if secret empty (then SSH auto path applies if SSH secrets exist). |
 | `self_hosted` | Runner installed **on the k3s node** (recommended; no public 6443) |
 | `ssh` | `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `LETSENCRYPT_EMAIL` |
 | `none` or `off` | Docker push only; no `kubectl` |
 
-Set **`DEPLOY_MODE`** only if you want to override the default (e.g. `self_hosted`, `ssh`, or `none`).
+You can keep **`DEPLOY_MODE` as a repository secret** (as you already do); the workflow resolves it in the **detect** job. Optionally add the same name under **Variables** later if you want it visible and editable without opening Secrets.
 
 ### Optional Variables (custom domains / host lists)
 
