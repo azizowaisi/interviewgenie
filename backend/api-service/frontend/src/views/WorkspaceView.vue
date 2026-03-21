@@ -18,6 +18,15 @@ function injectConfig(root) {
   root.appendChild(cfg);
 }
 
+/** FastAPI is at origin or under /api/svc (Traefik); /static/* is on the same mount. */
+function staticUrl(path) {
+  const p = window.location.pathname;
+  const idx = p.indexOf("/app");
+  const prefix = idx !== -1 ? p.slice(0, idx) : "";
+  const rel = path.startsWith("/") ? path : `/${path}`;
+  return `${window.location.origin}${prefix}${rel}`;
+}
+
 function loadWorkspaceScript() {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector('script[data-ig-workspace="1"]');
@@ -25,7 +34,7 @@ function loadWorkspaceScript() {
       existing.remove();
     }
     const s = document.createElement("script");
-    s.src = "/static/workspace.js";
+    s.src = staticUrl("/static/workspace.js");
     s.async = false;
     s.dataset.igWorkspace = "1";
     s.onload = () => resolve();

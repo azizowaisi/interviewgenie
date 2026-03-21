@@ -7,7 +7,7 @@ npm install
 npm start
 ```
 
-By default the app talks to **production**: `https://interviewgenie.teckiz.com` (API/audio) and `wss://interviewgenie.teckiz.com/ws/audio` (live audio). Run with `npm start` — no env vars needed.
+By default the app talks to **production**: FastAPI at `https://interviewgenie.teckiz.com/api/svc`, audio HTTP at `https://interviewgenie.teckiz.com/api/audio`, and `wss://interviewgenie.teckiz.com/ws/audio` (live audio). Run with `npm start` — no env vars needed.
 
 ### Use a local backend (Docker)
 
