@@ -2,6 +2,9 @@
   "name": "interviewgenie-web",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "tailwindcss": "3.4.19"
+  },
   "scripts": {
     "dev": "next dev -p 3002",
     "build": "next build",
