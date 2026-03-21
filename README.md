@@ -149,6 +149,11 @@ kubectl apply -k k8s/
 kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 ```
 
+### Web UI (same flows as Electron)
+
+- **`/`** — Product landing page (what Interview Genie does + **“Preparing for an interview? Start the full process”** → `/app`).
+- **`/app`** — Full workspace in the browser (Prepare → ATS → Mock → Live → History), using `fetch` + WebSocket to the same API.
+
 ### Expose the API
 
 - **Option A – Traefik IngressRoute** (if CRD exists): Already applied via `k8s/ingress/ingressroute.yaml`. Point your host (e.g. `interview-ai.local`) to the node IP and use `http://interview-ai.local/ws/audio` for WebSocket.
