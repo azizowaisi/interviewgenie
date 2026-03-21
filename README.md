@@ -139,7 +139,10 @@ To run the **full k8s stack** (all services in this repo: API, Audio, MongoDB, S
 ### Deploy
 
 ```bash
-# Create namespace and all resources
+# Traefik ACME / TLS (must be kube-system — not part of kustomize namespace)
+kubectl apply -f k8s/traefik/helmchartconfig.yaml
+
+# Namespace and app resources
 kubectl apply -k k8s/
 
 # Pull LLM model inside cluster (after Ollama pod is running; Qwen 0.5B for low latency)

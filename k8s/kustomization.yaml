@@ -4,7 +4,8 @@ namespace: interview-ai
 resources:
   - namespace.yaml
   - ingress/ingressroute.yaml
-  - traefik/helmchartconfig.yaml
+  # Traefik HelmChartConfig lives in kube-system — apply separately:
+  #   kubectl apply -f k8s/traefik/helmchartconfig.yaml
   # MongoDB (persistent); deploy before api-service
   - mongo/statefulset.yaml
   - mongo/service.yaml

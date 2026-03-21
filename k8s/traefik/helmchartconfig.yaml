@@ -1,22 +1,22 @@
+# Must be applied to kube-system (not via kustomize namespace: interview-ai).
+# Use: kubectl apply -f k8s/traefik/helmchartconfig.yaml
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
   name: traefik
   namespace: kube-system
 spec:
-  valuesContent: |
+  valuesContent: |-
     ports:
       web:
         redirectTo:
           port: websecure
-    additionalArguments:
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      # Optional: GitHub secret LETSENCRYPT_EMAIL overrides this during SSH deploy
-      - "--certificatesresolvers.le.acme.email=azizowaisi@teckiz.com"
-      - "--certificatesresolvers.le.acme.storage=/data/acme.json"
-      # TLS-ALPN-01 on :443 (HTTP-01 on :80 breaks when web entrypoint redirects to HTTPS)
-      - "--certificatesresolvers.le.acme.tlschallenge=true"
+    certificatesResolvers:
+      le:
+        acme:
+          email: azizowaisi@teckiz.com
+          storage: /data/acme.json
+          tlsChallenge: true
     persistence:
       enabled: true
       name: data

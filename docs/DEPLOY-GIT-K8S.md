@@ -24,6 +24,16 @@ If browsers show **certificate** errors, Traefik is often still on the **default
 After upgrading from an older manifest that had a second `IngressRoute` named **`interview-ai-ws`**, remove it once:  
 `kubectl delete ingressroute interview-ai-ws -n interview-ai --ignore-not-found`
 
+**Traefik `HelmChartConfig`:** it must live in **`kube-system`**. The app `kustomization.yaml` sets `namespace: interview-ai`, so **do not** include that file in `-k` — apply it directly:
+
+```bash
+kubectl apply -f k8s/traefik/helmchartconfig.yaml
+kubectl apply -k k8s/
+```
+
+If a mis-placed config exists in `interview-ai`, delete it:  
+`kubectl delete helmchartconfig traefik -n interview-ai --ignore-not-found`
+
 If Let’s Encrypt was rate-limited or stuck, delete Traefik’s ACME storage PVC/data and restart Traefik (last resort).
 
 ### Required: repository variable `DEPLOY_MODE`
