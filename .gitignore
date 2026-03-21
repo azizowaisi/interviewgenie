@@ -3,6 +3,7 @@ node_modules/
 __pycache__/
 *.py[cod]
 .venv/
+.venv-audit/
 venv/
 *.egg-info/
 .pub-cache/
