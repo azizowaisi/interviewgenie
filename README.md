@@ -305,11 +305,11 @@ Two workflows so **merging a PR does not start two pipelines**:
 | Workflow | When | What |
 |----------|------|------|
 | **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **`backend-tests`** (pytest matrix) + parallel **`frontend-verify`** (web + 2× Vue) + parallel **`docker-verify`** (8 images, one job each); **`ci-gate`** aggregates |
-| **Build and Deploy** | **Push to `main`** (merge) or **manual dispatch** | Test + build + **Docker Hub push** + **Kubernetes deploy on the server** (default: **remote** `kubectl` via `KUBE_CONFIG`; set `DEPLOY_MODE=none` to skip deploy) |
+| **Build and Deploy** | **Push to `main`** (merge) or **manual dispatch** | Test + build + **Docker Hub push** + deploy: **`KUBE_CONFIG`** → remote `kubectl`; else **SSH secrets** → same as `DEPLOY_MODE=ssh`; set `DEPLOY_MODE=none` to skip |
 
 **Before merge:** turn on branch protection and require **`CI / ci-gate`** (or individual jobs — see **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**). **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
 
-- **Deploy**: By default the workflow **deploys to the cluster** (remote `kubectl`). Add secret **`KUBE_CONFIG`** (base64). Without it, **kubectl is skipped** (warning; push may still run). Override with variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
+- **Deploy**: If **`KUBE_CONFIG`** is set → GitHub-hosted **`kubectl apply`**. If not, but **`SSH_HOST` / `SSH_USER` / `SSH_PRIVATE_KEY`** are set → **SSH bootstrap** (rsync + `kubectl` on the VM). Set **`DEPLOY_MODE=ssh`** to force SSH even when `KUBE_CONFIG` exists; **`none`** / **`off`** = push only. One-shot fix: `./scripts/deploy/apply-k8s-from-repo.sh` with a valid `KUBECONFIG`. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 
 ---
 
