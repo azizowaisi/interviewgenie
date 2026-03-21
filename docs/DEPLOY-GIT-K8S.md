@@ -13,6 +13,19 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 
 GitHub-hosted runners build **amd64** images by default. If your VM is **aarch64**, pulling those images causes `exec format error` when the container starts. The **push** job builds **multi-arch** images (`linux/amd64` + `linux/arm64`) so the same tags work on both architectures. After changing this, trigger a new push to `main` so Docker Hub has arm64 variants, then restart workloads (`kubectl rollout restart deployment -n interview-ai --all`).
 
+### HTTPS / Let’s Encrypt (Electron & CLI TLS errors)
+
+If browsers show **certificate** errors, Traefik is often still on the **default self-signed** cert. Ensure:
+
+1. **`IngressRoute` TLS** — `k8s/ingress/ingressroute.yaml` includes `tls.certResolver: le` and `domains` for your hostname (resolver name **`le`** matches Traefik `HelmChartConfig`).
+2. **ACME email** — Default in `k8s/traefik/helmchartconfig.yaml` is **`azizowaisi@teckiz.com`**. To use another address, edit that file or set GitHub secret **`LETSENCRYPT_EMAIL`** (SSH deploy overwrites the default when the secret is non-empty).
+3. **Challenge type** — The chart uses **TLS-ALPN-01** on **port 443** (not HTTP-01 on 80), so it still works when Traefik redirects **HTTP → HTTPS** on port 80. Port **443** must be reachable from the internet.
+
+After upgrading from an older manifest that had a second `IngressRoute` named **`interview-ai-ws`**, remove it once:  
+`kubectl delete ingressroute interview-ai-ws -n interview-ai --ignore-not-found`
+
+If Let’s Encrypt was rate-limited or stuck, delete Traefik’s ACME storage PVC/data and restart Traefik (last resort).
+
 ### Required: repository variable `DEPLOY_MODE`
 
 In **Settings → Secrets and variables → Actions → Variables** (not Secrets), add:

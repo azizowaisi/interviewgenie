@@ -366,8 +366,8 @@
       </div>
     </main>
   </div>
-  <!-- Injected at runtime by Electron main.js from INTERVIEWGENIE_* env (defaults below) -->
-  <script type="application/json" id="interviewgenie-backend-config">{"apiBase":"http://127.0.0.1:8001","audioBase":"http://127.0.0.1:8000","wsUrl":"ws://127.0.0.1:8000/ws/audio"}</script>
+  <!-- Injected at runtime by Electron main.js from INTERVIEWGENIE_* env (defaults: production) -->
+  <script type="application/json" id="interviewgenie-backend-config">{"apiBase":"https://interviewgenie.teckiz.com","audioBase":"https://interviewgenie.teckiz.com","wsUrl":"wss://interviewgenie.teckiz.com/ws/audio"}</script>
   <script>
 (function () {
   var DEFAULT_WS_URL;
@@ -376,13 +376,13 @@
   try {
     var el = document.getElementById('interviewgenie-backend-config');
     var cfg = el ? JSON.parse(el.textContent) : {};
-    DEFAULT_API_BASE = cfg.apiBase || 'http://127.0.0.1:8001';
-    DEFAULT_AUDIO_BASE = cfg.audioBase || 'http://127.0.0.1:8000';
-    DEFAULT_WS_URL = cfg.wsUrl || 'ws://127.0.0.1:8000/ws/audio';
+    DEFAULT_API_BASE = cfg.apiBase || 'https://interviewgenie.teckiz.com';
+    DEFAULT_AUDIO_BASE = cfg.audioBase || 'https://interviewgenie.teckiz.com';
+    DEFAULT_WS_URL = cfg.wsUrl || 'wss://interviewgenie.teckiz.com/ws/audio';
   } catch (e) {
-    DEFAULT_API_BASE = 'http://127.0.0.1:8001';
-    DEFAULT_AUDIO_BASE = 'http://127.0.0.1:8000';
-    DEFAULT_WS_URL = 'ws://127.0.0.1:8000/ws/audio';
+    DEFAULT_API_BASE = 'https://interviewgenie.teckiz.com';
+    DEFAULT_AUDIO_BASE = 'https://interviewgenie.teckiz.com';
+    DEFAULT_WS_URL = 'wss://interviewgenie.teckiz.com/ws/audio';
   }
   var startBtn = document.getElementById('startBtn');
   var stopBtn = document.getElementById('stopBtn');
@@ -497,7 +497,7 @@
   var mockFeedbackBtn = document.getElementById('mockFeedbackBtn');
   var mockFeedbackBlock = document.getElementById('mockFeedbackBlock');
   var mockFeedbackContent = document.getElementById('mockFeedbackContent');
-  var DEFAULT_API_BASE = 'http://127.0.0.1:8001';
+  /* DEFAULT_API_BASE etc. set above from interviewgenie-backend-config — do not shadow */
   var historyTopicsCache = [];
   var historyCvCache = [];
   var interviewTopicsCache = [];

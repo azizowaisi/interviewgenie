@@ -242,8 +242,10 @@ jobs:
               echo \"${DOCKERHUB_TOKEN}\" | docker login -u \"${DOCKERHUB_USERNAME}\" --password-stdin
             fi
 
-            # Replace ACME email placeholder in Traefik HelmChartConfig before apply
-            sed -i \"s/CHANGE_ME_LE_EMAIL/${LETSENCRYPT_EMAIL}/g\" ~/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml
+            # Optional: override default ACME email from repo (azizowaisi@teckiz.com)
+            if [ -n \"${LETSENCRYPT_EMAIL}\" ]; then
+              sed -i \"s|azizowaisi@teckiz.com|${LETSENCRYPT_EMAIL}|g\" ~/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml
+            fi
 
             # Point app images at Docker Hub (matches GitHub push job naming)
             sed -i \"s|image: interview-ai/api-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-api-service:latest|g\" ~/interviewgenie-k8s/k8s/api-service/deployment.yaml

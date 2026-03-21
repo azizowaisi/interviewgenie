@@ -2,11 +2,100 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const tls = require('tls');
 const WebSocket = require('ws');
 
-/** Override with env when using a remote backend (e.g. k8s + HTTPS). */
-const DEFAULT_API_BASE = process.env.INTERVIEWGENIE_API_BASE || 'http://127.0.0.1:8001';
-const DEFAULT_AUDIO_BASE = process.env.INTERVIEWGENIE_AUDIO_BASE || 'http://127.0.0.1:8000';
+/**
+ * Default backend: production (k8s). Override for local Docker:
+ *   INTERVIEWGENIE_API_BASE=http://127.0.0.1:8001 etc.
+ */
+const PRODUCTION_API_BASE = 'https://interviewgenie.teckiz.com';
+const PRODUCTION_AUDIO_BASE = 'https://interviewgenie.teckiz.com';
+const PRODUCTION_WS_URL = 'wss://interviewgenie.teckiz.com/ws/audio';
+
+const DEFAULT_API_BASE = process.env.INTERVIEWGENIE_API_BASE || PRODUCTION_API_BASE;
+const DEFAULT_AUDIO_BASE = process.env.INTERVIEWGENIE_AUDIO_BASE || PRODUCTION_AUDIO_BASE;
+
+/** Trust all TLS (debug only). Set INTERVIEWGENIE_TLS_INSECURE=1 */
+function tlsInsecure() {
+  const v = process.env.INTERVIEWGENIE_TLS_INSECURE;
+  return v === '1' || String(v).toLowerCase() === 'true';
+}
+
+/** When set, do not auto-skip cert verify for production host (use after Let’s Encrypt is live). */
+function tlsStrict() {
+  return process.env.INTERVIEWGENIE_TLS_STRICT === '1';
+}
+
+/**
+ * Hostnames where we skip TLS verify (Traefik default cert until ACME works).
+ * Override: INTERVIEWGENIE_TLS_RELAX_HOSTS=host1.com,host2.com
+ * Disable list: INTERVIEWGENIE_TLS_STRICT=1
+ */
+function relaxTlsHostnameSet() {
+  if (tlsStrict()) return new Set();
+  const raw = process.env.INTERVIEWGENIE_TLS_RELAX_HOSTS;
+  if (raw !== undefined && String(raw).trim() === '') return new Set();
+  if (raw) {
+    return new Set(
+      String(raw)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+  }
+  try {
+    return new Set([new URL(PRODUCTION_API_BASE).hostname]);
+  } catch {
+    return new Set(['interviewgenie.teckiz.com']);
+  }
+}
+
+const RELAX_TLS_HOSTS = relaxTlsHostnameSet();
+
+let _globalBypassAgent;
+const _bypassAgentByHost = new Map();
+let _extraCaAgent;
+
+function getHttpsAgentForUrl(fullUrlString) {
+  if (tlsInsecure()) {
+    if (!_globalBypassAgent) _globalBypassAgent = new https.Agent({ rejectUnauthorized: false });
+    return _globalBypassAgent;
+  }
+  try {
+    const u = new URL(fullUrlString);
+    const isTls = u.protocol === 'https:' || u.protocol === 'wss:';
+    if (isTls && RELAX_TLS_HOSTS.has(u.hostname)) {
+      let ag = _bypassAgentByHost.get(u.hostname);
+      if (!ag) {
+        ag = new https.Agent({ rejectUnauthorized: false });
+        _bypassAgentByHost.set(u.hostname, ag);
+      }
+      return ag;
+    }
+  } catch (_) {}
+
+  const caPath = process.env.INTERVIEWGENIE_EXTRA_CA_CERTS;
+  if (caPath && fs.existsSync(caPath)) {
+    try {
+      if (!_extraCaAgent) {
+        const extra = fs.readFileSync(caPath, 'utf8');
+        _extraCaAgent = new https.Agent({ ca: [...tls.rootCertificates, extra] });
+      }
+      return _extraCaAgent;
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
+function webSocketConnectOptions(wsUrlString) {
+  const o = { handshakeTimeout: 10000 };
+  const ag = getHttpsAgentForUrl(wsUrlString);
+  if (ag) o.agent = ag;
+  return o;
+}
 
 function httpModuleForUrlString(urlString) {
   try {
@@ -28,12 +117,17 @@ function requestOptionsFromUrl(fullUrlString, extra = {}) {
       port = h === 'localhost' || h === '127.0.0.1' ? '8001' : '80';
     }
   }
-  return {
+  const base = {
     hostname: url.hostname,
     port,
     path: url.pathname + (url.search || ''),
     ...extra,
   };
+  if (isHttps) {
+    const ag = getHttpsAgentForUrl(fullUrlString);
+    if (ag) return { ...base, agent: ag };
+  }
+  return base;
 }
 
 const { app, BrowserWindow, session, ipcMain } = require('electron');
@@ -79,10 +173,9 @@ function startServer() {
             return;
           }
           const backendCfg = JSON.stringify({
-            apiBase: process.env.INTERVIEWGENIE_API_BASE || 'http://127.0.0.1:8001',
-            audioBase: process.env.INTERVIEWGENIE_AUDIO_BASE || 'http://127.0.0.1:8000',
-            wsUrl:
-              process.env.INTERVIEWGENIE_WS_URL || 'ws://127.0.0.1:8000/ws/audio',
+            apiBase: process.env.INTERVIEWGENIE_API_BASE || PRODUCTION_API_BASE,
+            audioBase: process.env.INTERVIEWGENIE_AUDIO_BASE || PRODUCTION_AUDIO_BASE,
+            wsUrl: process.env.INTERVIEWGENIE_WS_URL || PRODUCTION_WS_URL,
           });
           let html = data.toString('utf8');
           html = html.replace(
@@ -109,7 +202,7 @@ function startServer() {
 ipcMain.handle('send-audio', async (event, url, audioBytes) => {
   return new Promise((resolve, reject) => {
     const buf = Buffer.from(audioBytes);
-    const ws = new WebSocket(url, { handshakeTimeout: 10000 });
+    const ws = new WebSocket(url, webSocketConnectOptions(url));
     let resolved = false;
     const TIMEOUT_MS = 90000; // 90s for one-shot flow (LLM ~45s)
     const timeout = setTimeout(() => {
@@ -183,7 +276,7 @@ ipcMain.handle('start-audio-session', async (event, url, cvId, topicId) => {
     endAudioSession();
   }
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url, { handshakeTimeout: 10000 });
+    const ws = new WebSocket(url, webSocketConnectOptions(url));
     const pending = [];
     let opened = false;
     audioSession = { ws, pending, sender: event.sender };
@@ -312,7 +405,7 @@ ipcMain.handle('end-audio-session', () => {
 
 ipcMain.handle('send-text-question', async (event, url, text, cvId, topicId) => {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url, { handshakeTimeout: 10000 });
+    const ws = new WebSocket(url, webSocketConnectOptions(url));
     const sender = event.sender;
     const TIMEOUT_MS = 120000;
     let resolved = false;
@@ -353,7 +446,11 @@ ipcMain.handle('send-text-question', async (event, url, text, cvId, topicId) => 
     });
 
     ws.on('error', () => {
-      if (!resolved) done({ error: 'Connection failed. Is the backend running? Start it with: docker compose --profile ollama up -d (from project root). Expects ws://127.0.0.1:8000/ws/audio' });
+      if (!resolved)
+        done({
+          error:
+            'Connection failed. Check network and that the server is up (default: wss://interviewgenie.teckiz.com/ws/audio). For local backend set INTERVIEWGENIE_WS_URL=ws://127.0.0.1:8000/ws/audio',
+        });
     });
     ws.on('close', () => {
       if (!resolved) done({ error: 'Connection closed' });

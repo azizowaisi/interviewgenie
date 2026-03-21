@@ -70,6 +70,8 @@ The **audio service** is on **port 8000** (WebSocket: `ws://localhost:8000/ws/au
 
 ### 2. Desktop client (Electron)
 
+Defaults to **production** (`https://interviewgenie.teckiz.com` + `wss://…/ws/audio`). For **local** Docker, set `INTERVIEWGENIE_API_BASE`, `INTERVIEWGENIE_AUDIO_BASE`, and `INTERVIEWGENIE_WS_URL` — see `clients/electron-app/README.md`.
+
 ```bash
 cd clients/electron-app
 npm install

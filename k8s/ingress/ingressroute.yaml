@@ -1,4 +1,5 @@
 # Traefik IngressRoute: expose API and WebSocket (k3s includes Traefik)
+# Single route: avoids duplicate ACME orders from two IngressRoutes with the same tls.domains.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -8,8 +9,12 @@ spec:
   entryPoints:
     - web
     - websecure
+  tls:
+    certResolver: le
+    domains:
+      - main: interviewgenie.teckiz.com
   routes:
-    # nativeLB: use Service ClusterIP (fixes Traefik 502 to pods on some k3s/kube-proxy setups)
+    # PathPrefix(`/ws`) includes /ws/audio — all WebSocket traffic to audio-service
     - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws`)
       kind: Rule
       services:
@@ -21,22 +26,4 @@ spec:
       services:
         - name: api-service
           port: 8001
-          nativeLB: true
----
-# WebSocket support: use IngressRoute with responseForwarding for long-lived connections
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: interview-ai-ws
-  namespace: interview-ai
-spec:
-  entryPoints:
-    - web
-    - websecure
-  routes:
-    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws/audio`)
-      kind: Rule
-      services:
-        - name: audio-service
-          port: 8000
           nativeLB: true
