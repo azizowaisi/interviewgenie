@@ -4,7 +4,7 @@ The **CI** workflow (`.github/workflows/ci.yml`) runs on every pull request targ
 
 1. **`backend-tests`** — Python `pytest` matrix (parallel, `fail-fast: false`)
 2. **`frontend-verify`** — parallel `npm ci` + build for **web**, **api-frontend**, **monitoring-frontend**
-3. **`docker-verify`** — in parallel with `frontend-verify`, builds every backend image + `web` (no push)
+3. **`docker-verify`** — matrix (8 parallel jobs): each backend image + `web` (no push), alongside `frontend-verify`
 4. **`ci-gate`** — fails the workflow if any of the above failed (single status check to require)
 
 ## Enable in GitHub
