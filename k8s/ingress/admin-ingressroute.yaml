@@ -1,0 +1,22 @@
+# Admin dashboard: https://admin.interviewgenie.teckiz.com
+# DNS: A record admin → same IP as main site (e.g. 132.226.198.193).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: interview-ai-admin
+  namespace: interview-ai
+spec:
+  entryPoints:
+    - web
+    - websecure
+  tls:
+    certResolver: le
+    domains:
+      - main: admin.interviewgenie.teckiz.com
+  routes:
+    - match: Host(`admin.interviewgenie.teckiz.com`)
+      kind: Rule
+      services:
+        - name: monitoring-service
+          port: 3001
+          nativeLB: true

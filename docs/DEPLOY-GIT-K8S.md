@@ -9,6 +9,10 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 1. **GitHub Actions** runs on every push to `main`: tests, builds Docker images, pushes to a registry (Docker Hub), then runs `kubectl apply -k k8s/` against your cluster.
 2. **Which deploy runs** is chosen with a **repository variable** `DEPLOY_MODE` (GitHub does not allow `secrets.*` in workflow `if:` conditions).
 
+### Rolling deploys & HPA
+
+Manifests include **readiness probes**, **rolling update** strategies, and **HorizontalPodAutoscalers** for stateless app Deployments. See **`docs/K8S-SCALING-AND-ROLLING.md`** for single-node limits, PVC constraints, and tuning `maxReplicas`.
+
 ### ARM64 (Oracle Ampere, Graviton, Apple Silicon nodes)
 
 GitHub-hosted runners build **amd64** images by default. If your VM is **aarch64**, pulling those images causes `exec format error` when the container starts. The **push** job builds **multi-arch** images (`linux/amd64` + `linux/arm64`) so the same tags work on both architectures. After changing this, trigger a new push to `main` so Docker Hub has arm64 variants, then restart workloads (`kubectl rollout restart deployment -n interview-ai --all`).
@@ -148,7 +152,7 @@ newgrp docker
 ## 4. What runs on push to `main`
 
 1. **test** – Backend unit tests.
-2. **build** – Builds images for: `api-service`, `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`.
+2. **build** – Builds images for: `api-service`, `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`, `monitoring-service`.
 3. **push** – If `DOCKERHUB_TOKEN` is set: logs in to Docker Hub and pushes `$DOCKERHUB_USERNAME/interview-ai-<service>:latest`.
 4. **deploy_self_hosted** – If **`DEPLOY_MODE=self_hosted`**:
    - Uses local k3s kubeconfig from `/etc/rancher/k3s/k3s.yaml`.
@@ -211,7 +215,7 @@ If you prefer **not** to use Docker Hub:
 1. Do **not** set `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`.
 2. On the VM, build and load images into k3s after cloning the repo:
    ```bash
-   for s in api-service audio-service stt-service question-service llm-service formatter-service; do
+   for s in api-service audio-service stt-service question-service llm-service formatter-service monitoring-service; do
      docker build -t interview-ai/$s:latest ./backend/$s
      sudo k3s ctr images import --all-platforms <(docker save interview-ai/$s:latest)
    done
