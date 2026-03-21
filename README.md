@@ -166,6 +166,13 @@ kubectl apply -k k8s/
 kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 ```
 
+### Deploy from Git (main site + admin domain)
+
+CI/CD: push to **`main`** (or run **Actions → Build and Deploy**) builds images, pushes to Docker Hub, and applies manifests so **https://interviewgenie.teckiz.com** matches local Next/API/WebSocket behavior and **https://admin.interviewgenie.teckiz.com** serves the operations UI (proxies to **monitoring-service** in-cluster).
+
+- **Step-by-step:** [docs/DEPLOY-WEB-ADMIN-GIT.md](docs/DEPLOY-WEB-ADMIN-GIT.md)  
+- **Runner / SSH / kubeconfig modes:** [docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md)
+
 ### Rolling updates & autoscaling (k3s)
 
 - Deployments use **readiness probes** and **rolling update** strategies: stateless services allow **`maxSurge: 1`** so traffic can move to a new pod before the old one terminates (when the node has capacity).
@@ -276,7 +283,7 @@ InterviewGenie/
 Backend services include unit and mock tests (pytest).
 
 ```bash
-# Run all backend tests (from repo root; requires Python 3.11+ and pip)
+# Run all backend tests (from repo root; requires Python 3.12+ and pip)
 ./scripts/run_tests.sh
 
 # Or run per service
@@ -293,10 +300,9 @@ Tests mock external HTTP (e.g. Whisper, Ollama) so they run offline.
 
 ## CI/CD (GitHub Actions)
 
-- **Test**: On push/PR, runs backend unit tests (pytest) then builds.
-- **Build**: Builds all backend Docker images.
-- **Push**: On push to `main`, logs in to Docker Hub (if `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` are set) and pushes images.
-- **Deploy**: Set repository **variable** `DEPLOY_MODE` to `ssh`, `remote`, or `self_hosted` (GitHub does not allow `secrets` in workflow `if:`). Add matching secrets (`KUBE_CONFIG`, SSH secrets, or a self-hosted runner). See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
+- **Pull request** → **pytest** + **Docker build** (validates Dockerfiles); **no** registry push, **no** cluster deploy.
+- **Merge to `main`** (push) → same tests + build, then **push** images to Docker Hub (if `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`), then **deploy** per `DEPLOY_MODE`.
+- **Deploy**: Set repository **variable** `DEPLOY_MODE` to `ssh`, `remote`, or `self_hosted`. Add matching secrets (`KUBE_CONFIG`, SSH secrets, or a self-hosted runner). See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 
 ---
 

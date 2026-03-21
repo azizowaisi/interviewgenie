@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 .venv/
 .venv-audit/
+.venv-tmp/
 venv/
 *.egg-info/
 .pub-cache/
