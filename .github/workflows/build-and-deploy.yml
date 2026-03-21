@@ -10,6 +10,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Actions → Build and Deploy → Run workflow (rebuild images + deploy if DEPLOY_MODE + secrets are set)
+  workflow_dispatch:
 
 env:
   # Image names in k8s manifests (must match k8s/*/deployment.yaml)
