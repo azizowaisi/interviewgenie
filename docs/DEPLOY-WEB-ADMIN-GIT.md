@@ -52,7 +52,7 @@ You must then edit **`k8s/ingress/ingressroute.yaml`**, **`k8s/ingress/admin-ing
 
 | Event | Workflow | What runs |
 |-------|----------|-----------|
-| **Pull request** to `main` | **CI** (`ci.yml`) | **Tests** + **Docker build** — **no** push, **no** deploy |
+| **Pull request** to `main` | **CI** (`ci.yml`) | **`backend-tests`** (pytest) + **`build-verify`** (Next + Vue builds + **Docker** image builds) — **no** push, **no** deploy |
 | **Merge** (push to `main`) | **Build and Deploy** (`build-and-deploy.yml`) | Tests + build + **push** + **deploy** (single run; PR no longer triggers this file) |
 | **Manual** | **Build and Deploy** | Same as push to `main`; optional **Skip deploy** / **Skip tests** |
 
