@@ -194,7 +194,9 @@ newgrp docker
 
 5. **deploy_remote** – If **`DEPLOY_MODE` is unset, empty, or `remote`** and secret **`KUBE_CONFIG`** is set: decodes kubeconfig and runs `kubectl apply` from a GitHub-hosted runner (API 6443 must be reachable from GitHub). If **`KUBE_CONFIG` is missing**, this job is **skipped**.
 
-6. **deploy_ssh_bootstrap** – If **`DEPLOY_MODE=ssh`**, **or** (unset/`remote` with **no** `KUBE_CONFIG` but **SSH_HOST**, **SSH_USER**, **SSH_PRIVATE_KEY** set): SSH to the VM, rsync `k8s/` + `scripts/ci/`, install k3s if needed, run `k8s-apply.sh`.
+6. **deploy_gates** – Lightweight job that checks whether **`KUBE_CONFIG`** and/or the **SSH** secret bundle are non-empty (secrets cannot be referenced in job-level `if`, so this step exposes `has_kube_config` / `has_ssh_bundle` outputs).
+
+7. **deploy_ssh_bootstrap** – If **`DEPLOY_MODE=ssh`**, **or** (unset/`remote` with **no** `KUBE_CONFIG` but **SSH** secrets set): SSH to the VM, rsync `k8s/` + `scripts/ci/`, install k3s if needed, run `k8s-apply.sh`.
 
 Result: every push to `main` runs **test → build → push**; **deploy** runs by default (**remote**) unless `DEPLOY_MODE` is `none` / `off`, or you use `ssh` / `self_hosted` instead.
 

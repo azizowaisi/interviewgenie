@@ -378,20 +378,49 @@ jobs:
           echo "- **build_any:** ${{ needs.detect.outputs.build_any }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **images_pushed:** ${{ steps.push_outcome.outputs.images_pushed }}" >> "$GITHUB_STEP_SUMMARY"
 
-  deploy_remote:
+  # Job-level `if` cannot use `secrets.*` (GitHub limitation). Expose booleans here instead.
+  deploy_gates:
     needs: [detect, test, build-meta]
     if: |
       always() &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
+      needs.detect.outputs.deploy_mode != 'none' &&
+      needs.detect.outputs.deploy_mode != 'off' &&
+      needs.detect.outputs.deploy_mode != 'false'
+    runs-on: ubuntu-24.04
+    outputs:
+      has_kube_config: ${{ steps.check.outputs.has_kube_config }}
+      has_ssh_bundle: ${{ steps.check.outputs.has_ssh_bundle }}
+    steps:
+      - id: check
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          if [ -n "${KUBE_CONFIG_B64}" ]; then echo "has_kube_config=true" >> "$GITHUB_OUTPUT"
+          else echo "has_kube_config=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "${SSH_PRIVATE_KEY}" ] && [ -n "${SSH_HOST}" ] && [ -n "${SSH_USER}" ]; then echo "has_ssh_bundle=true" >> "$GITHUB_OUTPUT"
+          else echo "has_ssh_bundle=false" >> "$GITHUB_OUTPUT"; fi
+
+  deploy_remote:
+    needs: [detect, test, build-meta, deploy_gates]
+    if: |
+      always() &&
+      (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
+      (needs.deploy_gates.result == 'success' || needs.deploy_gates.result == 'skipped') &&
       (needs.detect.outputs.deploy_mode == 'remote' || needs.detect.outputs.deploy_mode == '') &&
       needs.detect.outputs.deploy_mode != 'ssh' &&
       needs.detect.outputs.deploy_mode != 'self_hosted' &&
       needs.detect.outputs.deploy_mode != 'none' &&
       needs.detect.outputs.deploy_mode != 'off' &&
       needs.detect.outputs.deploy_mode != 'false' &&
-      secrets.KUBE_CONFIG != ''
+      needs.deploy_gates.outputs.has_kube_config == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -494,12 +523,13 @@ jobs:
 
   # Explicit DEPLOY_MODE=ssh, OR default/remote with no KUBE_CONFIG but SSH secrets (typical k3s VM).
   deploy_ssh_bootstrap:
-    needs: [detect, test, build-meta]
+    needs: [detect, test, build-meta, deploy_gates]
     if: |
       always() &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
+      (needs.deploy_gates.result == 'success' || needs.deploy_gates.result == 'skipped') &&
       needs.detect.outputs.deploy_mode != 'none' &&
       needs.detect.outputs.deploy_mode != 'off' &&
       needs.detect.outputs.deploy_mode != 'false' &&
@@ -508,10 +538,8 @@ jobs:
         needs.detect.outputs.deploy_mode == 'ssh' ||
         (
           (needs.detect.outputs.deploy_mode == 'remote' || needs.detect.outputs.deploy_mode == '') &&
-          secrets.KUBE_CONFIG == '' &&
-          secrets.SSH_PRIVATE_KEY != '' &&
-          secrets.SSH_HOST != '' &&
-          secrets.SSH_USER != ''
+          needs.deploy_gates.outputs.has_kube_config == 'false' &&
+          needs.deploy_gates.outputs.has_ssh_bundle == 'true'
         )
       )
     runs-on: ubuntu-24.04
