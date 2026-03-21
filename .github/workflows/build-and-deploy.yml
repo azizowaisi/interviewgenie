@@ -128,7 +128,7 @@ jobs:
       needs.detect.outputs.tests_any == 'true' &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_tests != 'true')
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         service: [question-service, formatter-service, llm-service, stt-service, audio-service]
     runs-on: ubuntu-24.04
@@ -147,11 +147,9 @@ jobs:
           pip install -q -r "backend/${{ matrix.service }}/requirements.txt"
           (cd "backend/${{ matrix.service }}" && python -m pytest tests/ -q --tb=short)
 
-  build-push:
+  # When build_any: platforms + Docker Hub check (no login here — each matrix leg logs in).
+  build-prep:
     needs: [detect, test]
-    outputs:
-      images_pushed: ${{ steps.push_outcome.outputs.images_pushed }}
-    # Always run when eligible (even if build_any=false) so job outputs stay defined for deploy.
     if: |
       always() &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
@@ -159,35 +157,19 @@ jobs:
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         github.event_name == 'workflow_dispatch'
       ) &&
-      (github.event_name != 'workflow_dispatch' || inputs.deploy_only != 'true')
+      (github.event_name != 'workflow_dispatch' || inputs.deploy_only != 'true') &&
+      needs.detect.outputs.build_any == 'true'
     runs-on: ubuntu-24.04
-    env:
-      IMAGE_TAG: sha-${{ github.sha }}
-      BUILD_API_SERVICE: ${{ needs.detect.outputs.build_api_service }}
-      BUILD_AUDIO_SERVICE: ${{ needs.detect.outputs.build_audio_service }}
-      BUILD_STT_SERVICE: ${{ needs.detect.outputs.build_stt_service }}
-      BUILD_QUESTION_SERVICE: ${{ needs.detect.outputs.build_question_service }}
-      BUILD_LLM_SERVICE: ${{ needs.detect.outputs.build_llm_service }}
-      BUILD_FORMATTER_SERVICE: ${{ needs.detect.outputs.build_formatter_service }}
-      BUILD_MONITORING_SERVICE: ${{ needs.detect.outputs.build_monitoring_service }}
-      BUILD_WEB: ${{ needs.detect.outputs.build_web }}
+    outputs:
+      platforms: ${{ steps.plat.outputs.platforms }}
+      need_qemu: ${{ steps.plat.outputs.need_qemu }}
+      dh_skip: ${{ steps.dh.outputs.skip }}
+      dh_user: ${{ steps.dh.outputs.dh_user }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Decide whether to build images
-        id: decide
-        run: |
-          if [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-            echo "Will build/push changed images only (see detect summary)." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "run_build=false" >> "$GITHUB_OUTPUT"
-            echo "**No image-affecting changes** — skipping Docker build/push." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
       - name: Configure Docker platforms
         id: plat
-        if: steps.decide.outputs.run_build == 'true'
         env:
           DOCKER_BUILD_PLATFORMS: ${{ vars.DOCKER_BUILD_PLATFORMS }}
         run: |
@@ -200,23 +182,14 @@ jobs:
           fi
           echo "Using PLATFORMS=${P} (set repo var DOCKER_BUILD_PLATFORMS to override)" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Set up QEMU
-        if: steps.decide.outputs.run_build == 'true' && steps.plat.outputs.need_qemu == 'true'
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        if: steps.decide.outputs.run_build == 'true'
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to Docker Hub (optional)
-        id: dh_login
-        if: steps.decide.outputs.run_build == 'true'
+      - name: Check Docker Hub credentials
+        id: dh
         env:
           DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
           DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           if [ -z "${DH_TOKEN}" ]; then
-            echo "No DOCKERHUB_TOKEN — skipping image build/push; deploy will not change images."
+            echo "No DOCKERHUB_TOKEN — skipping parallel image builds; deploy will not change images."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -225,39 +198,158 @@ jobs:
           if [ -z "${DH_USER}" ]; then
             echo "DOCKERHUB_USERNAME empty"; exit 1
           fi
-          printf '%s' "${DH_TOKEN}" | docker login -u "${DH_USER}" --password-stdin
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "dh_user=${DH_USER}" >> "$GITHUB_OUTPUT"
 
-      - name: Build & push images (registry + GHA cache; see docs/DEPLOY-SPEED.md)
-        id: docker_push
-        if: steps.decide.outputs.run_build == 'true' && steps.dh_login.outputs.skip == 'false'
-        env:
-          DH_USER: ${{ steps.dh_login.outputs.dh_user }}
-          PLATFORMS: ${{ steps.plat.outputs.platforms }}
-          ENABLE_REGISTRY_CACHE: ${{ vars.DOCKER_REGISTRY_CACHE != 'false' && 'true' || 'false' }}
-          WEB_PUBLIC_APP_URL: ${{ vars.WEB_PUBLIC_APP_URL }}
-          WEB_ADMIN_SITE_URL: ${{ vars.WEB_ADMIN_SITE_URL }}
-          WEB_ADMIN_HOSTS: ${{ vars.WEB_ADMIN_HOSTS }}
-          WEB_MAIN_APP_HOSTS: ${{ vars.WEB_MAIN_APP_HOSTS }}
-        run: |
-          chmod +x scripts/ci/gha-docker-build-push.sh
-          scripts/ci/gha-docker-build-push.sh
+  # One image per matrix leg (parallel runners). GHA + registry cache per slug (same as serial script).
+  build-images:
+    needs: [detect, test, build-prep]
+    if: |
+      always() &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        github.event_name == 'workflow_dispatch'
+      ) &&
+      (github.event_name != 'workflow_dispatch' || inputs.deploy_only != 'true') &&
+      needs.detect.outputs.build_any == 'true' &&
+      needs.build-prep.result == 'success' &&
+      needs.build-prep.outputs.dh_skip != 'true'
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        slug:
+          - api-service
+          - audio-service
+          - stt-service
+          - question-service
+          - llm-service
+          - formatter-service
+          - monitoring-service
+          - web
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE_TAG: sha-${{ github.sha }}
+      PLATFORMS: ${{ needs.build-prep.outputs.platforms }}
+      ENABLE_REGISTRY_CACHE: ${{ vars.DOCKER_REGISTRY_CACHE != 'false' && 'true' || 'false' }}
+      WEB_PUBLIC_APP_URL: ${{ vars.WEB_PUBLIC_APP_URL }}
+      WEB_ADMIN_SITE_URL: ${{ vars.WEB_ADMIN_SITE_URL }}
+      WEB_ADMIN_HOSTS: ${{ vars.WEB_ADMIN_HOSTS }}
+      WEB_MAIN_APP_HOSTS: ${{ vars.WEB_MAIN_APP_HOSTS }}
+    steps:
+      - uses: actions/checkout@v6
 
-      - name: Record image push outcome
-        id: push_outcome
+      - name: Gate — build this image?
+        id: gate
+        run: |
+          case "${{ matrix.slug }}" in
+            api-service) B="${{ needs.detect.outputs.build_api_service }}" ;;
+            audio-service) B="${{ needs.detect.outputs.build_audio_service }}" ;;
+            stt-service) B="${{ needs.detect.outputs.build_stt_service }}" ;;
+            question-service) B="${{ needs.detect.outputs.build_question_service }}" ;;
+            llm-service) B="${{ needs.detect.outputs.build_llm_service }}" ;;
+            formatter-service) B="${{ needs.detect.outputs.build_formatter_service }}" ;;
+            monitoring-service) B="${{ needs.detect.outputs.build_monitoring_service }}" ;;
+            web) B="${{ needs.detect.outputs.build_web }}" ;;
+            *) echo "Unknown slug"; exit 1 ;;
+          esac
+          echo "build=${B}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        if: steps.gate.outputs.build == 'true' && needs.build-prep.outputs.need_qemu == 'true'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        if: steps.gate.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        if: steps.gate.outputs.build == 'true'
+        env:
+          DH_USER: ${{ needs.build-prep.outputs.dh_user }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          printf '%s' "${DH_TOKEN}" | docker login -u "${DH_USER}" --password-stdin
+
+      - name: Build & push image (single service; see docs/DEPLOY-SPEED.md)
+        id: docker_push
+        if: steps.gate.outputs.build == 'true'
+        env:
+          IMAGE_SLUG: ${{ matrix.slug }}
+          DH_USER: ${{ needs.build-prep.outputs.dh_user }}
+        run: |
+          chmod +x scripts/ci/gha-build-single-image.sh
+          scripts/ci/gha-build-single-image.sh
+
+      - name: Record push result artifact
         if: always()
         run: |
-          if [ "${{ steps.decide.outputs.run_build }}" != "true" ]; then
+          if [ "${{ steps.gate.outputs.build }}" != "true" ]; then
+            echo 0 > pushed.txt
+          elif [ "${{ steps.docker_push.outcome }}" = "success" ]; then
+            echo 1 > pushed.txt
+          else
+            echo 0 > pushed.txt
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-push-result-${{ matrix.slug }}
+          path: pushed.txt
+
+  # Always run when eligible (even if build_any=false) so outputs stay defined for deploy jobs.
+  build-meta:
+    needs: [detect, test, build-prep, build-images]
+    if: |
+      always() &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        github.event_name == 'workflow_dispatch'
+      ) &&
+      (github.event_name != 'workflow_dispatch' || inputs.deploy_only != 'true')
+    runs-on: ubuntu-24.04
+    outputs:
+      images_pushed: ${{ steps.push_outcome.outputs.images_pushed }}
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: image-push-result-*
+          path: _push_results
+
+      - name: Aggregate image push outcome
+        id: push_outcome
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.detect.outputs.build_any }}" != "true" ]; then
+            echo "images_pushed=false" >> "$GITHUB_OUTPUT"
+            echo "**No image-affecting changes** — skipping Docker build/push." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "${{ needs.build-prep.result }}" != "success" ]; then
             echo "images_pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "${{ steps.dh_login.outputs.skip }}" = "true" ]; then
+          if [ "${{ needs.build-prep.outputs.dh_skip }}" = "true" ]; then
             echo "images_pushed=false" >> "$GITHUB_OUTPUT"
-            echo "No Docker Hub token — cluster images unchanged by this job." >> "$GITHUB_STEP_SUMMARY"
+            echo "No Docker Hub token — cluster images unchanged by this run." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          if [ "${{ steps.docker_push.outcome }}" = "success" ]; then
+          if [ "${{ needs.build-images.result }}" != "success" ]; then
+            echo "images_pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          any=0
+          if [ -d "_push_results" ]; then
+            while IFS= read -r -d '' f; do
+              v="$(tr -d ' \n\r\t' < "$f" || true)"
+              if [ "$v" = "1" ]; then any=1; break; fi
+            done < <(find _push_results -type f \( -name 'pushed.txt' -o -name 'pushed.txt*' \) -print0 2>/dev/null || true)
+          fi
+          if [ "$any" = "1" ]; then
             echo "images_pushed=true" >> "$GITHUB_OUTPUT"
           else
             echo "images_pushed=false" >> "$GITHUB_OUTPUT"
@@ -266,18 +358,18 @@ jobs:
       - name: Build summary
         if: always()
         run: |
-          echo "### Images" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Tag (when built):** \`${IMAGE_TAG}\` and \`:latest\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **run_build:** ${{ steps.decide.outputs.run_build }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Images (parallel matrix)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag (when built):** \`sha-${{ github.sha }}\` and \`:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **build_any:** ${{ needs.detect.outputs.build_any }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **images_pushed:** ${{ steps.push_outcome.outputs.images_pushed }}" >> "$GITHUB_STEP_SUMMARY"
 
   deploy_remote:
-    needs: [detect, test, build-push]
+    needs: [detect, test, build-meta]
     if: |
       always() &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
-      (needs.build-push.result == 'success' || needs.build-push.result == 'skipped') &&
+      (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
       (vars.DEPLOY_MODE == 'remote' || vars.DEPLOY_MODE == '') &&
       vars.DEPLOY_MODE != 'ssh' &&
       vars.DEPLOY_MODE != 'self_hosted' &&
@@ -309,8 +401,8 @@ jobs:
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
-          if [ "${{ needs.build-push.result }}" = "success" ] && \
-             [ "${{ needs.build-push.outputs.images_pushed }}" = "true" ] && \
+          if [ "${{ needs.build-meta.result }}" = "success" ] && \
+             [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
              [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
             export K8S_SKIP_SET_IMAGE=0
             export K8S_IMAGE_TAG="sha-${{ github.sha }}"
@@ -327,7 +419,7 @@ jobs:
             echo "Pinning workloads to K8S_IMAGE_TAG=${K8S_IMAGE_TAG} deployments=[${K8S_UPDATE_DEPLOYMENTS}]"
           else
             export K8S_SKIP_SET_IMAGE=1
-            echo "Skipping kubectl set image (no new images this run or build-push skipped)."
+            echo "Skipping kubectl set image (no new images this run or build-meta skipped)."
           fi
           scripts/ci/k8s-apply.sh
 
@@ -337,12 +429,12 @@ jobs:
           echo "::error::Deploy failed. To roll back one revision: kubectl rollout undo deployment/<name> -n interview-ai"
 
   deploy_self_hosted:
-    needs: [detect, test, build-push]
+    needs: [detect, test, build-meta]
     if: |
       always() &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
-      (needs.build-push.result == 'success' || needs.build-push.result == 'skipped') &&
+      (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
       vars.DEPLOY_MODE == 'self_hosted'
     runs-on: self-hosted
     steps:
@@ -368,8 +460,8 @@ jobs:
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
-          if [ "${{ needs.build-push.result }}" = "success" ] && \
-             [ "${{ needs.build-push.outputs.images_pushed }}" = "true" ] && \
+          if [ "${{ needs.build-meta.result }}" = "success" ] && \
+             [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
              [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
             export K8S_SKIP_SET_IMAGE=0
             export K8S_IMAGE_TAG="sha-${{ github.sha }}"
@@ -394,12 +486,12 @@ jobs:
           kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b || true
 
   deploy_ssh_bootstrap:
-    needs: [detect, test, build-push]
+    needs: [detect, test, build-meta]
     if: |
       always() &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
-      (needs.build-push.result == 'success' || needs.build-push.result == 'skipped') &&
+      (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
       vars.DEPLOY_MODE == 'ssh'
     runs-on: ubuntu-24.04
     steps:
@@ -422,14 +514,14 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
-          BUILD_PUSH_RESULT: ${{ needs.build-push.result }}
-          IMAGES_PUSHED: ${{ needs.build-push.outputs.images_pushed }}
+          BUILD_PUSH_RESULT: ${{ needs.build-meta.result }}
+          IMAGES_PUSHED: ${{ needs.build-meta.outputs.images_pushed }}
           BUILD_ANY: ${{ needs.detect.outputs.build_any }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
           K8S_UPDATE_DEPLOYMENTS=""
-          if [ "${{ needs.build-push.result }}" = "success" ] && \
-             [ "${{ needs.build-push.outputs.images_pushed }}" = "true" ] && \
+          if [ "${{ needs.build-meta.result }}" = "success" ] && \
+             [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
              [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
             UPD=""
             [ "${{ needs.detect.outputs.build_api_service }}" = "true" ] && UPD="$UPD api-service"

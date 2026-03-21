@@ -2,12 +2,10 @@
 
 The **CI** workflow (`.github/workflows/ci.yml`) runs on every pull request targeting `main`:
 
-1. **`backend-tests`** — Python `pytest` for all backend services that have tests  
-2. **`build-verify`** — runs only if backend tests pass, then:
-   - **Next.js** — `web/`: `npm ci` + `npm run build`
-   - **Vue (API landing)** — `backend/api-service/frontend/`: `npm ci` + `npm run build`
-   - **Vue (admin UI)** — `backend/monitoring-service/frontend/`: `npm ci` + `npm run build`
-   - **Docker** — builds every backend service image and `web/` (same as production images, without push)
+1. **`backend-tests`** — Python `pytest` matrix (parallel, `fail-fast: false`)
+2. **`frontend-verify`** — parallel `npm ci` + build for **web**, **api-frontend**, **monitoring-frontend**
+3. **`docker-verify`** — in parallel with `frontend-verify`, builds every backend image + `web` (no push)
+4. **`ci-gate`** — fails the workflow if any of the above failed (single status check to require)
 
 ## Enable in GitHub
 
@@ -16,8 +14,9 @@ The **CI** workflow (`.github/workflows/ci.yml`) runs on every pull request targ
 3. Enable **Require status checks to pass before merging**.  
 4. Add these checks (exact names as shown in Actions after one PR run):
 
-   - `CI / backend-tests`  
-   - `CI / build-verify`
+   - `CI / ci-gate`  
+
+   (Alternatively require each matrix leg and `docker-verify` by name if you prefer granular checks.)
 
 5. Optionally enable **Require branches to be up to date before merging**.
 
