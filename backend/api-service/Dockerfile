@@ -9,6 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY db.py cv_parser.py auth.py ats_analyzer.py main.py ./
+COPY static ./static/
 
 EXPOSE 8001
 

@@ -4,10 +4,12 @@ API Service: Auth0 (optional), CV upload/parsing, MongoDB (users, CVs, Q&A histo
 import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Header
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from db import (
@@ -24,6 +26,10 @@ from cv_parser import parse_cv
 from ats_analyzer import compute_ats
 
 app = FastAPI(title="Interview Genie API", version="0.1.0")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Auth: if AUTH0_DOMAIN not set, use X-User-Id header for local dev
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "").rstrip("/")
@@ -155,61 +161,27 @@ async def get_user_id(
 
 @app.get("/")
 async def root():
-    # Browser-friendly landing page for the main domain.
-    # (Most API consumers use /health, /docs, and the REST endpoints below.)
-    html = """<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Interview Genie</title>
-    <style>
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#0b0f17; color:#e8eefc; margin:0; }
-      header { padding: 32px 16px; border-bottom:1px solid rgba(255,255,255,.08); }
-      h1 { margin:0 0 8px 0; font-size: 22px; }
-      .wrap { max-width: 980px; margin: 0 auto; padding: 18px 16px 34px; }
-      .card { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 16px; margin-top: 14px; }
-      a { color:#9ad6ff; text-decoration:none; }
-      a:hover { text-decoration:underline; }
-      code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 8px; }
-      ul { margin: 10px 0 0 20px; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <div class="wrap">
-        <h1>Interview Genie API</h1>
-        <div>Backend is up. Use the links below to confirm endpoints and start interviews.</div>
-      </div>
-    </header>
-    <div class="wrap">
-      <div class="card">
-        <h3 style="margin:0 0 8px 0;">Quick checks</h3>
-        <ul>
-          <li><a href="/health" target="_blank" rel="noopener">/health</a></li>
-          <li><a href="/docs" target="_blank" rel="noopener">/docs (Swagger)</a></li>
-          <li><a href="/openapi.json" target="_blank" rel="noopener">/openapi.json</a></li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3 style="margin:0 0 8px 0;">WebSocket</h3>
-        <div>Audio streaming endpoint:</div>
-        <div style="margin-top:8px;"><code>/ws/audio</code></div>
-      </div>
-      <div class="card">
-        <h3 style="margin:0 0 8px 0;">Client</h3>
-        <div>
-          The Electron app should be pointed to:
-          <div style="margin-top:8px;">
-            API: <code>/health</code> and REST paths like <code>/history</code>
-          </div>
-          <div style="margin-top:6px;">WebSocket: <code>/ws/audio</code></div>
-        </div>
-      </div>
-    </div>
-  </body>
-</html>"""
-    return HTMLResponse(html)
+    """Product landing page (marketing + link to full web workspace)."""
+    landing = STATIC_DIR / "landing.html"
+    if landing.is_file():
+        return FileResponse(landing)
+    return JSONResponse(
+        {
+            "service": "Interview Genie API",
+            "health": "/health",
+            "docs": "/docs",
+            "web_app": "/app",
+        }
+    )
+
+
+@app.get("/app")
+async def web_app():
+    """Full interview workspace (same flows as the Electron client, browser + fetch/WebSocket)."""
+    app_html = STATIC_DIR / "app.html"
+    if not app_html.is_file():
+        raise HTTPException(503, "Web app bundle missing")
+    return FileResponse(app_html)
 
 
 @app.get("/health")
