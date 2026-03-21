@@ -182,7 +182,7 @@ kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 
 ### Web UI (same flows as Electron)
 
-- **Next.js** app: **`web/`** (optional local / future main-site host). **Vue 3 + Vite**: **`backend/api-service/frontend/`** (marketing + `/app` shell); **`backend/monitoring-service/frontend/`** (legacy admin bundle — API used by Next BFF). See **`docs/VUE-FRONTENDS.md`**.
+- **Next.js** app: **`web/`** — served on **`https://interviewgenie.teckiz.com/`** in k3s (IngressRoute sends `/` + `/_next` + `/api/*` BFF to **`web`**, while `/ws` → audio and `/topics`, `/cv`, `/app`, … → **api-service**). **Vue 3 + Vite**: **`backend/api-service/frontend/`** (legacy **`/app`** shell still on api-service). See **`docs/VUE-FRONTENDS.md`** and **`k8s/ingress/ingressroute.yaml`**.
 - **`/`** — Landing (Vue); CTA → **`/app`**.
 - **`/app`** — Interview workspace (Vue route; loads **`workspace.js`** + **`web-bridge.js`** — same behavior as the former single `app.html`).
 
