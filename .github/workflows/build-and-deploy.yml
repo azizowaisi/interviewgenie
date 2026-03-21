@@ -1,7 +1,13 @@
-# Build Docker images for all backend services.
-# Push to registry on main (set DOCKERHUB_USERNAME, DOCKERHUB_TOKEN).
-# Deploy: set repo variable DEPLOY_MODE to ssh | remote | self_hosted (secrets cannot be used in job if:).
-# See docs/DEPLOY-GIT-K8S.md for full setup.
+# Build Docker images, push to Docker Hub, deploy to k3s/Kubernetes.
+#
+# Deploy modes (repo variable DEPLOY_MODE — Settings → Actions → Variables):
+#   remote         — GitHub-hosted runner + secret KUBE_CONFIG (API 6443 reachable)
+#   self_hosted    — Runner on the k3s node (local kubeconfig)
+#   ssh            — SSH to VM: rsync manifests, optional k3s install, kubectl apply
+#   (unset/other)  — Build + push only, no deploy job
+#
+# Manual run: Actions → Build and Deploy → Run workflow (also pushes + deploys when configured).
+# See docs/DEPLOY-GIT-K8S.md
 
 name: Build and Deploy
 
@@ -10,16 +16,24 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Actions → Build and Deploy → Run workflow (rebuild images + deploy if DEPLOY_MODE + secrets are set)
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: "Skip Python unit tests (faster manual deploy)"
+        type: boolean
+        default: false
+      skip_deploy:
+        description: "Push images only; do not run any deploy job"
+        type: boolean
+        default: false
 
 env:
-  # Image names in k8s manifests (must match k8s/*/deployment.yaml)
   SERVICES: api-service audio-service stt-service question-service llm-service formatter-service monitoring-service
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || inputs.skip_tests != true
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +52,7 @@ jobs:
 
   build:
     needs: test
+    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,19 +69,21 @@ jobs:
 
   push:
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Multi-arch so ARM64 nodes (e.g. Oracle Ampere) can run images built on GitHub amd64 runners
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # secrets.* is not allowed in step if: — gate inside the script instead
       - name: Log in and push to Docker Hub
         env:
           DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -76,16 +93,14 @@ jobs:
             echo "No DOCKERHUB_TOKEN; skipping Docker Hub push."
             exit 0
           fi
-          # Trim CR/LF and surrounding whitespace (common when pasting into GitHub Secrets)
           DH_USER="$(printf '%s' "${DH_USER}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           DH_TOKEN="$(printf '%s' "${DH_TOKEN}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           if [ -z "${DH_USER}" ]; then
             echo "DOCKERHUB_USERNAME is empty after trim; check GitHub secret."
             exit 1
           fi
-          # Use printf — not echo — so the PAT is not altered by a trailing newline
           if ! printf '%s' "${DH_TOKEN}" | docker login -u "${DH_USER}" --password-stdin; then
-            echo "Docker Hub login failed. Check: DOCKERHUB_USERNAME = Docker Hub *username* (not email unless that is your login), and DOCKERHUB_TOKEN = a valid *Access Token* with Read & Write."
+            echo "Docker Hub login failed."
             exit 1
           fi
           for s in ${{ env.SERVICES }}; do
@@ -101,102 +116,78 @@ jobs:
             "./web" \
             --push
 
-  # Option A (recommended): deploy from GitHub-hosted runner using KUBE_CONFIG.
-  # This requires your cluster API (port 6443) to be reachable from the runner (publicly or via VPN).
+  # --- k3s / Kubernetes deploy paths (unified apply script: Traefik + kustomize + set image + rollouts) ---
+
   deploy_remote:
-    needs: [build, push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_MODE == 'remote'
+    needs: push
+    if: |
+      always() &&
+      needs.push.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
+      vars.DEPLOY_MODE == 'remote'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up kubeconfig
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
 
-      - name: Set images for registry (if Docker Hub used)
+      - name: Deploy to cluster (k3s-compatible)
         env:
-          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          if [ -z "${DH_USER}" ]; then
-            echo "No DOCKERHUB_USERNAME; applying default image names."
-            exit 0
-          fi
-          cd k8s
-          for s in ${{ env.SERVICES }}; do
-            kustomize edit set image "interview-ai/${s}:latest=${DH_USER}/interview-ai-${s}:latest"
-          done
-          kustomize edit set image "interview-ai/web:latest=${DH_USER}/interview-ai-web:latest"
+          chmod +x scripts/ci/k8s-apply.sh
+          export KUBECONFIG="$HOME/.kube/config"
+          scripts/ci/k8s-apply.sh
 
-      - name: Deploy to Kubernetes
-        run: kubectl apply -k k8s/
-        env:
-          KUBECONFIG: $HOME/.kube/config
-
-      - name: Pull Ollama model (one-time; may take a few minutes)
-        run: |
-          kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b || true
-        env:
-          KUBECONFIG: $HOME/.kube/config
-
-  # Option B (secure, single-VM friendly): deploy from a self-hosted runner ON the VM.
-  # No need to expose the Kubernetes API publicly; runner can use local k3s kubeconfig.
   deploy_self_hosted:
-    needs: [build, push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_MODE == 'self_hosted'
+    needs: push
+    if: |
+      always() &&
+      needs.push.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
+      vars.DEPLOY_MODE == 'self_hosted'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure kubectl is available
+      - name: Ensure kubectl
         run: |
           command -v kubectl >/dev/null 2>&1 && exit 0
           sudo ln -sf /usr/local/bin/kubectl /usr/bin/kubectl 2>/dev/null || true
           command -v kubectl >/dev/null 2>&1 && exit 0
-          sudo ln -sf /usr/local/bin/k3s /usr/bin/k3s 2>/dev/null || true
           sudo k3s kubectl version --client=true
 
-      - name: Use local k3s kubeconfig
+      - name: k3s kubeconfig
         run: |
           mkdir -p "$HOME/.kube"
           sudo cat /etc/rancher/k3s/k3s.yaml > "$HOME/.kube/config"
           sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
 
-      - name: Set images for registry (Docker Hub)
+      - name: Deploy to cluster
         env:
-          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          if [ -z "${DH_USER}" ] || [ -z "${DH_TOKEN}" ]; then
-            echo "Skip kustomize image override (set DOCKERHUB_* secrets)."
-            exit 0
-          fi
-          cd k8s
-          for s in ${{ env.SERVICES }}; do
-            kustomize edit set image "interview-ai/${s}:latest=${DH_USER}/interview-ai-${s}:latest"
-          done
-          kustomize edit set image "interview-ai/web:latest=${DH_USER}/interview-ai-web:latest"
+          chmod +x scripts/ci/k8s-apply.sh
+          export KUBECONFIG="$HOME/.kube/config"
+          scripts/ci/k8s-apply.sh
 
-      - name: Deploy to Kubernetes
-        run: kubectl apply -k k8s/
-        env:
-          KUBECONFIG: $HOME/.kube/config
-
-      - name: Pull Ollama model (one-time; may take a few minutes)
+      - name: Pull Ollama model (non-fatal)
         run: |
+          export KUBECONFIG="$HOME/.kube/config"
           kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b || true
-        env:
-          KUBECONFIG: $HOME/.kube/config
 
-  # Option C (zero manual server setup): GitHub Actions SSHes into the VM,
-  # installs k3s/traefik TLS config, and applies manifests.
-  # Requires: repo variable DEPLOY_MODE=ssh + secrets SSH_*, DOCKERHUB_*, LETSENCRYPT_EMAIL
   deploy_ssh_bootstrap:
-    needs: [build, push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_MODE == 'ssh'
+    needs: push
+    if: |
+      always() &&
+      needs.push.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
+      vars.DEPLOY_MODE == 'ssh'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -211,7 +202,7 @@ jobs:
           chmod 600 "$HOME/.ssh/id_rsa"
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> "$HOME/.ssh/known_hosts"
 
-      - name: Bootstrap k3s and deploy
+      - name: Sync manifests + apply on server
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -219,11 +210,14 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
         run: |
-          # Ship k8s manifests to server
-          rsync -az --delete -e "ssh -i $HOME/.ssh/id_rsa" ./k8s "${SSH_USER}@${SSH_HOST}:~/interviewgenie-k8s"
+          rsync -az --delete -e "ssh -i $HOME/.ssh/id_rsa" ./k8s ./scripts "${SSH_USER}@${SSH_HOST}:~/interviewgenie-k8s/"
 
+          # Secrets expanded on the runner before ssh (avoid special chars in tokens if possible).
           ssh -i "$HOME/.ssh/id_rsa" "${SSH_USER}@${SSH_HOST}" bash -lc "set -euo pipefail
-            # Install prerequisites (Debian/Ubuntu vs RHEL/Oracle Linux)
+            export DOCKERHUB_USERNAME=\"${DOCKERHUB_USERNAME}\"
+            export DOCKERHUB_TOKEN=\"${DOCKERHUB_TOKEN}\"
+            LE_MAIL=\"${LETSENCRYPT_EMAIL}\"
+
             if ! command -v curl >/dev/null 2>&1; then
               if command -v dnf >/dev/null 2>&1; then sudo dnf install -y curl
               elif command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y curl
@@ -235,44 +229,23 @@ jobs:
               fi
             fi
 
-            # Install k3s (includes Traefik)
             if ! command -v k3s >/dev/null 2>&1; then curl -sfL https://get.k3s.io | sh -; fi
-
-            # kubectl via k3s
             sudo k3s kubectl get nodes
 
-            # Create kubeconfig for current user
-            mkdir -p ~/.kube
-            sudo cat /etc/rancher/k3s/k3s.yaml > ~/.kube/config
-            sudo chown \$(id -u):\$(id -g) ~/.kube/config
-            chmod 600 ~/.kube/config
+            mkdir -p \$HOME/.kube
+            sudo cat /etc/rancher/k3s/k3s.yaml > \$HOME/.kube/config
+            sudo chown \$(id -u):\$(id -g) \$HOME/.kube/config
+            chmod 600 \$HOME/.kube/config
+            export KUBECONFIG=\$HOME/.kube/config
 
-            # Login to Docker Hub (so pulls work on the node)
-            if [ -n \"${DOCKERHUB_USERNAME}\" ] && [ -n \"${DOCKERHUB_TOKEN}\" ]; then
-              echo \"${DOCKERHUB_TOKEN}\" | docker login -u \"${DOCKERHUB_USERNAME}\" --password-stdin
+            if [ -n \"\${DOCKERHUB_USERNAME}\" ] && [ -n \"\${DOCKERHUB_TOKEN}\" ]; then
+              printf '%s' \"\${DOCKERHUB_TOKEN}\" | docker login -u \"\${DOCKERHUB_USERNAME}\" --password-stdin
             fi
 
-            # Optional: override default ACME email from repo (azizowaisi@teckiz.com)
-            if [ -n \"${LETSENCRYPT_EMAIL}\" ]; then
-              sed -i \"s|azizowaisi@teckiz.com|${LETSENCRYPT_EMAIL}|g\" ~/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml
+            if [ -n \"\${LE_MAIL}\" ]; then
+              sed -i \"s|azizowaisi@teckiz.com|\${LE_MAIL}|g\" \$HOME/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml || true
             fi
 
-            # Traefik HelmChartConfig must land in kube-system (not kustomize interview-ai namespace)
-            kubectl apply -f ~/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml
-
-            # Point app images at Docker Hub (matches GitHub push job naming)
-            sed -i \"s|image: interview-ai/api-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-api-service:latest|g\" ~/interviewgenie-k8s/k8s/api-service/deployment.yaml
-            sed -i \"s|image: interview-ai/audio-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-audio-service:latest|g\" ~/interviewgenie-k8s/k8s/audio-service/deployment.yaml
-            sed -i \"s|image: interview-ai/stt-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-stt-service:latest|g\" ~/interviewgenie-k8s/k8s/stt-service/deployment.yaml
-            sed -i \"s|image: interview-ai/question-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-question-service:latest|g\" ~/interviewgenie-k8s/k8s/question-service/deployment.yaml
-            sed -i \"s|image: interview-ai/llm-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-llm-service:latest|g\" ~/interviewgenie-k8s/k8s/llm-service/deployment.yaml
-            sed -i \"s|image: interview-ai/formatter-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-formatter-service:latest|g\" ~/interviewgenie-k8s/k8s/formatter-service/deployment.yaml
-            sed -i \"s|image: interview-ai/monitoring-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-monitoring-service:latest|g\" ~/interviewgenie-k8s/k8s/monitoring-service/deployment.yaml
-            sed -i \"s|image: interview-ai/web:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-web:latest|g\" ~/interviewgenie-k8s/k8s/web-service/deployment.yaml
-
-            # Apply manifests
-            kubectl apply -k ~/interviewgenie-k8s/k8s/
-
-            # Trigger model pull (non-fatal)
-            kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b || true
+            chmod +x \$HOME/interviewgenie-k8s/scripts/ci/k8s-apply.sh
+            bash \$HOME/interviewgenie-k8s/scripts/ci/k8s-apply.sh
           "

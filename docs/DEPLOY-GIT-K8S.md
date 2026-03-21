@@ -51,6 +51,28 @@ In **Settings → Secrets and variables → Actions → Variables** (not Secrets
 | `DEPLOY_MODE` | `self_hosted` | Deploy from a self-hosted runner on the VM |
 | *(omit or other)* | — | No automatic deploy job (build/push still run on `main`) |
 
+### What every k3s deploy path runs (same behavior)
+
+All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rsync:
+
+1. **`kubectl apply -f k8s/traefik/helmchartconfig.yaml`** (kube-system — Let’s Encrypt / Traefik)
+2. **`kubectl apply -k k8s/`** (namespace `interview-ai`: apps, ingress, mongo, ollama, HPA, …)
+3. If **`DOCKERHUB_USERNAME`** is set: **`kubectl set image`** on each app Deployment (including **`web`**) to `*/interview-ai-*:latest`
+4. **`kubectl rollout status`** on `api-service`, `audio-service`, `web`, `monitoring-service`
+5. **`kubectl get pods`** and a best-effort **`ollama pull qwen2.5:0.5b`**
+
+**Manual workflow:** **Actions → Build and Deploy → Run workflow** — also **pushes images** (same as a push to `main`). Options:
+
+- **Skip tests** — skip Python tests; still builds/pushes/deploys.
+- **Skip deploy** — push images only (no `kubectl`).
+
+**On the VM without Actions:** from a clone of the repo:
+
+```bash
+export DOCKERHUB_USERNAME=youruser   # optional, if cluster pulls from Hub
+./scripts/deploy-k3s.sh
+```
+
 ---
 
 ## Recommended approach (Oracle VM): self-hosted runner (no public 6443)
