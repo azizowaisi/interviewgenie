@@ -304,12 +304,12 @@ Two workflows so **merging a PR does not start two pipelines**:
 
 | Workflow | When | What |
 |----------|------|------|
-| **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **`backend-tests`** (pytest) then **`build-verify`** (Next build, both Vue Vite builds, then all **Docker** images — no push) |
+| **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **`backend-tests`** (pytest matrix) + parallel **`frontend-verify`** (web + 2× Vue) + parallel **`docker-verify`** (8 images, one job each); **`ci-gate`** aggregates |
 | **Build and Deploy** | **Push to `main`** (merge) or **manual dispatch** | Test + build + **Docker Hub push** + **Kubernetes deploy on the server** (default: **remote** `kubectl` via `KUBE_CONFIG`; set `DEPLOY_MODE=none` to skip deploy) |
 
-**Before merge:** turn on branch protection and require **`CI / backend-tests`** and **`CI / build-verify`**. See **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**. **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
+**Before merge:** turn on branch protection and require **`CI / ci-gate`** (or individual jobs — see **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**). **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
 
-- **Deploy**: By default the workflow **deploys to the cluster** (remote `kubectl`). Add secret **`KUBE_CONFIG`** (base64). Override with variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
+- **Deploy**: By default the workflow **deploys to the cluster** (remote `kubectl`). Add secret **`KUBE_CONFIG`** (base64). Without it, **kubectl is skipped** (warning; push may still run). Override with variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 
 ---
 
