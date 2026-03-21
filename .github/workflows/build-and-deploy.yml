@@ -88,6 +88,11 @@ jobs:
         env:
           DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
           DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          # Optional repo Variables — override if your public hostnames differ from teckiz.com defaults.
+          WEB_PUBLIC_APP_URL: ${{ vars.WEB_PUBLIC_APP_URL }}
+          WEB_ADMIN_SITE_URL: ${{ vars.WEB_ADMIN_SITE_URL }}
+          WEB_ADMIN_HOSTS: ${{ vars.WEB_ADMIN_HOSTS }}
+          WEB_MAIN_APP_HOSTS: ${{ vars.WEB_MAIN_APP_HOSTS }}
         run: |
           if [ -z "${DH_TOKEN}" ]; then
             echo "No DOCKERHUB_TOKEN; skipping Docker Hub push."
@@ -110,8 +115,17 @@ jobs:
               "./backend/${s}" \
               --push
           done
+          PUB="${WEB_PUBLIC_APP_URL:-https://interviewgenie.teckiz.com}"
+          ADM_SITE="${WEB_ADMIN_SITE_URL:-https://admin.interviewgenie.teckiz.com}"
+          ADM_HOSTS="${WEB_ADMIN_HOSTS:-admin.interviewgenie.teckiz.com}"
+          MAIN_HOSTS="${WEB_MAIN_APP_HOSTS:-interviewgenie.teckiz.com,www.interviewgenie.teckiz.com}"
+          echo "Web image NEXT_PUBLIC_*: PUB=$PUB ADM_SITE=$ADM_SITE ADM_HOSTS=$ADM_HOSTS MAIN_HOSTS=$MAIN_HOSTS"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
+            --build-arg "NEXT_PUBLIC_PUBLIC_APP_URL=${PUB}" \
+            --build-arg "NEXT_PUBLIC_ADMIN_SITE_URL=${ADM_SITE}" \
+            --build-arg "NEXT_PUBLIC_ADMIN_HOSTS=${ADM_HOSTS}" \
+            --build-arg "NEXT_PUBLIC_MAIN_APP_HOSTS=${MAIN_HOSTS}" \
             -t "${DH_USER}/interview-ai-web:latest" \
             "./web" \
             --push

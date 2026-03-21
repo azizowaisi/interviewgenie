@@ -42,15 +42,22 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          # Use main app Host so behavior matches ingress (middleware is host-aware).
           readinessProbe:
             httpGet:
               path: /
               port: 3002
+              httpHeaders:
+                - name: Host
+                  value: interviewgenie.teckiz.com
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /
               port: 3002
+              httpHeaders:
+                - name: Host
+                  value: interviewgenie.teckiz.com
             initialDelaySeconds: 15
             periodSeconds: 20
