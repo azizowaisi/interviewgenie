@@ -380,22 +380,29 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Require KUBE_CONFIG for remote deploy
+      - name: Check KUBE_CONFIG (skip deploy if missing)
+        id: kube
         env:
           KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG }}
         run: |
           if [ -z "${KUBE_CONFIG_B64}" ]; then
-            echo "::error::Remote deploy is enabled (DEPLOY_MODE unset, remote, or empty) but KUBE_CONFIG secret is missing. Add base64 kubeconfig, or set DEPLOY_MODE=ssh / self_hosted, or DEPLOY_MODE=none to push images only."
-            exit 1
+            echo "::warning::Remote deploy is selected (DEPLOY_MODE unset, empty, or remote) but the KUBE_CONFIG secret is missing — skipping kubectl apply. Images may still have been pushed."
+            echo "To deploy from GitHub: add repo secret **KUBE_CONFIG** (base64-encoded kubeconfig)."
+            echo "To push images only: set Actions variable **DEPLOY_MODE** to **none** (or **ssh** / **self_hosted** if you deploy elsewhere)."
+            echo "has_config=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "has_config=true" >> "$GITHUB_OUTPUT"
 
       - name: Set up kubeconfig
+        if: steps.kube.outputs.has_config == 'true'
         run: |
           mkdir -p "$HOME/.kube"
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
 
       - name: Deploy to cluster (k3s-compatible)
+        if: steps.kube.outputs.has_config == 'true'
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
