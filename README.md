@@ -276,7 +276,7 @@ InterviewGenie/
 Backend services include unit and mock tests (pytest).
 
 ```bash
-# Run all backend tests (from repo root; requires Python 3.11+ and pip)
+# Run all backend tests (from repo root; requires Python 3.12+ and pip)
 ./scripts/run_tests.sh
 
 # Or run per service
