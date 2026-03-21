@@ -304,10 +304,10 @@ Two workflows so **merging a PR does not start two pipelines**:
 
 | Workflow | When | What |
 |----------|------|------|
-| **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **pytest** + **Docker build** only |
+| **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **`backend-tests`** (pytest) then **`build-verify`** (Next build, both Vue Vite builds, then all **Docker** images — no push) |
 | **Build and Deploy** | **Push to `main`** (merge) or **manual dispatch** | Test + build + **Docker Hub push** + **Kubernetes deploy** (per `DEPLOY_MODE`) |
 
-Use the **CI** check as the required status for branch protection on `main`. **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
+**Before merge:** turn on branch protection and require **`CI / backend-tests`** and **`CI / build-verify`**. See **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**. **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
 
 - **Deploy**: Set repository **variable** `DEPLOY_MODE` to `ssh`, `remote`, or `self_hosted`. Add matching secrets. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 

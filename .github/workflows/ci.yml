@@ -1,5 +1,10 @@
-# Pull requests only — does not run on merge/push to main (see build-and-deploy.yml).
-# Avoids duplicate "Build and Deploy" runs when merging (PR synchronize + main push).
+# Pull requests only — full verification before merge (no push / no deploy).
+# Merge to main → build-and-deploy.yml runs separately (single deploy pipeline).
+#
+# Branch protection: require both jobs below before merging to main.
+#   GitHub → Settings → Rules → Branch rules → main → Require status checks:
+#     - "CI / backend-tests"
+#     - "CI / build-verify"
 name: CI
 
 on:
@@ -12,7 +17,8 @@ env:
   SERVICES: api-service audio-service stt-service question-service llm-service formatter-service monitoring-service
 
 jobs:
-  test:
+  backend-tests:
+    name: backend-tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -30,19 +36,51 @@ jobs:
             (cd backend/$s && python -m pytest tests/ -v --tb=short) || exit 1
           done
 
-  build:
-    needs: test
-    if: always() && needs.test.result == 'success'
+  build-verify:
+    name: build-verify
+    needs: backend-tests
+    if: always() && needs.backend-tests.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            backend/api-service/frontend/package-lock.json
+            backend/monitoring-service/frontend/package-lock.json
+
+      # Next.js (same as web/Dockerfile deps: npm ci + build)
+      - name: Web — npm ci & next build
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: API Vue SPA — npm ci & vite build
+        run: |
+          cd backend/api-service/frontend
+          npm ci
+          npm run build
+
+      - name: Monitoring Vue admin — npm ci & vite build
+        run: |
+          cd backend/monitoring-service/frontend
+          npm ci
+          npm run build
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build all service images (no push)
+      - name: Docker — all service images + web
         run: |
           for s in ${{ env.SERVICES }}; do
+            echo "==== docker build backend/$s ===="
             docker build -t interview-ai/$s:latest ./backend/$s
           done
+          echo "==== docker build web ===="
           docker build -t interview-ai/web:latest ./web
