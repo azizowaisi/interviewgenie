@@ -18,6 +18,8 @@ from kubernetes.client.rest import ApiException
 # --- Config ---
 NAMESPACE = os.environ.get("TARGET_NAMESPACE", "interview-ai")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "").strip()
+DASHBOARD_ENV_LABEL = os.environ.get("DASHBOARD_ENV_LABEL", "Production").strip()
+DASHBOARD_SERVER_LABEL = os.environ.get("DASHBOARD_SERVER_LABEL", "").strip()
 RESTARTABLE = frozenset(
     d.strip()
     for d in os.environ.get(
@@ -120,6 +122,17 @@ async def startup():
 @app.get("/healthz")
 async def healthz():
     return {"ok": True}
+
+
+@app.get("/api/config")
+async def api_config():
+    """Non-sensitive labels for the admin UI topbar."""
+    return {
+        "namespace": NAMESPACE,
+        "environment_label": DASHBOARD_ENV_LABEL or "Production",
+        "server_label": DASHBOARD_SERVER_LABEL or "Kubernetes",
+        "auth_required": bool(ADMIN_TOKEN),
+    }
 
 
 async def _pod_metrics_map(ns: str) -> dict[tuple[str, str], dict[str, str]]:
@@ -232,6 +245,80 @@ async def api_cluster():
         "pods_total": total,
         "pods_running": running,
         "pods_failed": failed,
+        "metrics_available": bool(metrics_items),
+    }
+
+
+@app.get("/api/infrastructure")
+async def api_infrastructure():
+    """Node capacity & allocatable (AWS-console style infra view)."""
+    if _core_v1 is None:
+        raise HTTPException(503, "K8s not ready")
+    nodes = await _run_sync(_core_v1.list_node, _request_timeout=30)
+    metrics_items = await _node_metrics_list()
+    m_by_name = {m["metadata"]["name"]: m for m in metrics_items}
+
+    out = []
+    for n in nodes.items:
+        name = n.metadata.name
+        ready = any(
+            c.type == "Ready" and c.status == "True"
+            for c in (n.status.conditions or [])
+        )
+        cap = n.status.capacity or {}
+        alloc = n.status.allocatable or {}
+        labels = n.metadata.labels or {}
+        ni = n.status.node_info
+        alloc_cpu = alloc.get("cpu", "0")
+        alloc_mem = alloc.get("memory", "0")
+        cpu_m = _parse_quantity_cpu(alloc_cpu)
+        mem_b = _parse_quantity_mem(alloc_mem)
+        cpu_pct = None
+        mem_pct = None
+        mi = m_by_name.get(name)
+        if mi and cpu_m > 0:
+            u = mi.get("usage", {})
+            used_cpu = _parse_quantity_cpu(u.get("cpu", "0"))
+            cpu_pct = min(100.0, round(100.0 * used_cpu / cpu_m, 1))
+        if mi and mem_b > 0:
+            u = mi.get("usage", {})
+            used_mem = _parse_quantity_mem(u.get("memory", "0"))
+            mem_pct = min(100.0, round(100.0 * used_mem / mem_b, 1))
+
+        cap_cpu_raw = cap.get("cpu", "")
+        cores_display = cap_cpu_raw
+        if cap_cpu_raw and not str(cap_cpu_raw).endswith("m"):
+            try:
+                cval = float(str(cap_cpu_raw).strip())
+                cores_display = f"{int(cval) if cval == int(cval) else cval} cores"
+            except ValueError:
+                pass
+
+        out.append(
+            {
+                "name": name,
+                "ready": ready,
+                "architecture": labels.get("kubernetes.io/arch", ""),
+                "instance_type": labels.get("node.kubernetes.io/instance-type", "")
+                or labels.get("beta.kubernetes.io/instance-type", ""),
+                "os_image": ni.os_image if ni else "",
+                "kernel_version": ni.kernel_version if ni else "",
+                "kubelet_version": ni.kubelet_version if ni else "",
+                "container_runtime": ni.container_runtime_version if ni else "",
+                "capacity_cpu": cap_cpu_raw,
+                "capacity_cpu_display": cores_display,
+                "capacity_memory": cap.get("memory", ""),
+                "capacity_memory_bytes": _parse_quantity_mem(cap.get("memory", "0")),
+                "capacity_ephemeral_bytes": _parse_quantity_mem(cap.get("ephemeral-storage", "0")),
+                "allocatable_cpu": alloc_cpu,
+                "allocatable_memory": alloc.get("memory", ""),
+                "allocatable_ephemeral_bytes": _parse_quantity_mem(alloc.get("ephemeral-storage", "0")),
+                "cpu_percent": cpu_pct,
+                "memory_percent": mem_pct,
+            }
+        )
+    return {
+        "nodes": out,
         "metrics_available": bool(metrics_items),
     }
 
@@ -423,8 +510,11 @@ async def api_restart(
     return {"ok": True, "deployment": deployment, "namespace": namespace}
 
 
-# --- Static UI ---
+# --- Static UI (Vite + Vue build → static/index.html + static/assets/*) ---
 static_dir = os.path.join(os.path.dirname(__file__), "static")
+_admin_assets = os.path.join(static_dir, "assets")
+if os.path.isdir(_admin_assets):
+    app.mount("/assets", StaticFiles(directory=_admin_assets), name="admin_assets")
 
 
 @app.get("/admin")

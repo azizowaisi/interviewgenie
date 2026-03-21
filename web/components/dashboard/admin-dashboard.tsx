@@ -1,0 +1,412 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { monFetch } from "@/lib/api-fetch";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import {
+  Activity,
+  Cpu,
+  HardDrive,
+  LayoutDashboard,
+  RefreshCw,
+  Server,
+  ScrollText,
+  Boxes,
+} from "lucide-react";
+
+const RESTART_DEPLOYMENTS = [
+  "api-service",
+  "audio-service",
+  "stt-service",
+  "question-service",
+  "llm-service",
+  "formatter-service",
+  "ollama",
+  "whisper-service",
+] as const;
+
+const SERVICE_LABELS: Record<string, string> = {
+  "api-service": "Backend",
+  "audio-service": "Audio pipeline",
+  "frontend": "Frontend",
+  "mongo": "MongoDB",
+  "mongodb": "MongoDB",
+  "ollama": "Ollama",
+  "whisper-service": "Whisper",
+  "stt-service": "STT",
+  "question-service": "Question",
+  "llm-service": "LLM",
+  "formatter-service": "Formatter",
+  "monitoring-service": "Monitoring",
+};
+
+function formatBytes(n: number | null | undefined) {
+  if (n == null || n <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(1)} ${units[i]}`;
+}
+
+type Cluster = {
+  nodes?: { name: string; cpu_percent?: number | null; memory_percent?: number | null }[];
+  pods_total?: number;
+  pods_running?: number;
+  pods_failed?: number;
+};
+
+type PodRow = { name: string; status: string; cpu: string; memory: string };
+type SvcRow = {
+  name: string;
+  status: string;
+  cpu_millicores?: number | null;
+  memory_bytes?: number | null;
+  pods_ready?: string;
+};
+
+export function AdminDashboard() {
+  const [cluster, setCluster] = useState<Cluster | null>(null);
+  const [pods, setPods] = useState<PodRow[]>([]);
+  const [services, setServices] = useState<SvcRow[]>([]);
+  const [config, setConfig] = useState<{ environment_label?: string; namespace?: string } | null>(null);
+  const [logs, setLogs] = useState("");
+  const [logPod, setLogPod] = useState("");
+  const [restartDep, setRestartDep] = useState<string>(RESTART_DEPLOYMENTS[0]);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setMsg(null);
+    try {
+      const [c, p, s, cfg] = await Promise.all([
+        monFetch("cluster"),
+        monFetch("pods"),
+        monFetch("services"),
+        monFetch("config"),
+      ]);
+      if (c.ok) setCluster(await c.json());
+      if (p.ok) {
+        const j = (await p.json()) as { pods?: PodRow[] };
+        const list = j.pods || [];
+        setPods(list);
+        setLogPod((prev) => prev || list[0]?.name || "");
+      }
+      if (s.ok) {
+        const j = (await s.json()) as { services?: SvcRow[] };
+        setServices(j.services || []);
+      }
+      if (cfg.ok) setConfig(await cfg.json());
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Refresh failed");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const nodes = cluster?.nodes || [];
+  const withCpu = nodes.filter((n) => n.cpu_percent != null);
+  const withMem = nodes.filter((n) => n.memory_percent != null);
+  const avgCpu =
+    withCpu.length > 0 ? withCpu.reduce((a, n) => a + (n.cpu_percent ?? 0), 0) / withCpu.length : null;
+  const avgMem =
+    withMem.length > 0 ? withMem.reduce((a, n) => a + (n.memory_percent ?? 0), 0) / withMem.length : null;
+
+  const systemOk = (cluster?.pods_failed ?? 0) === 0;
+
+  async function loadLogs() {
+    if (!logPod) return;
+    setMsg(null);
+    try {
+      const r = await monFetch(`logs?pod=${encodeURIComponent(logPod)}&tail=800`);
+      setLogs(r.ok ? await r.text() : await r.text());
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Logs failed");
+    }
+  }
+
+  async function restartService() {
+    setMsg(null);
+    try {
+      const r = await fetch(`/api/mon/restart?deployment=${encodeURIComponent(restartDep)}`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      const t = await r.text();
+      setMsg(r.ok ? `Restart triggered: ${restartDep}` : t);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Restart failed");
+    }
+  }
+
+  const highlighted = ["api-service", "frontend", "mongo", "ollama", "whisper-service"];
+  const displayServices =
+    services.length > 0
+      ? [...services].sort((a, b) => {
+          const ai = highlighted.indexOf(a.name);
+          const bi = highlighted.indexOf(b.name);
+          if (ai === -1 && bi === -1) return a.name.localeCompare(b.name);
+          if (ai === -1) return 1;
+          if (bi === -1) return -1;
+          return ai - bi;
+        })
+      : highlighted.map((name) => ({
+          name,
+          status: "—",
+          cpu_millicores: null as number | null,
+          memory_bytes: null as number | null,
+          pods_ready: "—",
+        }));
+
+  return (
+    <div className="flex min-h-screen">
+      <aside className="hidden w-56 shrink-0 border-r border-border bg-card p-4 md:block">
+        <div className="mb-8 flex items-center gap-2 font-semibold">
+          <LayoutDashboard className="h-5 w-5 text-primary" />
+          Admin
+        </div>
+        <nav className="grid gap-1 text-sm">
+          <span className="rounded-lg bg-secondary px-3 py-2 font-medium">Dashboard</span>
+          <Link href="/" className="rounded-lg px-3 py-2 text-muted-foreground hover:bg-secondary hover:text-foreground">
+            Main site
+          </Link>
+        </nav>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border bg-background/95 px-4 py-4 backdrop-blur">
+          <div>
+            <h1 className="text-lg font-semibold">Monitoring</h1>
+            <p className="text-xs text-muted-foreground">
+              {config?.environment_label ?? "—"} · NS {config?.namespace ?? "—"}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={refresh} disabled={loading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh Data
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/">Exit</Link>
+            </Button>
+          </div>
+        </header>
+
+        <div className="flex-1 space-y-8 p-4 md:p-6">
+          {msg && (
+            <p className="rounded-xl border border-border bg-secondary/30 p-3 text-sm text-muted-foreground">{msg}</p>
+          )}
+
+          <section>
+            <h2 className="mb-4 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Activity className="h-4 w-4" />
+              Cluster overview
+            </h2>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Card className="shadow-md">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Cpu className="h-4 w-4" />
+                    CPU usage
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold">{avgCpu != null && !Number.isNaN(avgCpu) ? `${avgCpu.toFixed(1)}%` : "—"}</p>
+                  <p className="text-xs text-muted-foreground">Avg. across nodes</p>
+                </CardContent>
+              </Card>
+              <Card className="shadow-md">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <HardDrive className="h-4 w-4" />
+                    Memory usage
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold">{avgMem != null && !Number.isNaN(avgMem) ? `${avgMem.toFixed(1)}%` : "—"}</p>
+                  <p className="text-xs text-muted-foreground">Avg. across nodes</p>
+                </CardContent>
+              </Card>
+              <Card className="shadow-md">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Boxes className="h-4 w-4" />
+                    Pods running
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold">{cluster?.pods_running ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground">of {cluster?.pods_total ?? "—"} total</p>
+                </CardContent>
+              </Card>
+              <Card className="shadow-md">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Server className="h-4 w-4" />
+                    System status
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Badge variant={systemOk ? "success" : "destructive"} className="text-sm">
+                    {systemOk ? "Healthy" : "Check failures"}
+                  </Badge>
+                  <p className="mt-2 text-xs text-muted-foreground">Failed pods: {cluster?.pods_failed ?? "—"}</p>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          <Separator />
+
+          <section>
+            <h2 className="mb-4 text-sm font-medium text-muted-foreground">Services</h2>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {displayServices.slice(0, 12).map((svc) => (
+                <Card key={svc.name} className="shadow-md">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">{SERVICE_LABELS[svc.name] ?? svc.name}</CardTitle>
+                    <CardDescription className="font-mono text-xs">{svc.name}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Status</span>
+                      <Badge variant="outline">{svc.status}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">CPU</span>
+                      <span>{svc.cpu_millicores != null ? `${svc.cpu_millicores} m` : "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Memory</span>
+                      <span>{formatBytes(svc.memory_bytes ?? null)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Pods</span>
+                      <span>{svc.pods_ready}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-4 text-sm font-medium text-muted-foreground">Pods</h2>
+            <Card className="shadow-md">
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Pod name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>CPU</TableHead>
+                      <TableHead>Memory</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pods.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          No pod data (is monitoring API reachable?)
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      pods.map((pod) => (
+                        <TableRow key={pod.name}>
+                          <TableCell className="font-mono text-xs">{pod.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{pod.status}</Badge>
+                          </TableCell>
+                          <TableCell>{pod.cpu || "—"}</TableCell>
+                          <TableCell>{pod.memory || "—"}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-2">
+            <Card className="shadow-md">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ScrollText className="h-4 w-4" />
+                  Logs viewer
+                </CardTitle>
+                <CardDescription>Select a pod and load recent logs.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label>Pod</Label>
+                  <select
+                    value={logPod}
+                    onChange={(e) => setLogPod(e.target.value)}
+                    className="flex h-10 w-full rounded-xl border border-input bg-secondary/50 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {pods.length === 0 ? (
+                      <option value="">—</option>
+                    ) : (
+                      pods.map((p) => (
+                        <option key={p.name} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+                <Button variant="secondary" className="w-fit" onClick={loadLogs}>
+                  Load logs
+                </Button>
+                <pre className="max-h-80 overflow-auto rounded-xl border border-border bg-secondary/20 p-4 text-xs leading-relaxed">
+                  {logs || "—"}
+                </pre>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-md">
+              <CardHeader>
+                <CardTitle className="text-base">Actions</CardTitle>
+                <CardDescription>Restart a deployment (allow-listed on the monitoring API).</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label>Deployment</Label>
+                  <select
+                    value={restartDep}
+                    onChange={(e) => setRestartDep(e.target.value)}
+                    className="flex h-10 w-full rounded-xl border border-input bg-secondary/50 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {RESTART_DEPLOYMENTS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button variant="destructive" className="w-fit" onClick={restartService}>
+                  Restart service
+                </Button>
+              </CardContent>
+            </Card>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}

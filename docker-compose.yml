@@ -3,6 +3,11 @@
 # Run: docker compose --profile ollama up -d
 # Pull ultra-light model once: docker compose exec ollama ollama pull qwen2.5:0.5b
 # Clients: ws://localhost:8000/ws/audio (audio), http://localhost:8001 (API)
+#
+# Full stack + Next.js web UI + admin (no Kubernetes):
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama up -d --build
+#   open http://localhost:3002
+# Or: npm run local:up  (see root package.json)
 
 services:
   api-service:
@@ -20,7 +25,8 @@ services:
     volumes:
       - cv_uploads:/cv_storage
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
 
   mongo:
     image: mongo:7
@@ -28,6 +34,12 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
 
   audio-service:
     build:

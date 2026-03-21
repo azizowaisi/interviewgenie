@@ -69,7 +69,23 @@ This starts: **MongoDB** (port 27017), **api-service** (8001), **audio-service**
 
 The **audio service** is on **port 8000** (WebSocket: `ws://localhost:8000/ws/audio`). Questions are **transcribed live**; after ~1 s of silence the question is sent to the LLM and the answer **streams back**.
 
-### 2. Desktop client (Electron)
+### 2. Full stack + Next.js web (browser UI, `/admin` without Kubernetes)
+
+From the repo root:
+
+```bash
+npm run local:up
+# First time only:
+docker compose --profile ollama exec ollama ollama pull qwen2.5:0.5b
+```
+
+- **Web app:** http://localhost:3002 (interview flows, ATS, history)
+- **Admin:** same origin `/admin` (uses a **local monitoring stub** — not real cluster metrics)
+- **API:** http://localhost:8001
+
+Details, hybrid dev (Docker backends + `npm run dev` in `web/`), and **production** env vars: **[docs/LOCAL-FULL-STACK.md](docs/LOCAL-FULL-STACK.md)**.
+
+### 3. Desktop client (Electron)
 
 Defaults to **production** (`https://interviewgenie.teckiz.com` + `wss://…/ws/audio`). For **local** Docker, set `INTERVIEWGENIE_API_BASE`, `INTERVIEWGENIE_AUDIO_BASE`, and `INTERVIEWGENIE_WS_URL` — see `clients/electron-app/README.md`.
 
@@ -81,7 +97,7 @@ npm start
 
 Click **Start recording** — the question appears **live** as you speak. After ~1 s of silence the answer streams in automatically. Click **Stop** to end the session.
 
-### 3. Test that it’s working
+### 4. Test that it’s working
 
 | Step | What to do | Expected |
 |------|------------|----------|
@@ -95,7 +111,7 @@ Click **Start recording** — the question appears **live** as you speak. After 
 
 For **no-login** use, send **`X-User-Id: default`** on all API requests and, in the client, send `user_id: "default"` in the first WebSocket message to enable saving Q&A to the API.
 
-### 3. Mobile client (Flutter)
+### 5. Mobile client (Flutter)
 
 ```bash
 cd clients/flutter-app
@@ -160,14 +176,15 @@ kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 ### Admin monitoring dashboard
 
 - **Host**: `https://admin.interviewgenie.teckiz.com` (add DNS **A** record → same IP as the main site; Traefik IngressRoute: `k8s/ingress/admin-ingressroute.yaml`).
-- **Stack**: single pod **`monitoring-service`** (API + static UI), **metrics-server** for CPU/RAM columns, **no** Prometheus/Grafana.
+- **Stack**: single pod **`monitoring-service`** (FastAPI + **Vue**-built admin UI), **metrics-server** for CPU/RAM columns, **no** Prometheus/Grafana.
 - **Security**: optional `kubectl create secret generic monitoring-admin -n interview-ai --from-literal=ADMIN_TOKEN=...` — then set the token in the UI header.
 - Full setup: **`docs/MONITORING-ADMIN.md`**.
 
 ### Web UI (same flows as Electron)
 
-- **`/`** — Product landing page (what Interview Genie does + **“Preparing for an interview? Start the full process”** → `/app`).
-- **`/app`** — Full workspace in the browser (Prepare → ATS → Mock → Live → History), using `fetch` + WebSocket to the same API.
+- **Vue 3 + Vite** apps: **`backend/api-service/frontend/`** (marketing + `/app` shell) and **`backend/monitoring-service/frontend/`** (admin). See **`docs/VUE-FRONTENDS.md`**.
+- **`/`** — Landing (Vue); CTA → **`/app`**.
+- **`/app`** — Interview workspace (Vue route; loads **`workspace.js`** + **`web-bridge.js`** — same behavior as the former single `app.html`).
 
 ### Expose the API
 
