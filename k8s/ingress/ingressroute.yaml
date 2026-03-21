@@ -1,5 +1,10 @@
-# Traefik IngressRoute: expose API and WebSocket (k3s includes Traefik)
-# Single route: avoids duplicate ACME orders from two IngressRoutes with the same tls.domains.
+# Traefik IngressRoute: Next.js on main host + API (FastAPI) on path prefixes + WebSocket on /ws
+# Order: most specific matches first (Traefik ranks longer rules higher by default).
+#
+# - https://interviewgenie.teckiz.com/  → Next.js (web:3002) — same as local http://localhost:3002/
+# - /ws/*                               → audio-service (WebSocket)
+# - /health, /docs, /cv, /topics, …     → api-service (Swagger, Vue /app, Electron REST, etc.)
+#
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -14,16 +19,26 @@ spec:
     domains:
       - main: interviewgenie.teckiz.com
   routes:
-    # PathPrefix(`/ws`) includes /ws/audio — all WebSocket traffic to audio-service
+    # WebSocket pipeline (Electron / clients)
     - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws`)
       kind: Rule
       services:
         - name: audio-service
           port: 8000
           nativeLB: true
-    - match: Host(`interviewgenie.teckiz.com`)
+
+    # FastAPI: REST, Swagger, legacy Vue workspace (/app), static bundles — do not use PathPrefix(`/api`) here (Next BFF uses /api/*)
+    - match: Host(`interviewgenie.teckiz.com`) && (PathPrefix(`/health`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`) || PathPrefix(`/redoc`) || PathPrefix(`/cv`) || PathPrefix(`/sessions`) || PathPrefix(`/history`) || PathPrefix(`/topics`) || PathPrefix(`/attempts`) || PathPrefix(`/ats`) || PathPrefix(`/users`) || PathPrefix(`/static`) || PathPrefix(`/assets`) || PathPrefix(`/app`))
       kind: Rule
       services:
         - name: api-service
           port: 8001
+          nativeLB: true
+
+    # Next.js: marketing + interview UI + /api/app, /api/audio, /api/mon, /_next, …
+    - match: Host(`interviewgenie.teckiz.com`)
+      kind: Rule
+      services:
+        - name: web
+          port: 3002
           nativeLB: true
