@@ -1,6 +1,17 @@
-FROM python:3.11-slim
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
