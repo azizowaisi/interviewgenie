@@ -50,13 +50,20 @@ You must then edit **`k8s/ingress/ingressroute.yaml`**, **`k8s/ingress/admin-ing
 
 ### Day-to-day
 
+| Event | CI does |
+|-------|---------|
+| **Pull request** to `main` | **Tests** + **Docker build** (verify images build) — **no** Docker Hub push, **no** Kubernetes deploy |
+| **Merge** (push to `main`) | Tests + build + **push** images + **deploy** (per `DEPLOY_MODE`) |
+| **Manual** workflow | Same as push to `main` (branch must be `main` for push job); optional **Skip deploy** / **Skip tests** |
+
 ```bash
+# After merge to main (or direct push to main — not recommended for production)
 git push origin main
 ```
 
-Or **Actions → Build and Deploy → Run workflow** (optionally **Skip tests** / **Skip deploy**).
+Or **Actions → Build and Deploy → Run workflow** (run from **`main`** so images push).
 
-Pipeline: **tests → build → push all images → `scripts/ci/k8s-apply.sh`** (Traefik config + `kubectl apply -k k8s/` + `kubectl set image` + rollouts).
+Pipeline on **main**: **tests → build → push all images → `scripts/ci/k8s-apply.sh`** (Traefik config + `kubectl apply -k k8s/` + `kubectl set image` + rollouts).
 
 ---
 

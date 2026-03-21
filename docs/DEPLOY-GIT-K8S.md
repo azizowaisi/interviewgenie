@@ -8,7 +8,8 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 
 ## Overview
 
-1. **GitHub Actions** runs on every push to `main`: tests, builds Docker images, pushes to a registry (Docker Hub), then runs `kubectl apply -k k8s/` against your cluster.
+1. **Pull requests** targeting `main` run **tests** and a **local Docker build** (no registry push, no deploy).
+2. **Pushes to `main`** (e.g. after merging a PR) run tests, build, **push** images to Docker Hub, then run `kubectl apply -k k8s/` (per `DEPLOY_MODE`).
 2. **Which deploy runs** is chosen with a **repository variable** `DEPLOY_MODE` (GitHub does not allow `secrets.*` in workflow `if:` conditions).
 
 ### Rolling deploys & HPA
