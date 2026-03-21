@@ -309,7 +309,7 @@ Two workflows so **merging a PR does not start two pipelines**:
 
 **Before merge:** turn on branch protection and require **`CI / ci-gate`** (or individual jobs — see **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**). **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
 
-- **Deploy**: By default the workflow **deploys to the cluster** (remote `kubectl`). Add secret **`KUBE_CONFIG`** (base64). Override with variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
+- **Deploy**: By default the workflow **deploys to the cluster** (remote `kubectl`). Add secret **`KUBE_CONFIG`** (base64). Without it, **kubectl is skipped** (warning; push may still run). Override with variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 
 ---
 
