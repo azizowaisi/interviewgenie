@@ -1,11 +1,11 @@
 # Push to main + manual dispatch — tests (when relevant), conditional image build/push, deploy.
 # PR validation: ci.yml
 #
-# Deploy modes (repo variable DEPLOY_MODE):
-#   (unset / empty) — same as remote: full k8s deploy (kubectl apply + roll workloads) — DEFAULT
-#   remote          — GitHub-hosted runner + secret KUBE_CONFIG
+# Deploy modes — read from repository VARIABLE `DEPLOY_MODE` first; if empty, from secret `DEPLOY_MODE` (same names).
+#   (unset / empty) — remote kubectl if KUBE_CONFIG is set; else SSH deploy if SSH_* secrets are set
+#   remote          — same as unset (needs KUBE_CONFIG for GitHub-hosted kubectl)
 #   self_hosted     — Runner on the k3s node
-#   ssh             — SSH + rsync + kubectl on VM
+#   ssh             — SSH + rsync + kubectl on VM (always use SSH path even if KUBE_CONFIG exists)
 #   none | off      — Docker push only; skip all deploy jobs
 #
 # Manual dispatch:
@@ -101,6 +101,21 @@ jobs:
               - 'backend/llm-service/**'
               - 'backend/stt-service/**'
               - 'backend/audio-service/**'
+
+      # Variable wins over secret so you can override without deleting the secret.
+      - name: Resolve DEPLOY_MODE (vars.DEPLOY_MODE or secrets.DEPLOY_MODE)
+        id: deploy_mode
+        env:
+          VAR_DEPLOY_MODE: ${{ vars.DEPLOY_MODE }}
+          SECRET_DEPLOY_MODE: ${{ secrets.DEPLOY_MODE }}
+        run: |
+          set -euo pipefail
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          v="$(trim "${VAR_DEPLOY_MODE:-}")"
+          s="$(trim "${SECRET_DEPLOY_MODE:-}")"
+          if [ -n "$v" ]; then m="$v"; else m="$s"; fi
+          m="$(printf '%s' "$m" | tr '[:upper:]' '[:lower:]')"
+          echo "deploy_mode=${m}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve build / test flags
         id: resolve
@@ -370,39 +385,24 @@ jobs:
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
-      (vars.DEPLOY_MODE == 'remote' || vars.DEPLOY_MODE == '') &&
-      vars.DEPLOY_MODE != 'ssh' &&
-      vars.DEPLOY_MODE != 'self_hosted' &&
-      vars.DEPLOY_MODE != 'none' &&
-      vars.DEPLOY_MODE != 'off' &&
-      vars.DEPLOY_MODE != 'false'
+      (needs.detect.outputs.deploy_mode == 'remote' || needs.detect.outputs.deploy_mode == '') &&
+      needs.detect.outputs.deploy_mode != 'ssh' &&
+      needs.detect.outputs.deploy_mode != 'self_hosted' &&
+      needs.detect.outputs.deploy_mode != 'none' &&
+      needs.detect.outputs.deploy_mode != 'off' &&
+      needs.detect.outputs.deploy_mode != 'false' &&
+      secrets.KUBE_CONFIG != ''
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
 
-      - name: Check KUBE_CONFIG (skip deploy if missing)
-        id: kube
-        env:
-          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG }}
-        run: |
-          if [ -z "${KUBE_CONFIG_B64}" ]; then
-            echo "::warning::Remote deploy is selected (DEPLOY_MODE unset, empty, or remote) but the KUBE_CONFIG secret is missing — skipping kubectl apply. Images may still have been pushed."
-            echo "To deploy from GitHub: add repo secret **KUBE_CONFIG** (base64-encoded kubeconfig)."
-            echo "To push images only: set Actions variable **DEPLOY_MODE** to **none** (or **ssh** / **self_hosted** if you deploy elsewhere)."
-            echo "has_config=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "has_config=true" >> "$GITHUB_OUTPUT"
-
       - name: Set up kubeconfig
-        if: steps.kube.outputs.has_config == 'true'
         run: |
           mkdir -p "$HOME/.kube"
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
 
       - name: Deploy to cluster (k3s-compatible)
-        if: steps.kube.outputs.has_config == 'true'
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
@@ -442,7 +442,7 @@ jobs:
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
-      vars.DEPLOY_MODE == 'self_hosted'
+      needs.detect.outputs.deploy_mode == 'self_hosted'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
@@ -492,6 +492,7 @@ jobs:
           export KUBECONFIG="$HOME/.kube/config"
           kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b || true
 
+  # Explicit DEPLOY_MODE=ssh, OR default/remote with no KUBE_CONFIG but SSH secrets (typical k3s VM).
   deploy_ssh_bootstrap:
     needs: [detect, test, build-meta]
     if: |
@@ -499,10 +500,31 @@ jobs:
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
-      vars.DEPLOY_MODE == 'ssh'
+      needs.detect.outputs.deploy_mode != 'none' &&
+      needs.detect.outputs.deploy_mode != 'off' &&
+      needs.detect.outputs.deploy_mode != 'false' &&
+      needs.detect.outputs.deploy_mode != 'self_hosted' &&
+      (
+        needs.detect.outputs.deploy_mode == 'ssh' ||
+        (
+          (needs.detect.outputs.deploy_mode == 'remote' || needs.detect.outputs.deploy_mode == '') &&
+          secrets.KUBE_CONFIG == '' &&
+          secrets.SSH_PRIVATE_KEY != '' &&
+          secrets.SSH_HOST != '' &&
+          secrets.SSH_USER != ''
+        )
+      )
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+
+      - name: Deploy path
+        run: |
+          if [ "${{ needs.detect.outputs.deploy_mode }}" = "ssh" ]; then
+            echo "Using SSH deploy (DEPLOY_MODE=ssh from variable or secret)."
+          else
+            echo "Using SSH deploy (auto: no KUBE_CONFIG; DEPLOY_MODE empty/remote + SSH secrets)."
+          fi
 
       - name: Install SSH client
         run: sudo apt-get update && sudo apt-get install -y openssh-client rsync
