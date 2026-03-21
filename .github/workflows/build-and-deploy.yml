@@ -56,6 +56,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Multi-arch so ARM64 nodes (e.g. Oracle Ampere) can run images built on GitHub amd64 runners
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -82,8 +86,11 @@ jobs:
             exit 1
           fi
           for s in ${{ env.SERVICES }}; do
-            docker build -t "${DH_USER}/interview-ai-${s}:latest" "./backend/${s}"
-            docker push "${DH_USER}/interview-ai-${s}:latest"
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              -t "${DH_USER}/interview-ai-${s}:latest" \
+              "./backend/${s}" \
+              --push
           done
 
   # Option A (recommended): deploy from GitHub-hosted runner using KUBE_CONFIG.
@@ -206,9 +213,17 @@ jobs:
           rsync -az --delete -e "ssh -i $HOME/.ssh/id_rsa" ./k8s "${SSH_USER}@${SSH_HOST}:~/interviewgenie-k8s"
 
           ssh -i "$HOME/.ssh/id_rsa" "${SSH_USER}@${SSH_HOST}" bash -lc "set -euo pipefail
-            # Install prerequisites
-            if ! command -v curl >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y curl; fi
-            if ! command -v docker >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y docker.io; sudo usermod -aG docker \$USER || true; fi
+            # Install prerequisites (Debian/Ubuntu vs RHEL/Oracle Linux)
+            if ! command -v curl >/dev/null 2>&1; then
+              if command -v dnf >/dev/null 2>&1; then sudo dnf install -y curl
+              elif command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y curl
+              else echo 'Install curl manually'; exit 1; fi
+            fi
+            if ! command -v docker >/dev/null 2>&1; then
+              if command -v dnf >/dev/null 2>&1; then sudo dnf install -y docker && sudo systemctl enable --now docker || true
+              elif command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y docker.io && sudo usermod -aG docker \$USER || true
+              fi
+            fi
 
             # Install k3s (includes Traefik)
             if ! command -v k3s >/dev/null 2>&1; then curl -sfL https://get.k3s.io | sh -; fi
@@ -227,8 +242,8 @@ jobs:
               echo \"${DOCKERHUB_TOKEN}\" | docker login -u \"${DOCKERHUB_USERNAME}\" --password-stdin
             fi
 
-            # Replace LETSENCRYPT_EMAIL placeholder in Traefik config before apply
-            sed -i \"s/\\\${LETSENCRYPT_EMAIL}/${LETSENCRYPT_EMAIL}/g\" ~/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml
+            # Replace ACME email placeholder in Traefik HelmChartConfig before apply
+            sed -i \"s/CHANGE_ME_LE_EMAIL/${LETSENCRYPT_EMAIL}/g\" ~/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml
 
             # Point app images at Docker Hub (matches GitHub push job naming)
             sed -i \"s|image: interview-ai/api-service:latest|image: ${DOCKERHUB_USERNAME}/interview-ai-api-service:latest|g\" ~/interviewgenie-k8s/k8s/api-service/deployment.yaml
