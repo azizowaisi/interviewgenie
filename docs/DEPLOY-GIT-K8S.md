@@ -9,8 +9,8 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 ## Overview
 
 1. **Pull requests** → workflow **CI** (`ci.yml`): `backend-tests` (pytest), then `build-verify` (Next.js + Vue Vite builds + Docker image builds; no push, no deploy).
-2. **Pushes to `main`** → workflow **Build and Deploy** (`build-and-deploy.yml`): tests, build, **push** images, then `kubectl apply -k k8s/` (per `DEPLOY_MODE`). Separate from CI so merging does not double-trigger deploy.
-2. **Which deploy runs** is chosen with a **repository variable** `DEPLOY_MODE` (GitHub does not allow `secrets.*` in workflow `if:` conditions).
+2. **Pushes to `main`** → workflow **Build and Deploy** (`build-and-deploy.yml`): tests, build, **push** images, then **`kubectl apply` + rollout** on the cluster. By default **`DEPLOY_MODE` is unset = remote deploy** (needs secret **`KUBE_CONFIG`**). Separate from CI so merging does not double-trigger deploy.
+3. **Override** with repository variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only (no `kubectl`).
 
 ### Rolling deploys & HPA
 
@@ -18,7 +18,7 @@ Manifests include **readiness probes**, **rolling update** strategies, and **Hor
 
 ### ARM64 (Oracle Ampere, Graviton, Apple Silicon nodes)
 
-GitHub-hosted runners build **amd64** images by default. If your VM is **aarch64**, pulling those images causes `exec format error` when the container starts. The **push** job builds **multi-arch** images (`linux/amd64` + `linux/arm64`) so the same tags work on both architectures. After changing this, trigger a new push to `main` so Docker Hub has arm64 variants, then restart workloads (`kubectl rollout restart deployment -n interview-ai --all`).
+GitHub-hosted runners build **amd64** images by default (`DOCKER_BUILD_PLATFORMS` unset). If your nodes are **aarch64**, set Actions variable **`DOCKER_BUILD_PLATFORMS`** to `linux/amd64,linux/arm64` (or `linux/arm64` only); otherwise pulls can fail with `exec format error`. Then push to `main` to rebuild and roll workloads.
 
 ### HTTPS / Let’s Encrypt (Electron & CLI TLS errors)
 
@@ -60,7 +60,7 @@ All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rs
 
 1. **`kubectl apply -f k8s/traefik/helmchartconfig.yaml`** (kube-system — Let’s Encrypt / Traefik)
 2. **`kubectl apply -k k8s/`** (namespace `interview-ai`: apps, ingress, mongo, ollama, HPA, …)
-3. If **`DOCKERHUB_USERNAME`** is set: **`kubectl set image`** on each app Deployment (including **`web`**) to `*/interview-ai-*:latest`
+3. If **`DOCKERHUB_USERNAME`** is set and new images were pushed: **`kubectl set image`** for rebuilt services to `*/interview-ai-*:sha-<commit>` (and `:latest` on Hub); otherwise only manifest apply.
 4. **`kubectl rollout status`** on `api-service`, `audio-service`, `web`, `monitoring-service`
 5. **`kubectl get pods`** and a best-effort **`ollama pull qwen2.5:0.5b`**
 
@@ -191,7 +191,7 @@ newgrp docker
 
 6. **deploy_ssh_bootstrap** – If **`DEPLOY_MODE=ssh`**: SSH to the VM, install k3s if needed, apply manifests.
 
-Result: every push to `main` runs **test → build → push**; **deploy** runs only for the `DEPLOY_MODE` you set (plus the matching secrets).
+Result: every push to `main` runs **test → build → push**; **deploy** runs by default (**remote**) unless `DEPLOY_MODE` is `none` / `off`, or you use `ssh` / `self_hosted` instead.
 
 ---
 
