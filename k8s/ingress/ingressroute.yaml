@@ -9,16 +9,19 @@ spec:
     - web
     - websecure
   routes:
+    # nativeLB: use Service ClusterIP (fixes Traefik 502 to pods on some k3s/kube-proxy setups)
     - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws`)
       kind: Rule
       services:
         - name: audio-service
           port: 8000
+          nativeLB: true
     - match: Host(`interviewgenie.teckiz.com`)
       kind: Rule
       services:
         - name: api-service
           port: 8001
+          nativeLB: true
 ---
 # WebSocket support: use IngressRoute with responseForwarding for long-lived connections
 apiVersion: traefik.io/v1alpha1
@@ -36,3 +39,4 @@ spec:
       services:
         - name: audio-service
           port: 8000
+          nativeLB: true
