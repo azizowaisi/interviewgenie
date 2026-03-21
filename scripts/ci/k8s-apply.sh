@@ -4,9 +4,10 @@
 #
 # Env: KUBECONFIG. Optional: DOCKERHUB_USERNAME, K8S_NAMESPACE (default interview-ai).
 # Optional: K8S_IMAGE_TAG (default latest) — immutable tag e.g. sha-<full github sha> from CI.
-# Optional: K8S_SKIP_SET_IMAGE=1 — only apply manifests; keep running images (doc-only / no-build pipeline).
+# Optional: K8S_SKIP_SET_IMAGE=1 — only apply manifests (used when DOCKERHUB_USERNAME is unset in CI).
 # Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
-#   If unset and not skipping, all app deployments are updated (local convenience).
+#   If unset/empty, all app deployments get `kubectl set image` (CI uses this when pinning :latest).
+# Rollout checks for api-service, audio-service, web, monitoring-service run in parallel (same timeout each).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -56,9 +57,21 @@ elif [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
   echo "=== Skipping kubectl set image (K8S_SKIP_SET_IMAGE=1) — cluster keeps current images ==="
 fi
 
-echo "=== Rollout status (timeout ${ROLLOUT_TIMEOUT}) ==="
+# Rollouts in parallel so wall time ≈ one timeout, not N × timeout (set -e: wait || true).
+echo "=== Rollout status (parallel, timeout ${ROLLOUT_TIMEOUT} each) ==="
+pids=()
 for d in api-service audio-service web monitoring-service; do
-  kubectl rollout status "deployment/${d}" -n "$NS" --timeout="${ROLLOUT_TIMEOUT}" || echo "WARN: rollout ${d} not ready in time"
+  (
+    if kubectl rollout status "deployment/${d}" -n "$NS" --timeout="${ROLLOUT_TIMEOUT}"; then
+      echo "OK: rollout ${d}"
+    else
+      echo "WARN: rollout ${d} not ready in time" >&2
+    fi
+  ) &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || true
 done
 
 echo "=== Pods ($NS) ==="
