@@ -1,0 +1,30 @@
+# Local full stack: Next.js web + fake monitoring API (no Kubernetes required).
+#
+# Usage (from repo root):
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama up -d --build
+#
+# Then open: http://localhost:3002
+# APIs: 8001 (api-service), 8000 (audio), 3001 (monitoring stub), 27017 (mongo)
+
+services:
+  monitoring-local:
+    build:
+      context: ./backend/monitoring-local-stub
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      API_URL: http://api-service:8001
+      AUDIO_URL: http://audio-service:8000
+      MONITORING_URL: http://monitoring-local:3001
+    depends_on:
+      - api-service
+      - audio-service
+      - monitoring-local

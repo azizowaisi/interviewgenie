@@ -7,7 +7,71 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 ## Overview
 
 1. **GitHub Actions** runs on every push to `main`: tests, builds Docker images, pushes to a registry (Docker Hub), then runs `kubectl apply -k k8s/` against your cluster.
-2. Your **single-VM cluster** (k3s) is configured in GitHub with a **kubeconfig** secret. The workflow applies the repo’s `k8s/` manifests and (optionally) substitutes image names so the cluster pulls from your registry.
+2. **Which deploy runs** is chosen with a **repository variable** `DEPLOY_MODE` (GitHub does not allow `secrets.*` in workflow `if:` conditions).
+
+### Rolling deploys & HPA
+
+Manifests include **readiness probes**, **rolling update** strategies, and **HorizontalPodAutoscalers** for stateless app Deployments. See **`docs/K8S-SCALING-AND-ROLLING.md`** for single-node limits, PVC constraints, and tuning `maxReplicas`.
+
+### ARM64 (Oracle Ampere, Graviton, Apple Silicon nodes)
+
+GitHub-hosted runners build **amd64** images by default. If your VM is **aarch64**, pulling those images causes `exec format error` when the container starts. The **push** job builds **multi-arch** images (`linux/amd64` + `linux/arm64`) so the same tags work on both architectures. After changing this, trigger a new push to `main` so Docker Hub has arm64 variants, then restart workloads (`kubectl rollout restart deployment -n interview-ai --all`).
+
+### HTTPS / Let’s Encrypt (Electron & CLI TLS errors)
+
+If browsers show **certificate** errors, Traefik is often still on the **default self-signed** cert. Ensure:
+
+1. **`IngressRoute` TLS** — `k8s/ingress/ingressroute.yaml` includes `tls.certResolver: le` and `domains` for your hostname (resolver name **`le`** matches Traefik `HelmChartConfig`).
+2. **ACME email** — Default in `k8s/traefik/helmchartconfig.yaml` is **`azizowaisi@teckiz.com`**. To use another address, edit that file or set GitHub secret **`LETSENCRYPT_EMAIL`** (SSH deploy overwrites the default when the secret is non-empty).
+3. **Challenge type** — The chart uses **TLS-ALPN-01** on **port 443** (not HTTP-01 on 80), so it still works when Traefik redirects **HTTP → HTTPS** on port 80. Port **443** must be reachable from the internet.
+
+After upgrading from an older manifest that had a second `IngressRoute` named **`interview-ai-ws`**, remove it once:  
+`kubectl delete ingressroute interview-ai-ws -n interview-ai --ignore-not-found`
+
+**Traefik `HelmChartConfig`:** it must live in **`kube-system`**. The app `kustomization.yaml` sets `namespace: interview-ai`, so **do not** include that file in `-k` — apply it directly:
+
+```bash
+kubectl apply -f k8s/traefik/helmchartconfig.yaml
+kubectl apply -k k8s/
+```
+
+If a mis-placed config exists in `interview-ai`, delete it:  
+`kubectl delete helmchartconfig traefik -n interview-ai --ignore-not-found`
+
+If Let’s Encrypt was rate-limited or stuck, delete Traefik’s ACME storage PVC/data and restart Traefik (last resort).
+
+### Required: repository variable `DEPLOY_MODE`
+
+In **Settings → Secrets and variables → Actions → Variables** (not Secrets), add:
+
+| Variable | Value | Effect |
+|----------|--------|--------|
+| `DEPLOY_MODE` | `ssh` | SSH bootstrap deploy (Oracle “do nothing on server”) |
+| `DEPLOY_MODE` | `remote` | Deploy using `KUBE_CONFIG` from GitHub-hosted runner (API 6443 reachable) |
+| `DEPLOY_MODE` | `self_hosted` | Deploy from a self-hosted runner on the VM |
+| *(omit or other)* | — | No automatic deploy job (build/push still run on `main`) |
+
+### What every k3s deploy path runs (same behavior)
+
+All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rsync:
+
+1. **`kubectl apply -f k8s/traefik/helmchartconfig.yaml`** (kube-system — Let’s Encrypt / Traefik)
+2. **`kubectl apply -k k8s/`** (namespace `interview-ai`: apps, ingress, mongo, ollama, HPA, …)
+3. If **`DOCKERHUB_USERNAME`** is set: **`kubectl set image`** on each app Deployment (including **`web`**) to `*/interview-ai-*:latest`
+4. **`kubectl rollout status`** on `api-service`, `audio-service`, `web`, `monitoring-service`
+5. **`kubectl get pods`** and a best-effort **`ollama pull qwen2.5:0.5b`**
+
+**Manual workflow:** **Actions → Build and Deploy → Run workflow** — also **pushes images** (same as a push to `main`). Options:
+
+- **Skip tests** — skip Python tests; still builds/pushes/deploys.
+- **Skip deploy** — push images only (no `kubectl`).
+
+**On the VM without Actions:** from a clone of the repo:
+
+```bash
+export DOCKERHUB_USERNAME=youruser   # optional, if cluster pulls from Hub
+./scripts/deploy-k3s.sh
+```
 
 ---
 
@@ -19,7 +83,7 @@ You will:
 
 - Install **k3s** on the VM
 - Install a **GitHub Actions self-hosted runner** on the VM
-- Set `DEPLOY_SELF_HOSTED=true` in repo secrets
+- Set **`DEPLOY_MODE`** = `self_hosted` (repository **variable**)
 - (Optionally) set Docker Hub secrets so the VM pulls images from the registry
 
 ---
@@ -62,17 +126,19 @@ Keep this output; you’ll paste it into a GitHub secret.
 
 ## 2. GitHub: Repository secrets
 
-In your GitHub repo: **Settings → Secrets and variables → Actions**. Add:
+In your GitHub repo: **Settings → Secrets and variables → Actions → Secrets**. Add:
 
-| Secret              | Required | Description |
-|---------------------|----------|-------------|
-| `DEPLOY_SELF_HOSTED`| **Yes** (recommended) | Set to `true` to deploy from the VM runner. |
-| `DOCKERHUB_USERNAME`| Recommended | Docker Hub username (to pull pushed images). |
-| `DOCKERHUB_TOKEN`   | Recommended | Docker Hub access token (or password). |
-| `KUBE_CONFIG`       | Optional | Only needed for “remote deploy” from GitHub-hosted runners. |
+| Secret              | When | Description |
+|---------------------|------|-------------|
+| `DOCKERHUB_USERNAME`| Push / pull | Docker Hub username |
+| `DOCKERHUB_TOKEN`   | Push / pull | Docker Hub access token |
+| `KUBE_CONFIG`       | `DEPLOY_MODE=remote` | Base64 kubeconfig |
+| `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `LETSENCRYPT_EMAIL` | `DEPLOY_MODE=ssh` | SSH deploy bootstrap |
 
-- If `DEPLOY_SELF_HOSTED=true`, deploy runs on the VM and does **not** require `KUBE_CONFIG`.
-- If you also set `DOCKERHUB_*`, the workflow pushes images and the VM will pull them during rollout.
+Also set **`DEPLOY_MODE`** under **Variables** (see table above).
+
+- **`DEPLOY_MODE=self_hosted`**: deploy runs on the VM runner; does **not** require `KUBE_CONFIG`.
+- With **`DOCKERHUB_*`**, the workflow pushes images and the cluster can pull them.
 
 ---
 
@@ -108,19 +174,21 @@ newgrp docker
 ## 4. What runs on push to `main`
 
 1. **test** – Backend unit tests.
-2. **build** – Builds images for: `api-service`, `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`.
+2. **build** – Builds images for: `api-service`, `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`, `monitoring-service`.
 3. **push** – If `DOCKERHUB_TOKEN` is set: logs in to Docker Hub and pushes `$DOCKERHUB_USERNAME/interview-ai-<service>:latest`.
-4. **deploy_self_hosted** – If `DEPLOY_SELF_HOSTED=true`:
+4. **deploy_self_hosted** – If **`DEPLOY_MODE=self_hosted`**:
    - Uses local k3s kubeconfig from `/etc/rancher/k3s/k3s.yaml`.
    - Applies `kubectl apply -k k8s/`.
    - If `DOCKERHUB_*` are set, it also rewrites images to your Docker Hub repo and the cluster pulls them.
    - Optionally runs a one-time `ollama pull qwen2.5:0.5b` in the cluster (non-blocking).
 
-5. **deploy_remote** – If `KUBE_CONFIG` is set (alternative):
+5. **deploy_remote** – If **`DEPLOY_MODE=remote`** (and `KUBE_CONFIG` secret is set):
    - Decodes kubeconfig and runs `kubectl apply -k k8s/` from a GitHub-hosted runner.
    - This requires your Kubernetes API (port 6443) to be reachable from GitHub-hosted runners.
 
-Result: every push to `main` deploys the current `k8s/` manifests and (when Docker Hub is configured) the newly built images to your single-VM cluster.
+6. **deploy_ssh_bootstrap** – If **`DEPLOY_MODE=ssh`**: SSH to the VM, install k3s if needed, apply manifests.
+
+Result: every push to `main` runs **test → build → push**; **deploy** runs only for the `DEPLOY_MODE` you set (plus the matching secrets).
 
 ---
 
@@ -143,7 +211,7 @@ Also ensure:
 - DNS `A` record: `interviewgenie.teckiz.com` → `132.226.198.193`
 - OCI ingress rules open **80/443** (and **22** for SSH)
 
-When these secrets exist, pushes to `main` run the `deploy_ssh_bootstrap` job.
+Set repository variable **`DEPLOY_MODE`** = `ssh` **and** the SSH secrets above; then pushes to `main` run the `deploy_ssh_bootstrap` job.
 
 ---
 
@@ -169,12 +237,12 @@ If you prefer **not** to use Docker Hub:
 1. Do **not** set `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`.
 2. On the VM, build and load images into k3s after cloning the repo:
    ```bash
-   for s in api-service audio-service stt-service question-service llm-service formatter-service; do
+   for s in api-service audio-service stt-service question-service llm-service formatter-service monitoring-service; do
      docker build -t interview-ai/$s:latest ./backend/$s
      sudo k3s ctr images import --all-platforms <(docker save interview-ai/$s:latest)
    done
    ```
    (Or use a local registry and point k3s at it.)
-3. In GitHub, set only **`KUBE_CONFIG`**. The deploy job will run and apply `k8s/` with default image names (`interview-ai/<service>:latest`). The cluster will use the images you loaded.
+3. In GitHub, set **`DEPLOY_MODE=remote`** and secret **`KUBE_CONFIG`**. The deploy job will apply `k8s/` with default image names (`interview-ai/<service>:latest`). The cluster will use the images you loaded.
 
 For a **fully Git-driven** flow with no manual steps on the VM, use Docker Hub (or another registry) and set all three secrets as above.
