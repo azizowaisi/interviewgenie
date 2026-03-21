@@ -37,6 +37,9 @@ spec:
               value: "interview_ai"
             - name: UPLOAD_DIR
               value: "/cv_storage"
+            # Traefik strips /api/svc before traffic reaches this pod; OpenAPI + root JSON use public paths.
+            - name: PUBLIC_API_PATH_PREFIX
+              value: "/api/svc"
             # AUTH0_DOMAIN / AUTH0_AUDIENCE left unset for no-login; use X-User-Id: default
           resources:
             requests:

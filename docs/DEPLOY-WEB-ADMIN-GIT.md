@@ -90,8 +90,9 @@ export DOCKERHUB_USERNAME=your-dockerhub-user
 
 | Local | Production |
 |-------|------------|
-| http://localhost:3002 | `https://interviewgenie.teckiz.com` → **web:3002** (default route) |
-| http://localhost:8001 | Same host, path prefixes `/health`, `/docs`, `/cv`, … → **api-service:8001** |
+| http://localhost:3002 | `https://interviewgenie.teckiz.com` → **web:3002** (default route); **`/`** is Next.js only |
+| http://localhost:8001 | **`/api/svc/*`** (Traefik strips prefix) → **api-service:8001** — e.g. `/api/svc/health`, `/api/svc/docs` |
+| `http://localhost:8000/mock/...` | **`/api/audio/*`** (strip prefix) → **audio-service:8000** |
 | `ws://localhost:8000/ws/...` | `wss://interviewgenie.teckiz.com/ws/...` → **audio-service:8000** |
 | http://localhost:3001 (stub) | **No stub in k8s** — Next BFF calls **`http://monitoring-service:3001`** inside the cluster |
 | `/admin` on main host redirects | `https://admin.interviewgenie.teckiz.com` → **web:3002** (middleware serves `/admin`) |
@@ -122,6 +123,8 @@ Admin UI: users enter the token in **Settings** (stored in browser); BFF sends i
 kubectl get pods -n interview-ai
 curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.teckiz.com/
 curl -fsS -o /dev/null -w "%{http_code}\n" https://admin.interviewgenie.teckiz.com/
+curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.teckiz.com/api/svc/health
+# Optional: bare /health should 308 to /api/svc/health (Next middleware)
 curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.teckiz.com/health
 ```
 

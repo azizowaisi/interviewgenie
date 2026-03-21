@@ -25,7 +25,20 @@ from db import (
 from cv_parser import parse_cv
 from ats_analyzer import compute_ats
 
-app = FastAPI(title="Interview Genie API", version="0.1.0")
+# When exposed behind a reverse proxy under a prefix (e.g. /api/svc), set PUBLIC_API_PATH_PREFIX=/api/svc
+# so OpenAPI/Swagger and JSON root links use the public URL. Leave unset for local http://localhost:8001.
+_PUBLIC_PREFIX = os.getenv("PUBLIC_API_PATH_PREFIX", "").rstrip("/")
+
+app = FastAPI(
+    title="Interview Genie API",
+    version="0.1.0",
+    root_path=_PUBLIC_PREFIX,
+)
+
+
+def _public_path(path: str) -> str:
+    path = path if path.startswith("/") else f"/{path}"
+    return f"{_PUBLIC_PREFIX}{path}" if _PUBLIC_PREFIX else path
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DIST_DIR = STATIC_DIR / "dist"
@@ -176,9 +189,10 @@ async def root():
     return JSONResponse(
         {
             "service": "Interview Genie API",
-            "health": "/health",
-            "docs": "/docs",
-            "web_app": "/app",
+            "health": _public_path("/health"),
+            "docs": _public_path("/docs"),
+            "web_app": _public_path("/app"),
+            "note": "Public URLs use prefix from PUBLIC_API_PATH_PREFIX when set (e.g. /api/svc).",
         }
     )
 

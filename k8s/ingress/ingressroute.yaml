@@ -1,9 +1,10 @@
-# Traefik IngressRoute: Next.js on main host + API (FastAPI) on path prefixes + WebSocket on /ws
+# Traefik IngressRoute: Next.js owns / and /api/app, /api/mon, …; backends under /api/svc + /api/audio.
 # Order: most specific matches first (Traefik ranks longer rules higher by default).
 #
-# - https://interviewgenie.teckiz.com/  → Next.js (web:3002) — same as local http://localhost:3002/
-# - /ws/*                               → audio-service (WebSocket)
-# - /health, /docs, /cv, /topics, …     → api-service (Swagger, Vue /app, Electron REST, etc.)
+# - https://interviewgenie.teckiz.com/           → Next.js (web:3002) — same as local http://localhost:3002/
+# - /ws/*                                        → audio-service (WebSocket)
+# - /api/audio/*  (strip /api/audio)             → audio-service HTTP (/mock/*, /health, …)
+# - /api/svc/*    (strip /api/svc)               → api-service FastAPI (/health, /docs, /topics, …)
 #
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -27,15 +28,27 @@ spec:
           port: 8000
           nativeLB: true
 
-    # FastAPI: REST, Swagger, legacy Vue workspace (/app), static bundles — do not use PathPrefix(`/api`) here (Next BFF uses /api/*)
-    - match: Host(`interviewgenie.teckiz.com`) && (PathPrefix(`/health`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`) || PathPrefix(`/redoc`) || PathPrefix(`/cv`) || PathPrefix(`/sessions`) || PathPrefix(`/history`) || PathPrefix(`/topics`) || PathPrefix(`/attempts`) || PathPrefix(`/ats`) || PathPrefix(`/users`) || PathPrefix(`/static`) || PathPrefix(`/assets`) || PathPrefix(`/app`))
+    # Audio: REST (mock/*, health) — same public prefix the Next BFF uses; Traefik sends here directly.
+    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/api/audio`)
       kind: Rule
+      middlewares:
+        - name: strip-api-audio
+      services:
+        - name: audio-service
+          port: 8000
+          nativeLB: true
+
+    # FastAPI: REST, Swagger, Vue workspace (/app), /assets — public base path /api/svc
+    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/api/svc`)
+      kind: Rule
+      middlewares:
+        - name: strip-api-svc
       services:
         - name: api-service
           port: 8001
           nativeLB: true
 
-    # Next.js: marketing + interview UI + /api/app, /api/audio, /api/mon, /_next, …
+    # Next.js: marketing + interview UI + /api/app, /api/mon, /api/start-interview, /api/evaluate, /_next, …
     - match: Host(`interviewgenie.teckiz.com`)
       kind: Rule
       services:
