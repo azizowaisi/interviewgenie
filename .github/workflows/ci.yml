@@ -1,0 +1,48 @@
+# Pull requests only — does not run on merge/push to main (see build-and-deploy.yml).
+# Avoids duplicate "Build and Deploy" runs when merging (PR synchronize + main push).
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SERVICES: api-service audio-service stt-service question-service llm-service formatter-service monitoring-service
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run backend unit tests
+        run: |
+          for s in question-service formatter-service llm-service stt-service audio-service; do
+            echo "---- Testing $s ----"
+            pip install -q -r backend/$s/requirements.txt
+            (cd backend/$s && python -m pytest tests/ -v --tb=short) || exit 1
+          done
+
+  build:
+    needs: test
+    if: always() && needs.test.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build all service images (no push)
+        run: |
+          for s in ${{ env.SERVICES }}; do
+            docker build -t interview-ai/$s:latest ./backend/$s
+          done
+          docker build -t interview-ai/web:latest ./web

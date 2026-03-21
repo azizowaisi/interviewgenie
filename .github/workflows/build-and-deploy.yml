@@ -1,7 +1,5 @@
-# Build Docker images, push to Docker Hub, deploy to k3s/Kubernetes.
-#
-# Pull requests → unit tests + local Docker builds only (no registry push, no cluster deploy).
-# Merge to main (push) → tests + build + push images + deploy (per DEPLOY_MODE).
+# Push to main + manual dispatch only — full pipeline: test, build, registry push, deploy.
+# PR validation lives in ci.yml (separate workflow so merge does not double-trigger this file).
 #
 # Deploy modes (repo variable DEPLOY_MODE — Settings → Actions → Variables):
 #   remote         — GitHub-hosted runner + secret KUBE_CONFIG (API 6443 reachable)
@@ -9,15 +7,13 @@
 #   ssh            — SSH to VM: rsync manifests, optional k3s install, kubectl apply
 #   (unset/other)  — Build + push only, no deploy job
 #
-# Manual run: Actions → Build and Deploy → Run workflow (also pushes + deploys when configured).
+# Manual run: Actions → Build and Deploy → Run workflow.
 # See docs/DEPLOY-GIT-K8S.md
 
 name: Build and Deploy
 
 on:
   push:
-    branches: [main]
-  pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -30,7 +26,13 @@ on:
         type: boolean
         default: false
 
+# One deploy pipeline at a time on main; supersede overlapping pushes.
+concurrency:
+  group: ${{ github.workflow }}-main
+  cancel-in-progress: true
+
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SERVICES: api-service audio-service stt-service question-service llm-service formatter-service monitoring-service
 
 jobs:
@@ -38,10 +40,10 @@ jobs:
     runs-on: ubuntu-24.04
     if: github.event_name != 'workflow_dispatch' || inputs.skip_tests != true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -58,12 +60,12 @@ jobs:
     if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build all service images
+      - name: Build all service images (no push)
         run: |
           for s in ${{ env.SERVICES }}; do
             docker build -t interview-ai/$s:latest ./backend/$s
@@ -75,12 +77,11 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
-      github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -92,7 +93,6 @@ jobs:
         env:
           DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
           DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          # Optional repo Variables — override if your public hostnames differ from teckiz.com defaults.
           WEB_PUBLIC_APP_URL: ${{ vars.WEB_PUBLIC_APP_URL }}
           WEB_ADMIN_SITE_URL: ${{ vars.WEB_ADMIN_SITE_URL }}
           WEB_ADMIN_HOSTS: ${{ vars.WEB_ADMIN_HOSTS }}
@@ -134,19 +134,16 @@ jobs:
             "./web" \
             --push
 
-  # --- k3s / Kubernetes deploy paths (unified apply script: Traefik + kustomize + set image + rollouts) ---
-
   deploy_remote:
     needs: push
     if: |
       always() &&
       needs.push.result == 'success' &&
-      github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
       vars.DEPLOY_MODE == 'remote'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up kubeconfig
         run: |
@@ -167,12 +164,11 @@ jobs:
     if: |
       always() &&
       needs.push.result == 'success' &&
-      github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
       vars.DEPLOY_MODE == 'self_hosted'
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Ensure kubectl
         run: |
@@ -206,12 +202,11 @@ jobs:
     if: |
       always() &&
       needs.push.result == 'success' &&
-      github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
       vars.DEPLOY_MODE == 'ssh'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install SSH client
         run: sudo apt-get update && sudo apt-get install -y openssh-client rsync
@@ -233,7 +228,6 @@ jobs:
         run: |
           rsync -az --delete -e "ssh -i $HOME/.ssh/id_rsa" ./k8s ./scripts "${SSH_USER}@${SSH_HOST}:~/interviewgenie-k8s/"
 
-          # Secrets expanded on the runner before ssh (avoid special chars in tokens if possible).
           ssh -i "$HOME/.ssh/id_rsa" "${SSH_USER}@${SSH_HOST}" bash -lc "set -euo pipefail
             export DOCKERHUB_USERNAME=\"${DOCKERHUB_USERNAME}\"
             export DOCKERHUB_TOKEN=\"${DOCKERHUB_TOKEN}\"
