@@ -437,9 +437,15 @@ jobs:
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
-          if [ "${{ needs.build-meta.result }}" = "success" ] && \
-             [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
-             [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
+          # Always pin to Docker Hub when DOCKERHUB_USERNAME is set (fixes raw manifest image names).
+          # This run pushed images → sha tag + optional partial deployments; else → :latest on all workloads.
+          if [ -z "${DOCKERHUB_USERNAME}" ]; then
+            export K8S_SKIP_SET_IMAGE=1
+            unset K8S_UPDATE_DEPLOYMENTS || true
+            echo "No DOCKERHUB_USERNAME — skipping kubectl set image."
+          elif [ "${{ needs.build-meta.result }}" = "success" ] && \
+               [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
+               [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
             export K8S_SKIP_SET_IMAGE=0
             export K8S_IMAGE_TAG="sha-${{ github.sha }}"
             UPD=""
@@ -452,10 +458,12 @@ jobs:
             [ "${{ needs.detect.outputs.build_monitoring_service }}" = "true" ] && UPD="$UPD monitoring-service"
             [ "${{ needs.detect.outputs.build_web }}" = "true" ] && UPD="$UPD web"
             export K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
-            echo "Pinning workloads to K8S_IMAGE_TAG=${K8S_IMAGE_TAG} deployments=[${K8S_UPDATE_DEPLOYMENTS}]"
+            echo "Pinning to K8S_IMAGE_TAG=${K8S_IMAGE_TAG} deployments=[${K8S_UPDATE_DEPLOYMENTS}]"
           else
-            export K8S_SKIP_SET_IMAGE=1
-            echo "Skipping kubectl set image (no new images this run or build-meta skipped)."
+            export K8S_SKIP_SET_IMAGE=0
+            export K8S_IMAGE_TAG="latest"
+            unset K8S_UPDATE_DEPLOYMENTS || true
+            echo "Pinning all workloads to Docker Hub :latest (no image push this run — manifest apply or skipped build)."
           fi
           scripts/ci/k8s-apply.sh
 
@@ -496,9 +504,12 @@ jobs:
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
-          if [ "${{ needs.build-meta.result }}" = "success" ] && \
-             [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
-             [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
+          if [ -z "${DOCKERHUB_USERNAME}" ]; then
+            export K8S_SKIP_SET_IMAGE=1
+            unset K8S_UPDATE_DEPLOYMENTS || true
+          elif [ "${{ needs.build-meta.result }}" = "success" ] && \
+               [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
+               [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
             export K8S_SKIP_SET_IMAGE=0
             export K8S_IMAGE_TAG="sha-${{ github.sha }}"
             UPD=""
@@ -512,7 +523,9 @@ jobs:
             [ "${{ needs.detect.outputs.build_web }}" = "true" ] && UPD="$UPD web"
             export K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
           else
-            export K8S_SKIP_SET_IMAGE=1
+            export K8S_SKIP_SET_IMAGE=0
+            export K8S_IMAGE_TAG="latest"
+            unset K8S_UPDATE_DEPLOYMENTS || true
           fi
           scripts/ci/k8s-apply.sh
 
@@ -571,37 +584,44 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
-          BUILD_PUSH_RESULT: ${{ needs.build-meta.result }}
-          IMAGES_PUSHED: ${{ needs.build-meta.outputs.images_pushed }}
-          BUILD_ANY: ${{ needs.detect.outputs.build_any }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
+          # Same pin logic as deploy_remote: Hub username set → always kubectl set image;
+          # this run pushed → sha tag + partial list; else → :latest on all workloads.
           K8S_UPDATE_DEPLOYMENTS=""
-          if [ "${{ needs.build-meta.result }}" = "success" ] && \
-             [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
-             [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
-            UPD=""
-            [ "${{ needs.detect.outputs.build_api_service }}" = "true" ] && UPD="$UPD api-service"
-            [ "${{ needs.detect.outputs.build_audio_service }}" = "true" ] && UPD="$UPD audio-service"
-            [ "${{ needs.detect.outputs.build_stt_service }}" = "true" ] && UPD="$UPD stt-service"
-            [ "${{ needs.detect.outputs.build_question_service }}" = "true" ] && UPD="$UPD question-service"
-            [ "${{ needs.detect.outputs.build_llm_service }}" = "true" ] && UPD="$UPD llm-service"
-            [ "${{ needs.detect.outputs.build_formatter_service }}" = "true" ] && UPD="$UPD formatter-service"
-            [ "${{ needs.detect.outputs.build_monitoring_service }}" = "true" ] && UPD="$UPD monitoring-service"
-            [ "${{ needs.detect.outputs.build_web }}" = "true" ] && UPD="$UPD web"
-            K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
+          K8S_IMAGE_TAG="latest"
+          K8S_SKIP_SET_IMAGE="1"
+          if [ -n "${DOCKERHUB_USERNAME}" ]; then
+            K8S_SKIP_SET_IMAGE="0"
+            if [ "${{ needs.build-meta.result }}" = "success" ] && \
+               [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
+               [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
+              K8S_IMAGE_TAG="sha-${GITHUB_SHA}"
+              UPD=""
+              [ "${{ needs.detect.outputs.build_api_service }}" = "true" ] && UPD="$UPD api-service"
+              [ "${{ needs.detect.outputs.build_audio_service }}" = "true" ] && UPD="$UPD audio-service"
+              [ "${{ needs.detect.outputs.build_stt_service }}" = "true" ] && UPD="$UPD stt-service"
+              [ "${{ needs.detect.outputs.build_question_service }}" = "true" ] && UPD="$UPD question-service"
+              [ "${{ needs.detect.outputs.build_llm_service }}" = "true" ] && UPD="$UPD llm-service"
+              [ "${{ needs.detect.outputs.build_formatter_service }}" = "true" ] && UPD="$UPD formatter-service"
+              [ "${{ needs.detect.outputs.build_monitoring_service }}" = "true" ] && UPD="$UPD monitoring-service"
+              [ "${{ needs.detect.outputs.build_web }}" = "true" ] && UPD="$UPD web"
+              K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
+            else
+              K8S_IMAGE_TAG="latest"
+              K8S_UPDATE_DEPLOYMENTS=""
+            fi
           fi
-          export K8S_UPDATE_DEPLOYMENTS
+          export K8S_SKIP_SET_IMAGE K8S_IMAGE_TAG K8S_UPDATE_DEPLOYMENTS
 
           rsync -az --delete -e "ssh -i $HOME/.ssh/id_rsa" ./k8s ./scripts "${SSH_USER}@${SSH_HOST}:~/interviewgenie-k8s/"
 
           ssh -i "$HOME/.ssh/id_rsa" "${SSH_USER}@${SSH_HOST}" bash -lc "set -euo pipefail
             export DOCKERHUB_USERNAME=\"${DOCKERHUB_USERNAME}\"
             export DOCKERHUB_TOKEN=\"${DOCKERHUB_TOKEN}\"
-            export BUILD_PUSH_RESULT=\"${BUILD_PUSH_RESULT}\"
-            export IMAGES_PUSHED=\"${IMAGES_PUSHED}\"
-            export BUILD_ANY=\"${BUILD_ANY}\"
             export GITHUB_SHA=\"${GITHUB_SHA}\"
+            export K8S_SKIP_SET_IMAGE=\"${K8S_SKIP_SET_IMAGE}\"
+            export K8S_IMAGE_TAG=\"${K8S_IMAGE_TAG}\"
             export K8S_UPDATE_DEPLOYMENTS=\"${K8S_UPDATE_DEPLOYMENTS}\"
             LE_MAIL=\"${LETSENCRYPT_EMAIL}\"
 
@@ -617,21 +637,13 @@ jobs:
             fi
 
             if ! command -v k3s >/dev/null 2>&1; then curl -sfL https://get.k3s.io | sh -; fi
-            sudo k3s kubectl get nodes
+            sudo /usr/local/bin/kubectl get nodes 2>/dev/null || sudo k3s kubectl get nodes
 
             mkdir -p \$HOME/.kube
             sudo cat /etc/rancher/k3s/k3s.yaml > \$HOME/.kube/config
             sudo chown \$(id -u):\$(id -g) \$HOME/.kube/config
             chmod 600 \$HOME/.kube/config
             export KUBECONFIG=\$HOME/.kube/config
-
-            if [ \"\${BUILD_PUSH_RESULT}\" = \"success\" ] && [ \"\${IMAGES_PUSHED}\" = \"true\" ] && [ \"\${BUILD_ANY}\" = \"true\" ]; then
-              export K8S_SKIP_SET_IMAGE=0
-              export K8S_IMAGE_TAG=\"sha-\${GITHUB_SHA}\"
-            else
-              export K8S_SKIP_SET_IMAGE=1
-              unset K8S_UPDATE_DEPLOYMENTS || true
-            fi
 
             if [ -n \"\${DOCKERHUB_USERNAME}\" ] && [ -n \"\${DOCKERHUB_TOKEN}\" ]; then
               printf '%s' \"\${DOCKERHUB_TOKEN}\" | docker login -u \"\${DOCKERHUB_USERNAME}\" --password-stdin
