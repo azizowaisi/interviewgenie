@@ -29,11 +29,13 @@ Plus **one** deploy path:
 
 | `DEPLOY_MODE` (Variable) | Also need |
 |--------------------------|-----------|
-| `self_hosted` | Runner installed **on the k3s node** (recommended; no public 6443) |
+| *(unset)* **default** | Secret **`KUBE_CONFIG`** — same as `remote`; full deploy on every merge to `main` |
 | `remote` | Secret `KUBE_CONFIG` (base64 kubeconfig; API must be reachable from GitHub) |
+| `self_hosted` | Runner installed **on the k3s node** (recommended; no public 6443) |
 | `ssh` | `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `LETSENCRYPT_EMAIL` |
+| `none` or `off` | Docker push only; no `kubectl` |
 
-Set **`DEPLOY_MODE`** under **Settings → Secrets and variables → Actions → Variables**.
+Set **`DEPLOY_MODE`** only if you want to override the default (e.g. `self_hosted`, `ssh`, or `none`).
 
 ### Optional Variables (custom domains / host lists)
 

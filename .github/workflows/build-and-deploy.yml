@@ -2,10 +2,11 @@
 # PR validation: ci.yml
 #
 # Deploy modes (repo variable DEPLOY_MODE):
-#   remote         — GitHub-hosted runner + secret KUBE_CONFIG (or OIDC — see docs/GITHUB-ACTIONS-K8S-OIDC.md)
-#   self_hosted    — Runner on the k3s node
-#   ssh            — SSH + rsync + kubectl on VM
-#   (unset/other)  — Build + push only
+#   (unset / empty) — same as remote: full k8s deploy (kubectl apply + roll workloads) — DEFAULT
+#   remote          — GitHub-hosted runner + secret KUBE_CONFIG
+#   self_hosted     — Runner on the k3s node
+#   ssh             — SSH + rsync + kubectl on VM
+#   none | off      — Docker push only; skip all deploy jobs
 #
 # Manual dispatch:
 #   deploy_only    — apply k8s only (skip tests & Docker; cluster keeps current images)
@@ -277,10 +278,24 @@ jobs:
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.build-push.result == 'success' || needs.build-push.result == 'skipped') &&
-      vars.DEPLOY_MODE == 'remote'
+      (vars.DEPLOY_MODE == 'remote' || vars.DEPLOY_MODE == '') &&
+      vars.DEPLOY_MODE != 'ssh' &&
+      vars.DEPLOY_MODE != 'self_hosted' &&
+      vars.DEPLOY_MODE != 'none' &&
+      vars.DEPLOY_MODE != 'off' &&
+      vars.DEPLOY_MODE != 'false'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+
+      - name: Require KUBE_CONFIG for remote deploy
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          if [ -z "${KUBE_CONFIG_B64}" ]; then
+            echo "::error::Remote deploy is enabled (DEPLOY_MODE unset, remote, or empty) but KUBE_CONFIG secret is missing. Add base64 kubeconfig, or set DEPLOY_MODE=ssh / self_hosted, or DEPLOY_MODE=none to push images only."
+            exit 1
+          fi
 
       - name: Set up kubeconfig
         run: |
