@@ -8,8 +8,8 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 
 ## Overview
 
-1. **Pull requests** targeting `main` run **tests** and a **local Docker build** (no registry push, no deploy).
-2. **Pushes to `main`** (e.g. after merging a PR) run tests, build, **push** images to Docker Hub, then run `kubectl apply -k k8s/` (per `DEPLOY_MODE`).
+1. **Pull requests** → workflow **CI** (`ci.yml`): `backend-tests` (pytest), then `build-verify` (Next.js + Vue Vite builds + Docker image builds; no push, no deploy).
+2. **Pushes to `main`** → workflow **Build and Deploy** (`build-and-deploy.yml`): tests, build, **push** images, then `kubectl apply -k k8s/` (per `DEPLOY_MODE`). Separate from CI so merging does not double-trigger deploy.
 2. **Which deploy runs** is chosen with a **repository variable** `DEPLOY_MODE` (GitHub does not allow `secrets.*` in workflow `if:` conditions).
 
 ### Rolling deploys & HPA
