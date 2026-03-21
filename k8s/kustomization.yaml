@@ -32,3 +32,6 @@ resources:
   - monitoring-service/rbac.yaml
   - monitoring-service/deployment.yaml
   - monitoring-service/service.yaml
+  # Next.js app (admin host + optional main host when ingress is updated)
+  - web-service/deployment.yaml
+  - web-service/service.yaml

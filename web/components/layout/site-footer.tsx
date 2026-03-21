@@ -9,8 +9,8 @@ export function SiteFooter() {
           <Link href="/interview" className="hover:text-foreground">
             Interview
           </Link>
-          <Link href="/admin" className="hover:text-foreground">
-            Admin
+          <Link href="/upload" className="hover:text-foreground">
+            ATS
           </Link>
         </div>
       </div>

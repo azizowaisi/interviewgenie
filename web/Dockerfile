@@ -9,6 +9,15 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Baked into middleware + client (override with docker build --build-arg …)
+ARG NEXT_PUBLIC_PUBLIC_APP_URL=https://interviewgenie.teckiz.com
+ARG NEXT_PUBLIC_ADMIN_SITE_URL=https://admin.interviewgenie.teckiz.com
+ARG NEXT_PUBLIC_ADMIN_HOSTS=admin.interviewgenie.teckiz.com
+ARG NEXT_PUBLIC_MAIN_APP_HOSTS=interviewgenie.teckiz.com,www.interviewgenie.teckiz.com
+ENV NEXT_PUBLIC_PUBLIC_APP_URL=$NEXT_PUBLIC_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_ADMIN_SITE_URL=$NEXT_PUBLIC_ADMIN_SITE_URL
+ENV NEXT_PUBLIC_ADMIN_HOSTS=$NEXT_PUBLIC_ADMIN_HOSTS
+ENV NEXT_PUBLIC_MAIN_APP_HOSTS=$NEXT_PUBLIC_MAIN_APP_HOSTS
 RUN npm run build
 
 FROM node:20-alpine AS runner

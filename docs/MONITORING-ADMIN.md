@@ -1,27 +1,32 @@
-# Admin monitoring dashboard (`admin.interviewgenie.teckiz.com`)
+# Operations host (`admin.interviewgenie.teckiz.com`)
 
-Lightweight **in-cluster** monitoring: one pod (`monitoring-service`) serves a small **FastAPI** JSON API plus a static **admin UI** (no Prometheus/Grafana).
+The **admin hostname** points at the **Next.js `web` deployment** (port **3002**). That app serves the infrastructure UI and proxies **`/api/mon/*`** to the in-cluster **`monitoring-service`** (FastAPI + Kubernetes API). The raw monitoring JSON API and legacy Vue build still live on the **`monitoring-service`** pod; they are not exposed on the public admin URL unless you add a separate route.
 
 ## What you get
 
 - **Cluster overview**: node readiness, pod counts, CPU/memory **when metrics-server works**
 - **Services** & **pods** tables with usage (from Metrics API)
-- **Logs**: `GET /api/logs?pod=...` (same as `kubectl logs`)
-- **Restart**: rollout restart for **allowed Deployments** only (`POST /api/restart?deployment=...`)
+- **Logs**: proxied to `GET /api/logs?pod=...` on monitoring-service
+- **Restart**: `POST /api/restart?deployment=...` (allowlist on monitoring-service)
 
 ## DNS & TLS
 
 1. Create **`A`** record: `admin.interviewgenie.teckiz.com` → your VM IP (same as main app).
-2. Apply manifests (`kubectl apply -k k8s/`). Traefik **IngressRoute** `interview-ai-admin` requests a Let’s Encrypt cert for the admin host (same `certResolver: le` pattern as the main site).
+2. Apply manifests (`kubectl apply -k k8s/`). Traefik **IngressRoute** `interview-ai-admin` requests a Let’s Encrypt cert for the admin host.
 
 ## URLs
 
 | URL | Purpose |
 |-----|---------|
-| `https://admin.interviewgenie.teckiz.com/` | Admin UI (sidebar + dashboard) |
-| `https://admin.interviewgenie.teckiz.com/admin/` | Same app. **Preferred routes:** `#/admin/`, `#/admin/pods`, `#/admin/services`, `#/admin/logs`, `#/admin/infrastructure`, `#/admin/settings`, `#/admin/service/<name>` (legacy `#/pods` etc. still work). |
+| `https://admin.interviewgenie.teckiz.com/` | **Next.js** infrastructure UI (root path rewrites internally to `/admin`) |
+| `https://admin.interviewgenie.teckiz.com/interview` (etc.) | Redirects to the **main app** at `https://interviewgenie.teckiz.com/...` |
 
-The UI is a **Vue 3 + Vite** build (`backend/monitoring-service/frontend/`). Production assets are `/assets/*.js` and `/assets/*.css` at the admin host root (same pod). Top bar **Environment** / **Server** labels come from `DASHBOARD_ENV_LABEL` and `DASHBOARD_SERVER_LABEL`. See **`docs/VUE-FRONTENDS.md`**.
+The **main marketing / interview site** does not link to this host. Build-time defaults for hostnames live in `web/Dockerfile` (`NEXT_PUBLIC_*` args); override with `docker build --build-arg ...` if your domains differ.
+
+## monitoring-service (backend for `/api/mon`)
+
+- **Vue 3 + Vite** sources: `backend/monitoring-service/frontend/` (legacy bundled UI; optional to rebuild). See **`docs/VUE-FRONTENDS.md`**.
+- **Token**: If `ADMIN_TOKEN` is set on **monitoring-service**, set **`MONITORING_ADMIN_TOKEN`** on the **`web`** deployment so server-side BFF can send `X-Admin-Token`.
 
 ## metrics-server (k3s)
 
@@ -34,57 +39,40 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 kubectl -n kube-system edit deployment metrics-server
 ```
 
-## API (optional token)
+## API (monitoring-service, internal)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/healthz` | Liveness |
-| GET | `/api/config` | UI labels (`environment_label`, `server_label`, `auth_required`) |
+| GET | `/api/config` | Labels (`environment_label`, `server_label`, `auth_required`) |
 | GET | `/api/cluster` | Overview JSON |
-| GET | `/api/infrastructure` | Node capacity, OS, kubelet, disk/memory totals |
+| GET | `/api/infrastructure` | Node capacity, etc. |
 | GET | `/api/pods` | Pods in `TARGET_NAMESPACE` |
 | GET | `/api/services` | Services in namespace |
 | GET | `/api/logs?pod=&container=&tail=` | Pod logs (text) |
 | POST | `/api/restart?deployment=` | Rollout restart (allowlist) |
-
-If Secret **`monitoring-admin`** exists with key **`ADMIN_TOKEN`**, all `/api/*` routes require header **`X-Admin-Token: <value>`** or **`Authorization: Bearer <value>`**. The UI stores the token in `localStorage` when you type it in the header bar.
-
-Create the secret:
-
-```bash
-kubectl create secret generic monitoring-admin \
-  -n interview-ai \
-  --from-literal=ADMIN_TOKEN='your-long-random-string'
-kubectl rollout restart deployment/monitoring-service -n interview-ai
-```
 
 ## RBAC
 
 - **Role** in `interview-ai`: pods, pods/log, services, deployments (patch), pod metrics.
 - **ClusterRole**: nodes + node metrics (for overview).
 
-Restart is limited to deployments listed in env **`RESTARTABLE_DEPLOYMENTS`** on the monitoring Deployment (default includes app services + ollama + whisper). **MongoDB** is a **StatefulSet** — the UI does not offer deployment restart for `mongo`/`mongodb` services; use `kubectl` if needed.
+Restart is limited to deployments listed in env **`RESTARTABLE_DEPLOYMENTS`** on the monitoring Deployment. **MongoDB** is a **StatefulSet** — not in the default restart UI.
 
 ## Resource footprint
 
-Deployment defaults: **requests** 50m CPU / 128Mi RAM, **limits** 500m CPU / 384Mi RAM (stays under ~500MB RAM).
+- **web**: see `k8s/web-service/deployment.yaml` (default ~128–512Mi).
+- **monitoring-service**: requests 50m CPU / 128Mi RAM, limits 500m CPU / 384Mi RAM.
 
-## Building the image
-
-Same as other services:
+## Building images
 
 ```bash
 docker build -t interview-ai/monitoring-service:latest ./backend/monitoring-service
+docker build -t interview-ai/web:latest ./web
 ```
 
-CI builds `monitoring-service` when `SERVICES` includes it in `.github/workflows/build-and-deploy.yml`.
+CI builds both when you push to `main` (see `.github/workflows/build-and-deploy.yml`).
 
 ## Nginx on the VM
 
-If you terminate TLS on the VM with Nginx instead of Traefik, proxy to the **ClusterIP** service or NodePort you expose; the example `proxy_pass http://localhost:3001` matches a local port-forward:
-
-```bash
-kubectl port-forward -n interview-ai svc/monitoring-service 3001:3001
-```
-
-In production with k3s, prefer the **IngressRoute** in `k8s/ingress/admin-ingressroute.yaml`.
+If you terminate TLS on the VM with Nginx, proxy to the **`web`** ClusterIP service on **3002** for the admin host (or use Traefik as in `k8s/ingress/admin-ingressroute.yaml`).
