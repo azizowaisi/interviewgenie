@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build & push only images flagged by the detect job.
+# Build & push only images flagged by the detect job (serial — local or ad-hoc).
+# GitHub Actions on main uses parallel matrix + scripts/ci/gha-build-single-image.sh instead.
 # Caching: GHA cache (per service scope) + optional Docker registry cache (persists across runners).
 #
 # Env: DH_USER, IMAGE_TAG (e.g. sha-abc123def456)
