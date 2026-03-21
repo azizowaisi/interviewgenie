@@ -7,6 +7,12 @@ metadata:
     app: api-service
 spec:
   replicas: 1
+  # RWO PVC (cv-uploads): only one pod can mount local-path volumes — no maxSurge second pod.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app: api-service
@@ -39,12 +45,23 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
               port: 8001
             initialDelaySeconds: 10
             periodSeconds: 10
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 8"]
       volumes:
         - name: cv-storage
           persistentVolumeClaim:
