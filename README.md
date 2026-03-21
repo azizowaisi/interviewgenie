@@ -166,6 +166,13 @@ kubectl apply -k k8s/
 kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 ```
 
+### Deploy from Git (main site + admin domain)
+
+CI/CD: push to **`main`** (or run **Actions → Build and Deploy**) builds images, pushes to Docker Hub, and applies manifests so **https://interviewgenie.teckiz.com** matches local Next/API/WebSocket behavior and **https://admin.interviewgenie.teckiz.com** serves the operations UI (proxies to **monitoring-service** in-cluster).
+
+- **Step-by-step:** [docs/DEPLOY-WEB-ADMIN-GIT.md](docs/DEPLOY-WEB-ADMIN-GIT.md)  
+- **Runner / SSH / kubeconfig modes:** [docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md)
+
 ### Rolling updates & autoscaling (k3s)
 
 - Deployments use **readiness probes** and **rolling update** strategies: stateless services allow **`maxSurge: 1`** so traffic can move to a new pod before the old one terminates (when the node has capacity).

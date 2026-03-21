@@ -2,6 +2,8 @@
 
 Push to `main` triggers **build → push images → deploy** to your Kubernetes cluster (e.g. k3s on a single VM). No manual SSH or copy-paste: Git is the source of truth.
 
+**Main app + admin subdomain (DNS, parity with local, smoke tests):** see **[DEPLOY-WEB-ADMIN-GIT.md](./DEPLOY-WEB-ADMIN-GIT.md)**.
+
 ---
 
 ## Overview
