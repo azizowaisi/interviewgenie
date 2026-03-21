@@ -53,8 +53,8 @@ You must then edit **`k8s/ingress/ingressroute.yaml`**, **`k8s/ingress/admin-ing
 | Event | Workflow | What runs |
 |-------|----------|-----------|
 | **Pull request** to `main` | **CI** (`ci.yml`) | **`backend-tests`** (pytest) + **`build-verify`** (Next + Vue builds + **Docker** image builds) — **no** push, **no** deploy |
-| **Merge** (push to `main`) | **Build and Deploy** (`build-and-deploy.yml`) | Tests + build + **push** + **deploy** (single run; PR no longer triggers this file) |
-| **Manual** | **Build and Deploy** | Same as push to `main`; optional **Skip deploy** / **Skip tests** |
+| **Merge** (push to `main`) | **Build and Deploy** (`build-and-deploy.yml`) | **Detect** changed paths → **pytest** only if Python test services changed → **Docker build/push only** for changed images → **deploy** always (manifest apply; `kubectl set image` only when new images were pushed). See `docs/GITHUB-ACTIONS-K8S-OIDC.md` for OIDC options. |
+| **Manual** | **Build and Deploy** | **deploy_only** — k8s apply only; **force_build** (default on) — rebuild all images; **Skip deploy** / **Skip tests** as before |
 
 PRs and merges use **separate workflows** so you do not get two **Build and Deploy** runs when merging.
 

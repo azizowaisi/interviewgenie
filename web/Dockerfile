@@ -1,9 +1,11 @@
+# syntax=docker/dockerfile:1.6
 # Production-style image (also used for local full-stack compose).
 # Node 22 LTS on Alpine — official Node images are Debian/Alpine-based (not Ubuntu).
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* .npmrc ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
