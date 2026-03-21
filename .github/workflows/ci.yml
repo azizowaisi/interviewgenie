@@ -1,0 +1,86 @@
+# Pull requests only — full verification before merge (no push / no deploy).
+# Merge to main → build-and-deploy.yml runs separately (single deploy pipeline).
+#
+# Branch protection: require both jobs below before merging to main.
+#   GitHub → Settings → Rules → Branch rules → main → Require status checks:
+#     - "CI / backend-tests"
+#     - "CI / build-verify"
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SERVICES: api-service audio-service stt-service question-service llm-service formatter-service monitoring-service
+
+jobs:
+  backend-tests:
+    name: backend-tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run backend unit tests
+        run: |
+          for s in question-service formatter-service llm-service stt-service audio-service; do
+            echo "---- Testing $s ----"
+            pip install -q -r backend/$s/requirements.txt
+            (cd backend/$s && python -m pytest tests/ -v --tb=short) || exit 1
+          done
+
+  build-verify:
+    name: build-verify
+    needs: backend-tests
+    if: always() && needs.backend-tests.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            backend/api-service/frontend/package-lock.json
+            backend/monitoring-service/frontend/package-lock.json
+
+      # Next.js (same as web/Dockerfile deps: npm ci + build)
+      - name: Web — npm ci & next build
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: API Vue SPA — npm ci & vite build
+        run: |
+          cd backend/api-service/frontend
+          npm ci
+          npm run build
+
+      - name: Monitoring Vue admin — npm ci & vite build
+        run: |
+          cd backend/monitoring-service/frontend
+          npm ci
+          npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker — all service images + web
+        run: |
+          for s in ${{ env.SERVICES }}; do
+            echo "==== docker build backend/$s ===="
+            docker build -t interview-ai/$s:latest ./backend/$s
+          done
+          echo "==== docker build web ===="
+          docker build -t interview-ai/web:latest ./web

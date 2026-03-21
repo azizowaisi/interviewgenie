@@ -300,9 +300,16 @@ Tests mock external HTTP (e.g. Whisper, Ollama) so they run offline.
 
 ## CI/CD (GitHub Actions)
 
-- **Pull request** → **pytest** + **Docker build** (validates Dockerfiles); **no** registry push, **no** cluster deploy.
-- **Merge to `main`** (push) → same tests + build, then **push** images to Docker Hub (if `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`), then **deploy** per `DEPLOY_MODE`.
-- **Deploy**: Set repository **variable** `DEPLOY_MODE` to `ssh`, `remote`, or `self_hosted`. Add matching secrets (`KUBE_CONFIG`, SSH secrets, or a self-hosted runner). See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
+Two workflows so **merging a PR does not start two pipelines**:
+
+| Workflow | When | What |
+|----------|------|------|
+| **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **`backend-tests`** (pytest) then **`build-verify`** (Next build, both Vue Vite builds, then all **Docker** images — no push) |
+| **Build and Deploy** | **Push to `main`** (merge) or **manual dispatch** | Test + build + **Docker Hub push** + **Kubernetes deploy** (per `DEPLOY_MODE`) |
+
+**Before merge:** turn on branch protection and require **`CI / backend-tests`** and **`CI / build-verify`**. See **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**. **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
+
+- **Deploy**: Set repository **variable** `DEPLOY_MODE` to `ssh`, `remote`, or `self_hosted`. Add matching secrets. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 
 ---
 

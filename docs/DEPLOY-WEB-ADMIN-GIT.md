@@ -50,11 +50,13 @@ You must then edit **`k8s/ingress/ingressroute.yaml`**, **`k8s/ingress/admin-ing
 
 ### Day-to-day
 
-| Event | CI does |
-|-------|---------|
-| **Pull request** to `main` | **Tests** + **Docker build** (verify images build) — **no** Docker Hub push, **no** Kubernetes deploy |
-| **Merge** (push to `main`) | Tests + build + **push** images + **deploy** (per `DEPLOY_MODE`) |
-| **Manual** workflow | Same as push to `main` (branch must be `main` for push job); optional **Skip deploy** / **Skip tests** |
+| Event | Workflow | What runs |
+|-------|----------|-----------|
+| **Pull request** to `main` | **CI** (`ci.yml`) | **`backend-tests`** (pytest) + **`build-verify`** (Next + Vue builds + **Docker** image builds) — **no** push, **no** deploy |
+| **Merge** (push to `main`) | **Build and Deploy** (`build-and-deploy.yml`) | Tests + build + **push** + **deploy** (single run; PR no longer triggers this file) |
+| **Manual** | **Build and Deploy** | Same as push to `main`; optional **Skip deploy** / **Skip tests** |
+
+PRs and merges use **separate workflows** so you do not get two **Build and Deploy** runs when merging.
 
 ```bash
 # After merge to main (or direct push to main — not recommended for production)
