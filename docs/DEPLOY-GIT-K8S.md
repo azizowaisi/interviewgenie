@@ -61,8 +61,8 @@ All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rs
 
 1. **`kubectl apply -f k8s/traefik/helmchartconfig.yaml`** (kube-system — Let’s Encrypt / Traefik)
 2. **`kubectl apply -k k8s/`** (namespace `interview-ai`: apps, ingress, mongo, ollama, HPA, …)
-3. If **`DOCKERHUB_USERNAME`** is set and new images were pushed: **`kubectl set image`** for rebuilt services to `*/interview-ai-*:sha-<commit>` (and `:latest` on Hub); otherwise only manifest apply.
-4. **`kubectl rollout status`** on `api-service`, `audio-service`, `web`, `monitoring-service`
+3. If **`DOCKERHUB_USERNAME`** is set: **`kubectl set image`** always runs — **`sha-<commit>`** for services built this run when images were pushed; otherwise **`:latest`** on **all** app workloads (fixes raw manifest names like `interview-ai/web` → `youruser/interview-ai-web`). If **`DOCKERHUB_USERNAME`** is unset, only `kubectl apply` runs.
+4. **`kubectl rollout status`** on `api-service`, `audio-service`, `web`, `monitoring-service` **in parallel** (each uses `K8S_ROLLOUT_TIMEOUT`, default `180s`)
 5. **`kubectl get pods`** and a best-effort **`ollama pull qwen2.5:0.5b`**
 
 **Manual workflow:** **Actions → Build and Deploy → Run workflow** — also **pushes images** (same as a push to `main`). Options:

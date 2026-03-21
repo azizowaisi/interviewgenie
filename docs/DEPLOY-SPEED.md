@@ -20,7 +20,7 @@
 5. **Parallel pytest** — five backend test jobs in parallel with pip caching (`fail-fast: false` so one failure doesn’t cancel the rest).
 6. **Parallel image build/push** — `build-images` matrix (one image per runner) + `build-meta` aggregates `images_pushed` for deploy.
 7. **BuildKit cache mounts** in Dockerfiles — `pip` / `npm` reuse download cache between builds.
-8. **Shorter rollout wait** — `K8S_ROLLOUT_TIMEOUT` (default `180s` in `k8s-apply.sh`).
+8. **Parallel rollout checks** — `k8s-apply.sh` waits on `api-service`, `audio-service`, `web`, `monitoring-service` concurrently (wall time ≈ one timeout, not four in a row). Tune **`K8S_ROLLOUT_TIMEOUT`** (default `180s`).
 
 ## Variables (GitHub → Settings → Actions → Variables)
 
