@@ -3,10 +3,15 @@
 # Layout: $ROOT/k8s/ (kustomization.yaml, traefik/, …) — same as Git repo root on CI, or ~/interviewgenie-k8s on SSH sync.
 #
 # Env: KUBECONFIG. Optional: DOCKERHUB_USERNAME, K8S_NAMESPACE (default interview-ai).
+# Optional: K8S_IMAGE_TAG (default latest) — immutable tag e.g. sha-<full github sha> from CI.
+# Optional: K8S_SKIP_SET_IMAGE=1 — only apply manifests; keep running images (doc-only / no-build pipeline).
+# Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
+#   If unset and not skipping, all app deployments are updated (local convenience).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 NS="${K8S_NAMESPACE:-interview-ai}"
+ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-180s}"
 
 echo "ROOT=$ROOT"
 echo "=== Apply Traefik HelmChartConfig (kube-system) ==="
@@ -15,22 +20,45 @@ kubectl apply -f "$ROOT/k8s/traefik/helmchartconfig.yaml"
 echo "=== kubectl apply -k ($NS) ==="
 kubectl apply -k "$ROOT/k8s/"
 
-if [[ -n "${DOCKERHUB_USERNAME:-}" ]]; then
+TAG="${K8S_IMAGE_TAG:-latest}"
+
+set_image_for() {
+  local deploy="$1"
+  local slug="$2"
+  local dh="$3"
+  kubectl set image "deployment/${deploy}" -n "$NS" "${deploy}=${dh}/interview-ai-${slug}:${TAG}" || true
+}
+
+if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]]; then
   DH="$DOCKERHUB_USERNAME"
-  echo "=== kubectl set image -> ${DH}/interview-ai-*:latest ==="
-  kubectl set image deployment/api-service -n "$NS" "api-service=${DH}/interview-ai-api-service:latest" || true
-  kubectl set image deployment/audio-service -n "$NS" "audio-service=${DH}/interview-ai-audio-service:latest" || true
-  kubectl set image deployment/stt-service -n "$NS" "stt-service=${DH}/interview-ai-stt-service:latest" || true
-  kubectl set image deployment/question-service -n "$NS" "question-service=${DH}/interview-ai-question-service:latest" || true
-  kubectl set image deployment/llm-service -n "$NS" "llm-service=${DH}/interview-ai-llm-service:latest" || true
-  kubectl set image deployment/formatter-service -n "$NS" "formatter-service=${DH}/interview-ai-formatter-service:latest" || true
-  kubectl set image deployment/monitoring-service -n "$NS" "monitoring-service=${DH}/interview-ai-monitoring-service:latest" || true
-  kubectl set image deployment/web -n "$NS" "web=${DH}/interview-ai-web:latest" || true
+  # CI sets K8S_UPDATE_DEPLOYMENTS to only deployments that were built (partial pushes).
+  # If unset/empty, update all app workloads (local scripts).
+  if [[ -n "${K8S_UPDATE_DEPLOYMENTS:-}" ]]; then
+    TARGETS="${K8S_UPDATE_DEPLOYMENTS}"
+  else
+    TARGETS="api-service audio-service stt-service question-service llm-service formatter-service monitoring-service web"
+  fi
+  echo "=== kubectl set image -> ${DH}/interview-ai-*:${TAG} (deployments: ${TARGETS}) ==="
+  for d in ${TARGETS}; do
+    case "$d" in
+      api-service) set_image_for api-service api-service "$DH" ;;
+      audio-service) set_image_for audio-service audio-service "$DH" ;;
+      stt-service) set_image_for stt-service stt-service "$DH" ;;
+      question-service) set_image_for question-service question-service "$DH" ;;
+      llm-service) set_image_for llm-service llm-service "$DH" ;;
+      formatter-service) set_image_for formatter-service formatter-service "$DH" ;;
+      monitoring-service) set_image_for monitoring-service monitoring-service "$DH" ;;
+      web) set_image_for web web "$DH" ;;
+      *) echo "WARN: unknown deployment in K8S_UPDATE_DEPLOYMENTS: $d" ;;
+    esac
+  done
+elif [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
+  echo "=== Skipping kubectl set image (K8S_SKIP_SET_IMAGE=1) — cluster keeps current images ==="
 fi
 
-echo "=== Rollout status ==="
+echo "=== Rollout status (timeout ${ROLLOUT_TIMEOUT}) ==="
 for d in api-service audio-service web monitoring-service; do
-  kubectl rollout status "deployment/${d}" -n "$NS" --timeout=300s || echo "WARN: rollout ${d} not ready in time"
+  kubectl rollout status "deployment/${d}" -n "$NS" --timeout="${ROLLOUT_TIMEOUT}" || echo "WARN: rollout ${d} not ready in time"
 done
 
 echo "=== Pods ($NS) ==="
