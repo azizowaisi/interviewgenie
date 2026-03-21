@@ -8,7 +8,7 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 
 ## Overview
 
-1. **Pull requests** → workflow **CI** (`ci.yml`): `backend-tests` (pytest matrix), parallel `frontend-verify` (Next + Vue), parallel `docker-verify` (all images), `ci-gate`; no push, no deploy.
+1. **Pull requests** → workflow **CI** (`ci.yml`): `backend-tests` (pytest matrix), parallel `frontend-verify` (Next + Vue), parallel `docker-verify` matrix (8 images), `ci-gate`; no push, no deploy.
 2. **Pushes to `main`** → workflow **Build and Deploy** (`build-and-deploy.yml`): tests, build, **push** images, then **`kubectl apply` + rollout** on the cluster. By default **`DEPLOY_MODE` is unset = remote deploy** (needs secret **`KUBE_CONFIG`**). Separate from CI so merging does not double-trigger deploy.
 3. **Override** with repository variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only (no `kubectl`).
 

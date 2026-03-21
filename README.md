@@ -304,7 +304,7 @@ Two workflows so **merging a PR does not start two pipelines**:
 
 | Workflow | When | What |
 |----------|------|------|
-| **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **`backend-tests`** (pytest matrix) + parallel **`frontend-verify`** (web + 2× Vue) + **`docker-verify`** (all images); **`ci-gate`** aggregates |
+| **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **`backend-tests`** (pytest matrix) + parallel **`frontend-verify`** (web + 2× Vue) + parallel **`docker-verify`** (8 images, one job each); **`ci-gate`** aggregates |
 | **Build and Deploy** | **Push to `main`** (merge) or **manual dispatch** | Test + build + **Docker Hub push** + **Kubernetes deploy on the server** (default: **remote** `kubectl` via `KUBE_CONFIG`; set `DEPLOY_MODE=none` to skip deploy) |
 
 **Before merge:** turn on branch protection and require **`CI / ci-gate`** (or individual jobs — see **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**). **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
