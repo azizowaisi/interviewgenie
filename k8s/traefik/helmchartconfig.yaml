@@ -12,7 +12,8 @@ spec:
     additionalArguments:
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      - "--certificatesresolvers.le.acme.email=${LETSENCRYPT_EMAIL}"
+      # Replaced at deploy time (GitHub sed or: sed -i 's/CHANGE_ME_LE_EMAIL/your@email.com/' ...)
+      - "--certificatesresolvers.le.acme.email=CHANGE_ME_LE_EMAIL"
       - "--certificatesresolvers.le.acme.storage=/data/acme.json"
       - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.le.acme.httpchallenge=true"

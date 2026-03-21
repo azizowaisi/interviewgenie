@@ -23,6 +23,8 @@ Thumbs.db
 .env
 .env.local
 *.pem
+.ssh-key-tmp
+*-key-tmp
 
 # Flutter
 clients/flutter-app/.dart_tool/
