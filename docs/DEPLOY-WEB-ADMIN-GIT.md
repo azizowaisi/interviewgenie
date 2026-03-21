@@ -29,8 +29,8 @@ Plus **one** deploy path:
 
 | `DEPLOY_MODE` (Variable) | Also need |
 |--------------------------|-----------|
-| *(unset)* **default** | Secret **`KUBE_CONFIG`** — same as `remote`; full deploy on every merge to `main` |
-| `remote` | Secret `KUBE_CONFIG` (base64 kubeconfig; API must be reachable from GitHub) |
+| *(unset)* **default** | Secret **`KUBE_CONFIG`** — same as `remote`; full deploy on every merge to `main`. If the secret is **missing**, the workflow **skips** `kubectl apply` (warning only; images may still push). |
+| `remote` | Secret `KUBE_CONFIG` (base64 kubeconfig; API must be reachable from GitHub). Same skip-with-warning behavior if secret absent. |
 | `self_hosted` | Runner installed **on the k3s node** (recommended; no public 6443) |
 | `ssh` | `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `LETSENCRYPT_EMAIL` |
 | `none` or `off` | Docker push only; no `kubectl` |
@@ -54,7 +54,7 @@ You must then edit **`k8s/ingress/ingressroute.yaml`**, **`k8s/ingress/admin-ing
 
 | Event | Workflow | What runs |
 |-------|----------|-----------|
-| **Pull request** to `main` | **CI** (`ci.yml`) | **`backend-tests`** (pytest) + **`build-verify`** (Next + Vue builds + **Docker** image builds) — **no** push, **no** deploy |
+| **Pull request** to `main` | **CI** (`ci.yml`) | **`backend-tests`** + **`frontend-verify`** + parallel **`docker-verify`** (8 images); **`ci-gate`** — **no** push, **no** deploy |
 | **Merge** (push to `main`) | **Build and Deploy** (`build-and-deploy.yml`) | **Detect** changed paths → **pytest** only if Python test services changed → **Docker build/push only** for changed images → **deploy** always (manifest apply; `kubectl set image` only when new images were pushed). See `docs/GITHUB-ACTIONS-K8S-OIDC.md` for OIDC options. |
 | **Manual** | **Build and Deploy** | **deploy_only** — k8s apply only; **force_build** (default on) — rebuild all images; **Skip deploy** / **Skip tests** as before |
 

@@ -8,7 +8,7 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 
 ## Overview
 
-1. **Pull requests** → workflow **CI** (`ci.yml`): `backend-tests` (pytest), then `build-verify` (Next.js + Vue Vite builds + Docker image builds; no push, no deploy).
+1. **Pull requests** → workflow **CI** (`ci.yml`): `backend-tests` (pytest matrix), parallel `frontend-verify` (Next + Vue), parallel `docker-verify` matrix (8 images), `ci-gate`; no push, no deploy.
 2. **Pushes to `main`** → workflow **Build and Deploy** (`build-and-deploy.yml`): tests, build, **push** images, then **`kubectl apply` + rollout** on the cluster. By default **`DEPLOY_MODE` is unset = remote deploy** (needs secret **`KUBE_CONFIG`**). Separate from CI so merging does not double-trigger deploy.
 3. **Override** with repository variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only (no `kubectl`).
 
@@ -185,9 +185,9 @@ newgrp docker
    - If `DOCKERHUB_*` are set, it also rewrites images to your Docker Hub repo and the cluster pulls them.
    - Optionally runs a one-time `ollama pull qwen2.5:0.5b` in the cluster (non-blocking).
 
-5. **deploy_remote** – If **`DEPLOY_MODE=remote`** (and `KUBE_CONFIG` secret is set):
-   - Decodes kubeconfig and runs `kubectl apply -k k8s/` from a GitHub-hosted runner.
-   - This requires your Kubernetes API (port 6443) to be reachable from GitHub-hosted runners.
+5. **deploy_remote** – If **`DEPLOY_MODE` is unset, empty, or `remote`**:
+   - If secret **`KUBE_CONFIG`** is set: decodes kubeconfig and runs `kubectl apply -k k8s/` from a GitHub-hosted runner (API 6443 must be reachable from GitHub).
+   - If **`KUBE_CONFIG` is missing**: the job **succeeds** but **skips** `kubectl apply` and prints a **warning** (images may still be pushed). Add the secret to enable remote apply, or set **`DEPLOY_MODE=none`** if you only want registry pushes.
 
 6. **deploy_ssh_bootstrap** – If **`DEPLOY_MODE=ssh`**: SSH to the VM, install k3s if needed, apply manifests.
 

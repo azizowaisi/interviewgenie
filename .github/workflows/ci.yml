@@ -1,10 +1,8 @@
 # Pull requests only — full verification before merge (no push / no deploy).
 # Merge to main → build-and-deploy.yml runs separately (single deploy pipeline).
 #
-# Branch protection: require the jobs below (backend-tests is a matrix — add each check name GitHub shows).
-#   GitHub → Settings → Rules → Branch rules → main → Require status checks:
-#     - "CI / backend-tests (question-service)" … and each matrix leg, or use a ruleset that groups them
-#     - "CI / build-verify"
+# Branch protection: require **CI / ci-gate** (aggregates backend + frontend + Docker).
+#   Or require individual jobs: backend-tests / frontend-verify / docker-verify matrix legs.
 name: CI
 
 on:
@@ -20,7 +18,7 @@ jobs:
   backend-tests:
     name: backend-tests (${{ matrix.service }})
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         service: [question-service, formatter-service, llm-service, stt-service, audio-service]
     runs-on: ubuntu-24.04
@@ -39,10 +37,21 @@ jobs:
           pip install -q -r "backend/${{ matrix.service }}/requirements.txt"
           (cd "backend/${{ matrix.service }}" && python -m pytest tests/ -q --tb=short)
 
-  build-verify:
-    name: build-verify
+  # Next.js + two Vue apps in parallel (after backend tests pass).
+  frontend-verify:
+    name: frontend-verify (${{ matrix.app }})
     needs: backend-tests
     if: always() && needs.backend-tests.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: web
+            dir: web
+          - app: api-frontend
+            dir: backend/api-service/frontend
+          - app: monitoring-frontend
+            dir: backend/monitoring-service/frontend
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -52,38 +61,69 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: |
-            web/package-lock.json
-            backend/api-service/frontend/package-lock.json
-            backend/monitoring-service/frontend/package-lock.json
+          cache-dependency-path: ${{ matrix.dir }}/package-lock.json
 
-      # Next.js (same as web/Dockerfile deps: npm ci + build)
-      - name: Web — npm ci & next build
+      - name: npm ci & build
         run: |
-          cd web
+          cd "${{ matrix.dir }}"
           npm ci
           npm run build
 
-      - name: API Vue SPA — npm ci & vite build
-        run: |
-          cd backend/api-service/frontend
-          npm ci
-          npm run build
-
-      - name: Monitoring Vue admin — npm ci & vite build
-        run: |
-          cd backend/monitoring-service/frontend
-          npm ci
-          npm run build
+  # One image per runner (parallel with frontend-verify and across matrix legs).
+  docker-verify:
+    name: docker-verify (${{ matrix.image }})
+    needs: backend-tests
+    if: always() && needs.backend-tests.result == 'success'
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        image:
+          - api-service
+          - audio-service
+          - stt-service
+          - question-service
+          - llm-service
+          - formatter-service
+          - monitoring-service
+          - web
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Docker — all service images + web
+      - name: Docker build
         run: |
-          for s in ${{ env.SERVICES }}; do
-            echo "==== docker build backend/$s ===="
-            docker build -t interview-ai/$s:latest ./backend/$s
-          done
-          echo "==== docker build web ===="
-          docker build -t interview-ai/web:latest ./web
+          if [ "${{ matrix.image }}" = "web" ]; then
+            echo "==== docker build web ===="
+            docker build -t interview-ai/web:latest ./web
+          else
+            echo "==== docker build backend/${{ matrix.image }} ===="
+            docker build -t "interview-ai/${{ matrix.image }}:latest" "./backend/${{ matrix.image }}"
+          fi
+
+  ci-gate:
+    name: ci-gate
+    needs: [backend-tests, frontend-verify, docker-verify]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all checks green
+        run: |
+          set -euo pipefail
+          ok() { [ "$1" = "success" ]; }
+          if ! ok "${{ needs.backend-tests.result }}"; then
+            echo "::error::backend-tests did not succeed (result=${{ needs.backend-tests.result }})"
+            exit 1
+          fi
+          if ! ok "${{ needs.frontend-verify.result }}"; then
+            echo "::error::frontend-verify did not succeed (result=${{ needs.frontend-verify.result }})"
+            exit 1
+          fi
+          if ! ok "${{ needs.docker-verify.result }}"; then
+            echo "::error::docker-verify did not succeed (result=${{ needs.docker-verify.result }})"
+            exit 1
+          fi
+          echo "All CI jobs succeeded."
