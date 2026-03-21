@@ -1,5 +1,8 @@
 # Build Docker images, push to Docker Hub, deploy to k3s/Kubernetes.
 #
+# Pull requests → unit tests + local Docker builds only (no registry push, no cluster deploy).
+# Merge to main (push) → tests + build + push images + deploy (per DEPLOY_MODE).
+#
 # Deploy modes (repo variable DEPLOY_MODE — Settings → Actions → Variables):
 #   remote         — GitHub-hosted runner + secret KUBE_CONFIG (API 6443 reachable)
 #   self_hosted    — Runner on the k3s node (local kubeconfig)
@@ -72,6 +75,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
+      github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
@@ -137,6 +141,7 @@ jobs:
     if: |
       always() &&
       needs.push.result == 'success' &&
+      github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
       vars.DEPLOY_MODE == 'remote'
     runs-on: ubuntu-24.04
@@ -162,6 +167,7 @@ jobs:
     if: |
       always() &&
       needs.push.result == 'success' &&
+      github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
       vars.DEPLOY_MODE == 'self_hosted'
     runs-on: self-hosted
@@ -200,6 +206,7 @@ jobs:
     if: |
       always() &&
       needs.push.result == 'success' &&
+      github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
       vars.DEPLOY_MODE == 'ssh'
     runs-on: ubuntu-24.04
