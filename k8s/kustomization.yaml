@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: interview-ai
 resources:
   - namespace.yaml
+  - ingress/traefik-middleware.yaml
   - ingress/ingressroute.yaml
   - ingress/admin-ingressroute.yaml
   # Traefik HelmChartConfig lives in kube-system — apply separately:

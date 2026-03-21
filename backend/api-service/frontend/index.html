@@ -11,7 +11,8 @@
 </head>
 <body>
   <!-- Mirrors Electron preload for browser /app workspace -->
-  <script src="/static/web-bridge.js"></script>
+  <!-- Relative so it resolves under /api/svc/* on the public host and on local :8001/:5173 -->
+  <script src="./static/web-bridge.js"></script>
   <div id="app"></div>
   <script type="module" src="/src/main.js"></script>
 </body>

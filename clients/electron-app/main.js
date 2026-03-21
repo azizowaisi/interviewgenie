@@ -9,8 +9,10 @@ const WebSocket = require('ws');
  * Default backend: production (k8s). Override for local Docker:
  *   INTERVIEWGENIE_API_BASE=http://127.0.0.1:8001 etc.
  */
-const PRODUCTION_API_BASE = 'https://interviewgenie.teckiz.com';
-const PRODUCTION_AUDIO_BASE = 'https://interviewgenie.teckiz.com';
+/** FastAPI is mounted at /api/svc on the public host (see k8s/ingress/ingressroute.yaml). */
+const PRODUCTION_API_BASE = 'https://interviewgenie.teckiz.com/api/svc';
+/** Audio HTTP (/mock/*, /health) uses /api/audio (strip prefix → audio-service). */
+const PRODUCTION_AUDIO_BASE = 'https://interviewgenie.teckiz.com/api/audio';
 const PRODUCTION_WS_URL = 'wss://interviewgenie.teckiz.com/ws/audio';
 
 const DEFAULT_API_BASE = process.env.INTERVIEWGENIE_API_BASE || PRODUCTION_API_BASE;

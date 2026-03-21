@@ -3,6 +3,8 @@ import vue from "@vitejs/plugin-vue";
 import path from "path";
 
 export default defineConfig({
+  // Relative base so /app works both at http://localhost:8001/app and https://host/api/svc/app
+  base: "./",
   plugins: [vue()],
   resolve: {
     alias: {
