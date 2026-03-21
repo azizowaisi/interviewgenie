@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: interview-ai
+  labels:
+    app: web
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 3002
+      targetPort: 3002
+      name: http

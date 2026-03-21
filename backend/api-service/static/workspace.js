@@ -1,0 +1,1520 @@
+(function () {
+  if (window.__IG_WORKSPACE_INIT__) return;
+  window.__IG_WORKSPACE_INIT__ = true;
+  var DEFAULT_WS_URL;
+  var DEFAULT_AUDIO_BASE;
+  var DEFAULT_API_BASE;
+  var origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
+  var wsProto = (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:') ? 'wss:' : 'ws:';
+  var wsHost = (typeof window !== 'undefined' && window.location) ? window.location.host : '';
+  var defaultWs = origin ? (wsProto + '//' + wsHost + '/ws/audio') : 'ws://127.0.0.1:8000/ws/audio';
+  try {
+    var el = document.getElementById('interviewgenie-backend-config');
+    var cfg = el ? JSON.parse(el.textContent) : {};
+    DEFAULT_API_BASE = cfg.apiBase || origin || 'http://127.0.0.1:8001';
+    DEFAULT_AUDIO_BASE = cfg.audioBase || origin || 'http://127.0.0.1:8000';
+    DEFAULT_WS_URL = cfg.wsUrl || defaultWs || 'ws://127.0.0.1:8000/ws/audio';
+  } catch (e) {
+    DEFAULT_API_BASE = origin || 'http://127.0.0.1:8001';
+    DEFAULT_AUDIO_BASE = origin || 'http://127.0.0.1:8000';
+    DEFAULT_WS_URL = defaultWs;
+  }
+  var startBtn = document.getElementById('startBtn');
+  var stopBtn = document.getElementById('stopBtn');
+  var statusEl = document.getElementById('status');
+  var answerSection = document.getElementById('answerSection');
+  var errorSection = document.getElementById('errorSection');
+  var errorText = document.getElementById('errorText');
+  var situationEl = document.getElementById('situation');
+  var taskEl = document.getElementById('task');
+  var actionEl = document.getElementById('action');
+  var resultEl = document.getElementById('result');
+  var timerEl = document.getElementById('timer');
+  var liveQuestionEl = document.getElementById('liveQuestion');
+  var liveAnswerEl = document.getElementById('liveAnswer');
+  var typedQuestionInput = document.getElementById('typedQuestion');
+  var askTypedBtn = document.getElementById('askTypedBtn');
+  var infoBtn = document.getElementById('infoBtn');
+  var infoPopover = document.getElementById('infoPopover');
+  var timerInterval = null;
+
+  if (infoBtn && infoPopover) {
+    infoBtn.addEventListener('click', function () {
+      infoPopover.classList.toggle('visible');
+    });
+    document.addEventListener('click', function (e) {
+      if (infoPopover.classList.contains('visible') && !infoBtn.contains(e.target) && !infoPopover.contains(e.target)) {
+        infoPopover.classList.remove('visible');
+      }
+    });
+  }
+  var chunkInterval = null;
+  var lastChunkSendSamples = 0;
+  var levelStream = null;
+  var levelContext = null;
+  var levelAnalyser = null;
+  var levelAnimationId = null;
+  var listeningBarWrap = document.getElementById('listeningBarWrap');
+  var listeningBarFill = document.getElementById('listeningBarFill');
+  var mockListeningBarWrap = document.getElementById('mockListeningBarWrap');
+  var mockListeningBarFill = document.getElementById('mockListeningBarFill');
+  var loadHistoryBtn = document.getElementById('loadHistoryBtn');
+  var historyError = document.getElementById('historyError');
+  var historyAtsBlock = document.getElementById('historyAtsBlock');
+  var historyLiveList = document.getElementById('historyLiveList');
+  var historyMockList = document.getElementById('historyMockList');
+  var historyTabAts = document.getElementById('historyTabAts');
+  var historyTabAttempts = document.getElementById('historyTabAttempts');
+  var historyTabMock = document.getElementById('historyTabMock');
+  var historyTabLive = document.getElementById('historyTabLive');
+  var historyPanelAts = document.getElementById('historyPanelAts');
+  var historyPanelAttempts = document.getElementById('historyPanelAttempts');
+  var historyPanelMock = document.getElementById('historyPanelMock');
+  var historyPanelLive = document.getElementById('historyPanelLive');
+  var loadAttemptsBtn = document.getElementById('loadAttemptsBtn');
+  var attemptsList = document.getElementById('attemptsList');
+  var attemptsError = document.getElementById('attemptsError');
+  var reportModalBackdrop = document.getElementById('reportModalBackdrop');
+  var reportModalClose = document.getElementById('reportModalClose');
+  var reportModalBody = document.getElementById('reportModalBody');
+  var reportModalTitle = document.getElementById('reportModalTitle');
+  var retakePanel = document.getElementById('retakePanel');
+  var retakeProgress = document.getElementById('retakeProgress');
+  var retakeQuestionText = document.getElementById('retakeQuestionText');
+  var retakeAnswerInput = document.getElementById('retakeAnswerInput');
+  var retakeNextBtn = document.getElementById('retakeNextBtn');
+  var retakeFinishBtn = document.getElementById('retakeFinishBtn');
+  var progressGraphWrap = document.getElementById('progressGraphWrap');
+  var retakeState = { topicId: null, attemptId: null, topicName: null, questions: [], questionIndex: 0, questionIds: [] };
+  var compareAttempt1Select = document.getElementById('compareAttempt1Select');
+  var compareAttempt2Select = document.getElementById('compareAttempt2Select');
+  var compareAttemptsBtn = document.getElementById('compareAttemptsBtn');
+  var compareError = document.getElementById('compareError');
+  var compareResult = document.getElementById('compareResult');
+  var compareMetricsTable = document.getElementById('compareMetricsTable');
+  var compareSummaryText = document.getElementById('compareSummaryText');
+  var compareRadarCanvas = document.getElementById('compareRadarCanvas');
+  var lastCompletedAttempts = [];
+  var topicCvFileInput = document.getElementById('topicCvFileInput');
+  var topicCvReplaceInput = document.getElementById('topicCvReplaceInput');
+  var topicNameInput = document.getElementById('topicNameInput');
+  var jobDescInput = document.getElementById('jobDescInput');
+  var createTopicBtn = document.getElementById('createTopicBtn');
+  var topicList = document.getElementById('topicList');
+  var topicError2 = document.getElementById('topicError2');
+  var atsTopicSelect = document.getElementById('atsTopicSelect');
+  var runAtsBtn = document.getElementById('runAtsBtn');
+  var atsError = document.getElementById('atsError');
+  var atsResult = document.getElementById('atsResult');
+  var historyTopicSelect = document.getElementById('historyTopicSelect');
+  var menuPrepare = document.getElementById('menuPrepare');
+  var menuAts = document.getElementById('menuAts');
+  var menuMock = document.getElementById('menuMock');
+  var menuInterview = document.getElementById('menuInterview');
+  var menuHistory = document.getElementById('menuHistory');
+  var panelPrepare = document.getElementById('panelPrepare');
+  var panelAts = document.getElementById('panelAts');
+  var panelMock = document.getElementById('panelMock');
+  var panelInterview = document.getElementById('panelInterview');
+  var panelHistory = document.getElementById('panelHistory');
+  var interviewTopicSelect = document.getElementById('interviewTopicSelect');
+  var mockTopicSelect = document.getElementById('mockTopicSelect');
+  var mockInterviewType = document.getElementById('mockInterviewType');
+  var mockDurationMinutes = document.getElementById('mockDurationMinutes');
+  var mockGetQuestionBtn = document.getElementById('mockGetQuestionBtn');
+  var mockQuestionBlock = document.getElementById('mockQuestionBlock');
+  var mockAnswerInput = document.getElementById('mockAnswerInput');
+  var mockSubmitWrittenBtn = document.getElementById('mockSubmitWrittenBtn');
+  var mockVoiceBtn = document.getElementById('mockVoiceBtn');
+  var mockStopRecordingBtn = document.getElementById('mockStopRecordingBtn');
+  var mockStatus = document.getElementById('mockStatus');
+  var mockError = document.getElementById('mockError');
+  var mockFeedbackBtn = document.getElementById('mockFeedbackBtn');
+  var mockFeedbackBlock = document.getElementById('mockFeedbackBlock');
+  var mockFeedbackContent = document.getElementById('mockFeedbackContent');
+  /* DEFAULT_API_BASE etc. set above from interviewgenie-backend-config — do not shadow */
+  var historyTopicsCache = [];
+  var historyCvCache = [];
+  var interviewTopicsCache = [];
+  var topicIdForCvUpload = null;
+  var currentMockQuestion = '';
+  var mockQuestionForNextSegment = '';
+  var isMockVoiceSession = false;
+  var lastMockHistoryId = null;
+  var MOCK_QUESTIONS_HR = [
+    'Tell me about a time you led a project or initiative.',
+    'Describe a situation where you had to deal with a difficult colleague or stakeholder.',
+    'Give an example of when you failed and what you learned.',
+    'How do you prioritize when you have multiple tight deadlines?',
+    'Tell me about a time you had to learn something new quickly.',
+    'Describe a situation where you had to give critical feedback.',
+    'Tell me about a time you improved a process or way of working.',
+    'How do you handle conflict within a team?',
+    'Why do you want to join this company?',
+    'Where do you see yourself in five years?',
+    'What is your greatest strength and how do you use it at work?',
+    'Describe a time you worked successfully in a team.',
+    'How do you handle stress or pressure?',
+    'What motivates you at work?',
+  ];
+  var MOCK_QUESTIONS_TECHNICAL = [
+    'Walk me through a technical project you designed or implemented.',
+    'How would you design a system for handling millions of requests per second?',
+    'Explain a challenging bug you fixed and how you approached it.',
+    'Describe your experience with code reviews and best practices.',
+    'How do you ensure code quality and maintainability in a codebase?',
+    'Explain the trade-offs between different database types (SQL vs NoSQL).',
+    'Describe a time you had to learn a new technology quickly for a project.',
+    'How would you approach debugging a production issue with limited information?',
+    'Explain the main principles of REST API design.',
+    'What is your experience with testing (unit, integration, e2e)?',
+    'How do you handle technical debt in a project?',
+    'Describe a system you would build for real-time collaboration (e.g. shared document editing).',
+    'What security considerations do you keep in mind when building APIs?',
+    'Explain how you would scale an application that is starting to slow down.',
+  ];
+
+  function showPanel(name) {
+    if (panelPrepare) panelPrepare.classList.remove('active');
+    if (panelAts) panelAts.classList.remove('active');
+    if (panelMock) panelMock.classList.remove('active');
+    if (panelInterview) panelInterview.classList.remove('active');
+    if (panelHistory) panelHistory.classList.remove('active');
+    if (menuPrepare) menuPrepare.classList.remove('active');
+    if (menuAts) menuAts.classList.remove('active');
+    if (menuMock) menuMock.classList.remove('active');
+    if (menuInterview) menuInterview.classList.remove('active');
+    if (menuHistory) menuHistory.classList.remove('active');
+    if (name === 'prepare') {
+      if (panelPrepare) panelPrepare.classList.add('active');
+      if (menuPrepare) menuPrepare.classList.add('active');
+    } else if (name === 'ats') {
+      if (panelAts) panelAts.classList.add('active');
+      if (menuAts) menuAts.classList.add('active');
+      loadAtsTopicOptions();
+      loadAtsResultForSelection();
+    } else if (name === 'mock') {
+      if (panelMock) panelMock.classList.add('active');
+      if (menuMock) menuMock.classList.add('active');
+      loadMockTopicOptions();
+    } else if (name === 'interview') {
+      if (panelInterview) panelInterview.classList.add('active');
+      if (menuInterview) menuInterview.classList.add('active');
+      fillInterviewDropdowns();
+    } else if (name === 'history') {
+      if (panelHistory) panelHistory.classList.add('active');
+      if (menuHistory) menuHistory.classList.add('active');
+      loadHistoryTopicOptions();
+    }
+  }
+  function updateMockTopicMeta() {
+    var topicId = mockTopicSelect && mockTopicSelect.value ? mockTopicSelect.value.trim() : '';
+    if (!topicId) {
+      if (mockInterviewType) mockInterviewType.value = 'technical';
+      if (mockDurationMinutes) mockDurationMinutes.value = '30';
+      return;
+    }
+    for (var i = 0; i < interviewTopicsCache.length; i++) {
+      if (interviewTopicsCache[i].id === topicId) {
+        var t = interviewTopicsCache[i];
+        var itype = (t.interview_type || 'technical').toLowerCase();
+        if (mockInterviewType) mockInterviewType.value = itype === 'hr' ? 'hr' : 'technical';
+        var dur = t.duration_minutes != null ? Math.max(5, Math.min(120, Number(t.duration_minutes))) : 30;
+        if (mockDurationMinutes) mockDurationMinutes.value = String(dur);
+        return;
+      }
+    }
+    if (mockInterviewType) mockInterviewType.value = 'technical';
+    if (mockDurationMinutes) mockDurationMinutes.value = '30';
+  }
+  function saveMockTopicSettings() {
+    var topicId = mockTopicSelect && mockTopicSelect.value ? mockTopicSelect.value.trim() : '';
+    if (!topicId || !window.electronAPI || !window.electronAPI.updateTopic) return;
+    var itype = mockInterviewType && mockInterviewType.value ? mockInterviewType.value : 'technical';
+    var dur = mockDurationMinutes && mockDurationMinutes.value ? parseInt(mockDurationMinutes.value, 10) : 30;
+    if (isNaN(dur) || dur < 5) dur = 30;
+    if (dur > 120) dur = 120;
+    window.electronAPI.updateTopic(DEFAULT_API_BASE, topicId, itype, dur).then(function (res) {
+      if (res && !res.error && interviewTopicsCache) {
+        for (var i = 0; i < interviewTopicsCache.length; i++) {
+          if (interviewTopicsCache[i].id === topicId) {
+            interviewTopicsCache[i].interview_type = itype;
+            interviewTopicsCache[i].duration_minutes = dur;
+            break;
+          }
+        }
+      }
+    });
+  }
+  function loadMockTopicOptions() {
+    if (!window.electronAPI || !window.electronAPI.getTopics) return;
+    window.electronAPI.getTopics(DEFAULT_API_BASE).then(function (data) {
+      var list = Array.isArray(data) && !data.error ? data : [];
+      interviewTopicsCache = list;
+      if (mockTopicSelect) {
+        mockTopicSelect.innerHTML = '<option value="">— Select job title —</option>' +
+          list.map(function (t) { return '<option value="' + (t.id || '').replace(/"/g, '&quot;') + '">' + (t.topic || '').replace(/</g, '&lt;') + '</option>'; }).join('');
+      }
+      if (interviewTopicSelect) {
+        interviewTopicSelect.innerHTML = '<option value="">— Select job title —</option>' +
+          list.map(function (t) { return '<option value="' + (t.id || '').replace(/"/g, '&quot;') + '">' + (t.topic || '').replace(/</g, '&lt;') + '</option>'; }).join('');
+      }
+      updateMockTopicMeta();
+    });
+  }
+  function fillInterviewDropdowns() {
+    window.electronAPI.getTopics(DEFAULT_API_BASE).then(function (data) {
+      var list = Array.isArray(data) && !data.error ? data : [];
+      interviewTopicsCache = list;
+      if (interviewTopicSelect) {
+        interviewTopicSelect.innerHTML = '<option value="">— Select job title —</option>' +
+          list.map(function (t) { return '<option value="' + (t.id || '').replace(/"/g, '&quot;') + '">' + (t.topic || '').replace(/</g, '&lt;') + '</option>'; }).join('');
+      }
+    });
+  }
+  function getInterviewTopicId() {
+    return interviewTopicSelect && interviewTopicSelect.value ? interviewTopicSelect.value.trim() : null;
+  }
+  function getInterviewCvId() {
+    var tid = getInterviewTopicId();
+    if (!tid) return undefined;
+    for (var i = 0; i < interviewTopicsCache.length; i++) {
+      if (interviewTopicsCache[i].id === tid && interviewTopicsCache[i].cv_id) return interviewTopicsCache[i].cv_id;
+    }
+    return undefined;
+  }
+  function loadHistoryTopicOptions() {
+    if (!window.electronAPI || !window.electronAPI.getTopics) return;
+    window.electronAPI.getTopics(DEFAULT_API_BASE).then(function (data) {
+      var list = Array.isArray(data) && !data.error ? data : [];
+      historyTopicsCache = list;
+      fillHistoryTopicSelect(list);
+    });
+  }
+  function showHistoryTab(tabName) {
+    var tabs = [historyTabAts, historyTabAttempts, historyTabMock, historyTabLive];
+    var panels = [historyPanelAts, historyPanelAttempts, historyPanelMock, historyPanelLive];
+    var names = ['ats', 'attempts', 'mock', 'live'];
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i]) tabs[i].classList.toggle('active', names[i] === tabName);
+      if (panels[i]) panels[i].classList.toggle('active', names[i] === tabName);
+    }
+  }
+  if (historyTabAts) historyTabAts.addEventListener('click', function () { showHistoryTab('ats'); });
+  if (historyTabAttempts) historyTabAttempts.addEventListener('click', function () { showHistoryTab('attempts'); });
+  if (historyTabMock) historyTabMock.addEventListener('click', function () { showHistoryTab('mock'); });
+  if (historyTabLive) historyTabLive.addEventListener('click', function () { showHistoryTab('live'); });
+  if (menuPrepare) menuPrepare.addEventListener('click', function () { showPanel('prepare'); });
+  if (menuAts) menuAts.addEventListener('click', function () { showPanel('ats'); });
+  if (menuMock) menuMock.addEventListener('click', function () { showPanel('mock'); });
+  if (menuInterview) menuInterview.addEventListener('click', function () { showPanel('interview'); });
+  if (menuHistory) menuHistory.addEventListener('click', function () { showPanel('history'); });
+  if (mockTopicSelect) mockTopicSelect.addEventListener('change', function () { lastMockHistoryId = null; updateMockTopicMeta(); });
+  if (mockInterviewType) mockInterviewType.addEventListener('change', saveMockTopicSettings);
+  if (mockDurationMinutes) mockDurationMinutes.addEventListener('change', saveMockTopicSettings);
+  if (mockGetQuestionBtn) {
+    mockGetQuestionBtn.addEventListener('click', function () {
+      var isHr = mockInterviewType && mockInterviewType.value === 'hr';
+      var list = isHr ? MOCK_QUESTIONS_HR : MOCK_QUESTIONS_TECHNICAL;
+      if (list.length === 0) return;
+      lastMockHistoryId = null;
+      currentMockQuestion = list[Math.floor(Math.random() * list.length)];
+      if (mockQuestionBlock) mockQuestionBlock.innerHTML = '<p style="margin:0; color:#e8e8ed; font-size:1rem; line-height:1.5;">' + (currentMockQuestion || '').replace(/</g, '&lt;') + '</p>';
+      if (mockStatus) mockStatus.textContent = '';
+      if (mockError) mockError.hidden = true;
+    });
+  }
+  if (mockSubmitWrittenBtn && mockAnswerInput) {
+    mockSubmitWrittenBtn.addEventListener('click', function () {
+      if (!currentMockQuestion) { if (mockError) { mockError.textContent = 'Get a question first.'; mockError.hidden = false; } return; }
+      var topicId = mockTopicSelect && mockTopicSelect.value ? mockTopicSelect.value.trim() : '';
+      if (!topicId) { if (mockError) { mockError.textContent = 'Select a job title.'; mockError.hidden = false; } return; }
+      var answer = (mockAnswerInput.value || '').trim();
+      if (!answer) { if (mockError) { mockError.textContent = 'Type your answer.'; mockError.hidden = false; } return; }
+      if (mockError) mockError.hidden = true;
+      if (mockStatus) mockStatus.textContent = 'Saving…';
+      window.electronAPI.saveHistory(DEFAULT_API_BASE, currentMockQuestion, answer, topicId, 'mock').then(function (res) {
+        if (res && res.error) {
+          if (mockStatus) mockStatus.textContent = '';
+          if (mockError) { mockError.textContent = res.body || res.message || 'Save failed'; mockError.hidden = false; }
+          return;
+        }
+        if (res && res.id) lastMockHistoryId = res.id;
+        if (mockStatus) mockStatus.textContent = 'Saved.';
+        mockAnswerInput.value = '';
+      });
+    });
+  }
+  function resetMockVoiceUI() {
+    isMockVoiceSession = false;
+    if (mockStopRecordingBtn) mockStopRecordingBtn.style.display = 'none';
+    if (mockVoiceBtn) mockVoiceBtn.disabled = false;
+    if (mockStatus) mockStatus.textContent = '';
+  }
+  if (mockVoiceBtn) {
+    mockVoiceBtn.addEventListener('click', function () {
+      if (!currentMockQuestion) { if (mockError) { mockError.textContent = 'Get a question first.'; mockError.hidden = false; } return; }
+      var topicId = mockTopicSelect && mockTopicSelect.value ? mockTopicSelect.value.trim() : '';
+      if (!topicId) { if (mockError) { mockError.textContent = 'Select a job title.'; mockError.hidden = false; } return; }
+      if (mockError) mockError.hidden = true;
+      if (interviewTopicSelect) interviewTopicSelect.value = topicId;
+      mockQuestionForNextSegment = currentMockQuestion;
+      isMockVoiceSession = true;
+      if (mockAnswerInput) mockAnswerInput.value = '';
+      if (mockStatus) mockStatus.textContent = 'Recording… Speak your answer, then click Stop recording.';
+      if (mockVoiceBtn) mockVoiceBtn.disabled = true;
+      if (mockStopRecordingBtn) { mockStopRecordingBtn.style.display = ''; mockStopRecordingBtn.disabled = false; }
+      if (startBtn) startBtn.click();
+    });
+  }
+  if (mockStopRecordingBtn) {
+    mockStopRecordingBtn.addEventListener('click', function () {
+      if (mockStopRecordingBtn.disabled) return;
+      mockStopRecordingBtn.disabled = true;
+      var total = 0;
+      if (segmentChunks && segmentChunks.length > 0) {
+        for (var i = 0; i < segmentChunks.length; i++) total += segmentChunks[i].length;
+      }
+      var wavBuffer = null;
+      if (total > 0 && audioContext) {
+        var samples = new Float32Array(total), offset = 0;
+        for (var j = 0; j < segmentChunks.length; j++) { samples.set(segmentChunks[j], offset); offset += segmentChunks[j].length; }
+        wavBuffer = encodeWAV(samples, audioContext.sampleRate || SAMPLE_RATE);
+      }
+      stopLocalRecordingOnly();
+      resetMockVoiceUI();
+      function endSession() {
+        if (window.electronAPI && window.electronAPI.endAudioSession) window.electronAPI.endAudioSession();
+      }
+      if (total === 0 || !(window.electronAPI && window.electronAPI.sendAudioSegment)) {
+        endSession();
+        if (mockStatus) mockStatus.textContent = total === 0 ? 'No speech detected.' : 'Ready. Edit and click Submit written answer.';
+        return;
+      }
+      if (!wavBuffer) {
+        endSession();
+        if (mockStatus) mockStatus.textContent = 'Ready. Edit and click Submit written answer.';
+        return;
+      }
+      if (mockStatus) mockStatus.textContent = 'Transcribing…';
+      window.electronAPI.sendAudioSegment(Array.from(new Uint8Array(wavBuffer))).then(function (data) {
+        endSession();
+        if (mockAnswerInput && data && data.answer_transcript !== undefined) {
+          mockAnswerInput.value = data.answer_transcript;
+        }
+        if (mockStatus) mockStatus.textContent = (data && data.error)
+          ? (data.error || 'Transcription failed.')
+          : 'Ready. Edit if needed and click Submit written answer.';
+        if (mockError) {
+          if (data && data.error) { mockError.textContent = data.error; mockError.hidden = false; }
+          else mockError.hidden = true;
+        }
+      }).catch(function (err) {
+        endSession();
+        if (mockStatus) mockStatus.textContent = 'Failed to transcribe.';
+        if (mockError) { mockError.textContent = err && err.message ? err.message : 'Failed'; mockError.hidden = false; }
+      });
+    });
+  }
+  function formatFeedbackHtml(text) {
+    if (!text || typeof text !== 'string') return '';
+    function escape(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    var escaped = escape(text);
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    var blocks = escaped.split(/\n\n+/);
+    var out = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var block = blocks[i].trim();
+      if (!block) continue;
+      var lines = block.split('\n');
+      var firstLine = lines[0];
+      var firstTrim = firstLine.trim();
+      var isHeader = firstTrim.endsWith(':') && (firstLine.length < 100 || firstLine.indexOf('<strong>') !== -1);
+      if (isHeader && lines.length === 1) {
+        out.push('<h4>' + firstLine + '</h4>');
+      } else if (isHeader && lines.length > 1) {
+        out.push('<h4>' + firstLine + '</h4>');
+        out.push('<p>' + lines.slice(1).join('<br>') + '</p>');
+      } else {
+        out.push('<p>' + block.replace(/\n/g, '<br>') + '</p>');
+      }
+    }
+    return out.join('\n');
+  }
+  if (mockFeedbackBtn && window.electronAPI && window.electronAPI.getMockAnswerFeedback) {
+    mockFeedbackBtn.addEventListener('click', function () {
+      if (!currentMockQuestion) {
+        if (mockError) { mockError.textContent = 'Get a question first.'; mockError.hidden = false; }
+        return;
+      }
+      var answer = (mockAnswerInput && mockAnswerInput.value) ? mockAnswerInput.value.trim() : '';
+      if (!answer) {
+        if (mockError) { mockError.textContent = 'Enter or record your answer first.'; mockError.hidden = false; }
+        return;
+      }
+      if (mockError) mockError.hidden = true;
+      if (mockFeedbackBlock) mockFeedbackBlock.style.display = 'block';
+      if (mockFeedbackContent) mockFeedbackContent.textContent = 'Loading feedback…';
+      window.electronAPI.getMockAnswerFeedback(DEFAULT_AUDIO_BASE, currentMockQuestion, answer).then(function (data) {
+        if (data && data.error) {
+          if (mockFeedbackContent) mockFeedbackContent.textContent = 'Failed: ' + (data.body || data.message || data.error);
+          return;
+        }
+        var raw = (data && data.feedback) ? data.feedback : 'No feedback returned.';
+        if (mockFeedbackContent) mockFeedbackContent.innerHTML = formatFeedbackHtml(raw);
+        var topicId = mockTopicSelect && mockTopicSelect.value ? mockTopicSelect.value.trim() : '';
+        if (lastMockHistoryId && window.electronAPI.saveMockFeedback) {
+          window.electronAPI.saveMockFeedback(DEFAULT_API_BASE, lastMockHistoryId, raw).then(function () {});
+        } else if (topicId && window.electronAPI.saveHistory) {
+          window.electronAPI.saveHistory(DEFAULT_API_BASE, currentMockQuestion, answer, topicId, 'mock', raw).then(function () {});
+        }
+      }).catch(function (err) {
+        if (mockFeedbackContent) mockFeedbackContent.textContent = 'Error: ' + (err && err.message ? err.message : 'Could not get feedback.');
+      });
+    });
+  }
+
+  function doUploadTopicCv(topicId, file) {
+    if (!file || !window.electronAPI || !window.electronAPI.uploadTopicCv) return;
+    if (topicError2) { topicError2.hidden = true; topicError2.textContent = ''; }
+    topicError2.textContent = 'Uploading…';
+    topicError2.hidden = false;
+    var reader = new FileReader();
+    reader.onload = function () {
+      window.electronAPI.uploadTopicCv(DEFAULT_API_BASE, topicId, file.name, reader.result).then(function (res) {
+        if (res && res.error) {
+          if (topicError2) { topicError2.textContent = res.body || res.message || 'Upload failed'; topicError2.hidden = false; }
+          return;
+        }
+        if (topicError2) topicError2.hidden = true;
+        loadTopics();
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  if (topicCvReplaceInput) {
+    topicCvReplaceInput.addEventListener('change', function () {
+      var file = topicCvReplaceInput.files && topicCvReplaceInput.files[0];
+      if (file && topicIdForCvUpload) {
+        doUploadTopicCv(topicIdForCvUpload, file);
+        topicIdForCvUpload = null;
+      }
+      topicCvReplaceInput.value = '';
+    });
+  }
+
+  function loadTopics() {
+    if (!window.electronAPI || !window.electronAPI.getTopics) return;
+    topicList.textContent = 'Loading…';
+    if (topicError2) topicError2.hidden = true;
+    window.electronAPI.getTopics(DEFAULT_API_BASE).then(function (data) {
+      if (data && data.error) {
+        topicList.textContent = '';
+        if (topicError2) { topicError2.textContent = data.message || 'Could not load topics'; topicError2.hidden = false; }
+        return;
+      }
+      if (topicError2) topicError2.hidden = true;
+      if (!Array.isArray(data) || data.length === 0) {
+        topicList.innerHTML = '<p style="color:#666; font-size:0.9rem; margin:0;">No job titles yet. Create one above.</p>';
+        fillAtsTopicSelect([]);
+        fillHistoryTopicSelect([]);
+        return;
+      }
+      topicList.innerHTML = data.map(function (item) {
+        var id = (item.id || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        var name = (item.topic || 'Job title').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        var cvLabel = item.cv_filename ? ('CV: ' + (item.cv_filename || '').replace(/</g, '&lt;')) : 'No CV';
+        return '<div class="topic-list-item" data-topic-id="' + id + '">' +
+          '<span>' + name + ' <small style="color:#666;">' + cvLabel + '</small></span>' +
+          '<button type="button" class="btn secondary" data-upload-cv="' + id + '">Upload CV</button>' +
+          '</div>';
+      }).join('');
+      topicList.querySelectorAll('[data-upload-cv]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          topicIdForCvUpload = btn.getAttribute('data-upload-cv');
+          if (topicCvReplaceInput) topicCvReplaceInput.click();
+        });
+      });
+      fillAtsTopicSelect(data);
+      fillHistoryTopicSelect(data);
+    });
+  }
+  function fillHistoryTopicSelect(topics) {
+    if (!historyTopicSelect) return;
+    var list = Array.isArray(topics) ? topics : [];
+    historyTopicSelect.innerHTML = '<option value="">— Select job title —</option>' +
+      list.map(function (t) { return '<option value="' + (t.id || '').replace(/"/g, '&quot;') + '">' + (t.topic || '').replace(/</g, '&lt;') + '</option>'; }).join('');
+  }
+  function fillAtsTopicSelect(topics) {
+    if (!atsTopicSelect) return;
+    var list = Array.isArray(topics) ? topics : [];
+    atsTopicSelect.innerHTML = '<option value="">— Select job title —</option>' +
+      list.map(function (t) { return '<option value="' + (t.id || '').replace(/"/g, '&quot;') + '">' + (t.topic || '').replace(/</g, '&lt;') + '</option>'; }).join('');
+  }
+  function loadAtsTopicOptions() {
+    if (!window.electronAPI || !window.electronAPI.getTopics) return;
+    window.electronAPI.getTopics(DEFAULT_API_BASE).then(function (data) {
+      var list = Array.isArray(data) && !data.error ? data : [];
+      fillAtsTopicSelect(list);
+    });
+  }
+  function loadAtsResultForSelection() {
+    var topicId = atsTopicSelect && atsTopicSelect.value ? atsTopicSelect.value.trim() : '';
+    if (!topicId) { atsResult.innerHTML = ''; atsError.hidden = true; return; }
+    atsError.hidden = true;
+    atsResult.innerHTML = 'Loading…';
+    window.electronAPI.getAts(DEFAULT_API_BASE, topicId).then(function (data) {
+      if (data && data.error) {
+        atsResult.innerHTML = '';
+        atsError.textContent = data.message || 'Could not load ATS';
+        atsError.hidden = false;
+        return;
+      }
+      atsError.hidden = true;
+      if (!Array.isArray(data) || data.length === 0) {
+        atsResult.innerHTML = '<p style="color:#888; font-size:0.9rem;">No saved result for this job. Click Run ATS analysis.</p>';
+        return;
+      }
+      var r = data[0];
+      atsResult.innerHTML = renderAtsResult(r);
+    });
+  }
+  function renderAtsResult(r) {
+    var score = r.overall_score != null ? r.overall_score : 0;
+    var skill = r.skill_match != null ? r.skill_match : 0;
+    var keyword = r.keyword_match != null ? r.keyword_match : 0;
+    var exp = r.experience_match != null ? r.experience_match : 0;
+    var tech = r.tech_match != null ? r.tech_match : 0;
+    var missing = Array.isArray(r.missing_skills) ? r.missing_skills : [];
+    return '<div class="ats-score-box"><span class="score">' + score + '%</span><br><span class="label">Overall</span></div>' +
+      '<div class="ats-score-box"><span class="score">' + skill + '%</span><br><span class="label">Skill</span></div>' +
+      '<div class="ats-score-box"><span class="score">' + keyword + '%</span><br><span class="label">Keyword</span></div>' +
+      '<div class="ats-score-box"><span class="score">' + exp + '%</span><br><span class="label">Experience</span></div>' +
+      '<div class="ats-score-box"><span class="score">' + tech + '%</span><br><span class="label">Tech</span></div>' +
+      (missing.length ? '<div class="ats-missing"><strong>Missing skills:</strong><ul><li>' + missing.map(function (m) { return (m || '').replace(/</g, '&lt;'); }).join('</li><li>') + '</li></ul></div>' : '');
+  }
+  if (atsTopicSelect) atsTopicSelect.addEventListener('change', loadAtsResultForSelection);
+  if (createTopicBtn && topicNameInput) {
+    createTopicBtn.addEventListener('click', function () {
+      var name = (topicNameInput.value || '').trim();
+      if (!name) { if (topicError2) { topicError2.textContent = 'Enter a job title'; topicError2.hidden = false; } return; }
+      if (topicError2) topicError2.hidden = true;
+      var cvFile = topicCvFileInput && topicCvFileInput.files && topicCvFileInput.files[0] ? topicCvFileInput.files[0] : null;
+      createTopicBtn.disabled = true;
+      if (topicError2) { topicError2.textContent = 'Creating topic…'; topicError2.hidden = false; }
+      window.electronAPI.createTopic(DEFAULT_API_BASE, name, (jobDescInput.value || '').trim()).then(function (res) {
+        if (res && res.error) {
+          createTopicBtn.disabled = false;
+          if (topicError2) { topicError2.textContent = res.body || res.message || 'Failed to create topic'; topicError2.hidden = false; }
+          return;
+        }
+        var topicId = res.id;
+        if (cvFile && topicId && window.electronAPI && window.electronAPI.uploadTopicCv) {
+          if (topicError2) { topicError2.textContent = 'Uploading CV…'; topicError2.hidden = false; }
+          var reader = new FileReader();
+          reader.onload = function () {
+            window.electronAPI.uploadTopicCv(DEFAULT_API_BASE, topicId, cvFile.name, reader.result).then(function (upRes) {
+              createTopicBtn.disabled = false;
+              if (topicError2) topicError2.hidden = true;
+              if (upRes && upRes.error) {
+                if (topicError2) { topicError2.textContent = upRes.body || upRes.message || 'Topic created but CV upload failed'; topicError2.hidden = false; }
+              }
+              topicNameInput.value = '';
+              jobDescInput.value = '';
+              if (topicCvFileInput) topicCvFileInput.value = '';
+              loadTopics();
+            });
+          };
+          reader.readAsArrayBuffer(cvFile);
+        } else {
+          createTopicBtn.disabled = false;
+          if (topicError2) topicError2.hidden = true;
+          topicNameInput.value = '';
+          jobDescInput.value = '';
+          if (topicCvFileInput) topicCvFileInput.value = '';
+          loadTopics();
+        }
+      });
+    });
+  }
+  if (runAtsBtn) {
+    runAtsBtn.addEventListener('click', function () {
+      var topicId = atsTopicSelect && atsTopicSelect.value ? atsTopicSelect.value.trim() : '';
+      if (!topicId) { atsError.textContent = 'Select a job title'; atsError.hidden = false; return; }
+      atsError.hidden = true;
+      atsResult.innerHTML = 'Analyzing…';
+      runAtsBtn.disabled = true;
+      window.electronAPI.analyzeAts(DEFAULT_API_BASE, undefined, topicId, undefined).then(function (res) {
+        runAtsBtn.disabled = false;
+        if (res && res.error) {
+          atsResult.innerHTML = '';
+          atsError.textContent = res.body || res.message || 'ATS analysis failed';
+          atsError.hidden = false;
+          return;
+        }
+        atsError.hidden = true;
+        atsResult.innerHTML = renderAtsResult(res);
+      });
+    });
+  }
+  if (topicList) loadTopics();
+
+  function formatTs(iso) {
+    if (!iso) return '';
+    try {
+      var d = new Date(iso);
+      return d.toLocaleString();
+    } catch (_) { return iso; }
+  }
+  function loadHistory() {
+    if (!window.electronAPI || !window.electronAPI.getHistory) return;
+    var topicId = historyTopicSelect && historyTopicSelect.value ? historyTopicSelect.value.trim() : null;
+    if (!topicId) {
+      if (historyAtsBlock) historyAtsBlock.innerHTML = '';
+      var msg = '<p style="color:#888;">Select a job title and click View history.</p>';
+      if (historyLiveList) historyLiveList.innerHTML = msg;
+      if (historyMockList) historyMockList.innerHTML = msg;
+      return;
+    }
+    if (historyLiveList) { historyLiveList.textContent = 'Loading…'; historyLiveList.classList.add('loading'); }
+    if (historyMockList) { historyMockList.textContent = 'Loading…'; historyMockList.classList.add('loading'); }
+    historyError.hidden = true;
+    if (historyAtsBlock) historyAtsBlock.innerHTML = 'Loading…';
+    Promise.all([
+      window.electronAPI.getAts(DEFAULT_API_BASE, topicId),
+      window.electronAPI.getHistory(DEFAULT_API_BASE, 50, topicId),
+      historyCvCache.length ? Promise.resolve(historyCvCache) : window.electronAPI.getCvList(DEFAULT_API_BASE).then(function (d) {
+        if (!d || d.error) return [];
+        historyCvCache = Array.isArray(d) ? d : [];
+        return historyCvCache;
+      })
+    ]).then(function (results) {
+      var atsData = results[0];
+      var data = results[1];
+      if (results[2] && results[2].length) historyCvCache = results[2];
+      if (historyAtsBlock) {
+        if (atsData && !atsData.error && Array.isArray(atsData) && atsData.length > 0) {
+          historyAtsBlock.innerHTML = '<h3 style="font-size:1rem; color:#888; margin:0 0 0.5rem 0;">ATS result</h3>' + renderAtsResult(atsData[0]);
+        } else {
+          historyAtsBlock.innerHTML = '<p style="color:#666; font-size:0.9rem;">No ATS result for this job. Run ATS in <strong>2. ATS</strong>.</p>';
+        }
+      }
+      if (data && data.error) {
+        if (historyLiveList) { historyLiveList.innerHTML = ''; historyLiveList.classList.remove('loading'); }
+        if (historyMockList) { historyMockList.innerHTML = ''; historyMockList.classList.remove('loading'); }
+        historyError.textContent = data.message || 'Failed to load history (is the API running on port 8001?)';
+        historyError.hidden = false;
+        return;
+      }
+      historyError.hidden = true;
+      function topicName(tid) {
+        if (!tid) return '';
+        for (var i = 0; i < historyTopicsCache.length; i++) {
+          if (historyTopicsCache[i].id === tid) return (historyTopicsCache[i].topic || '').replace(/</g, '&lt;');
+        }
+        return '';
+      }
+      function cvName(cid) {
+        if (!cid) return '';
+        for (var i = 0; i < historyCvCache.length; i++) {
+          if (historyCvCache[i].id === cid) return (historyCvCache[i].filename || '').replace(/</g, '&lt;');
+        }
+        return '';
+      }
+      function renderItem(item) {
+        var q = (item.question || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        var a = (item.answer || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        var ts = formatTs(item.timestamp);
+        var tName = topicName(item.topic_id);
+        var cName = cvName(item.cv_id);
+        var meta = '';
+        if (tName || cName) {
+          meta = '<p class="meta">';
+          if (tName) meta += '<span>Job: ' + tName + '</span>';
+          if (cName) meta += '<span>CV: ' + cName + '</span>';
+          meta += '</p>';
+        }
+        var feedbackBlock = '';
+        if (item.feedback && typeof formatFeedbackHtml === 'function') {
+          feedbackBlock = '<div class="history-item-feedback">' + formatFeedbackHtml(item.feedback) + '</div>';
+        }
+        return '<div class="history-item"><p class="q">' + q + '</p><p class="a">' + a + '</p><p class="ts">' + ts + '</p>' + meta + feedbackBlock + '</div>';
+      }
+      var liveItems = Array.isArray(data) ? data.filter(function (item) { return (item.source || 'live') !== 'mock'; }) : [];
+      var mockItems = Array.isArray(data) ? data.filter(function (item) { return (item.source || 'live') === 'mock'; }) : [];
+      var liveHtml = liveItems.length
+        ? liveItems.map(renderItem).join('')
+        : '<p style="color:#666; font-size:0.9rem;">No live interview Q&A yet. Use <strong>4. Live interview</strong> to record.</p>';
+      var mockHtml = mockItems.length
+        ? mockItems.map(renderItem).join('')
+        : '<p style="color:#666; font-size:0.9rem;">No mock interview Q&A yet. Use <strong>3. Mock interview</strong> to practice.</p>';
+      if (historyLiveList) { historyLiveList.innerHTML = liveHtml; historyLiveList.classList.remove('loading'); }
+      if (historyMockList) { historyMockList.innerHTML = mockHtml; historyMockList.classList.remove('loading'); }
+    });
+  }
+  if (loadHistoryBtn) loadHistoryBtn.addEventListener('click', loadHistory);
+
+  function loadAttempts() {
+    if (!window.electronAPI || !window.electronAPI.getTopicAttempts) return;
+    var topicId = historyTopicSelect && historyTopicSelect.value ? historyTopicSelect.value.trim() : null;
+    if (!topicId) {
+      if (attemptsError) { attemptsError.textContent = 'Select a job title first.'; attemptsError.hidden = false; }
+      if (attemptsList) attemptsList.innerHTML = '';
+      return;
+    }
+    if (attemptsError) attemptsError.hidden = true;
+    if (attemptsList) attemptsList.innerHTML = 'Loading…';
+    window.electronAPI.getTopicAttempts(DEFAULT_API_BASE, topicId).then(function (data) {
+      if (!attemptsList) return;
+      if (data && data.error) {
+        attemptsList.innerHTML = '';
+        if (attemptsError) { attemptsError.textContent = data.body || data.message || 'Failed to load attempts'; attemptsError.hidden = false; }
+        return;
+      }
+      if (attemptsError) attemptsError.hidden = true;
+      var list = Array.isArray(data) ? data : [];
+      var topicName = '';
+      for (var i = 0; i < historyTopicsCache.length; i++) {
+        if (historyTopicsCache[i].id === topicId) { topicName = historyTopicsCache[i].topic || ''; break; }
+      }
+      var completed = list.filter(function (a) { return a.end_time != null && a.score != null; });
+      var html = '<p style="color:#888; font-size:0.9rem; margin:0 0 0.5rem 0;">' + (topicName ? topicName.replace(/</g, '&lt;') : '') + '</p>';
+      if (completed.length === 0) {
+        html += '<p style="color:#666; margin-bottom:0.75rem;">No scored attempts yet. Click Retake Interview to start your first attempt (same job, new questions).</p>';
+      }
+      completed.forEach(function (a) {
+        var score = a.score != null ? Number(a.score) : '—';
+        var date = a.end_time ? formatTs(a.end_time) : (a.start_time ? formatTs(a.start_time) : '—');
+        html += '<div class="attempt-card" data-attempt-id="' + (a.id || '').replace(/"/g, '&quot;') + '">';
+        html += '<div class="attempt-meta">Attempt ' + (a.attempt_number || '') + ' &middot; <span class="attempt-score">' + score + ' / 10</span> &middot; ' + date + '</div>';
+        html += '<div class="attempt-actions"><button type="button" class="btn secondary report-btn">View Report</button></div></div>';
+      });
+      html += '<div class="attempt-card" style="margin-top:0.5rem;"><div class="attempt-actions"><button type="button" id="retakeInterviewBtn" class="btn primary">Retake Interview</button></div></div>';
+      attemptsList.innerHTML = html;
+      completed.forEach(function (a) {
+        if (!a.id) return;
+        var card = attemptsList.querySelector('.attempt-card[data-attempt-id="' + String(a.id).replace(/"/g, '\\"') + '"]');
+        if (card) {
+          var btn = card.querySelector('.report-btn');
+          if (btn) btn.addEventListener('click', function () { openReportModal(a.id); });
+        }
+      });
+      var retakeBtn = document.getElementById('retakeInterviewBtn');
+      if (retakeBtn) retakeBtn.addEventListener('click', function () { startRetakeFlow(topicId, topicName); });
+      drawProgressGraph(completed);
+      lastCompletedAttempts = completed;
+      fillCompareAttemptDropdowns(completed);
+    });
+  }
+  function fillCompareAttemptDropdowns(completed) {
+    var list = Array.isArray(completed) ? completed : [];
+    var opts = '<option value="">— Select —</option>' + list.map(function (a) {
+      var score = a.score != null ? Number(a.score) : '—';
+      return '<option value="' + (a.id || '').replace(/"/g, '&quot;') + '">Attempt ' + (a.attempt_number || '') + ' (' + score + '/10)</option>';
+    }).join('');
+    if (compareAttempt1Select) compareAttempt1Select.innerHTML = opts;
+    if (compareAttempt2Select) compareAttempt2Select.innerHTML = opts;
+  }
+  function runCompareAttempts() {
+    if (!window.electronAPI || !window.electronAPI.getAttempt || !window.electronAPI.compareAttempts) return;
+    var id1 = compareAttempt1Select && compareAttempt1Select.value ? compareAttempt1Select.value.trim() : '';
+    var id2 = compareAttempt2Select && compareAttempt2Select.value ? compareAttempt2Select.value.trim() : '';
+    if (!id1 || !id2) {
+      if (compareError) { compareError.textContent = 'Select both attempts.'; compareError.hidden = false; }
+      return;
+    }
+    if (id1 === id2) {
+      if (compareError) { compareError.textContent = 'Select two different attempts.'; compareError.hidden = false; }
+      return;
+    }
+    if (compareError) compareError.hidden = true;
+    if (compareResult) compareResult.style.display = 'none';
+    if (compareAttemptsBtn) compareAttemptsBtn.disabled = true;
+    Promise.all([
+      window.electronAPI.getAttempt(DEFAULT_API_BASE, id1),
+      window.electronAPI.getAttempt(DEFAULT_API_BASE, id2),
+    ]).then(function (results) {
+      var a1 = results[0];
+      var a2 = results[1];
+      if (a1 && a1.error) { if (compareError) { compareError.textContent = 'Could not load first attempt.'; compareError.hidden = false; } if (compareAttemptsBtn) compareAttemptsBtn.disabled = false; return; }
+      if (a2 && a2.error) { if (compareError) { compareError.textContent = 'Could not load second attempt.'; compareError.hidden = false; } if (compareAttemptsBtn) compareAttemptsBtn.disabled = false; return; }
+      var qa1 = (a1.questions || []).map(function (q) { return { question: q.question || '', answer: q.answer || '' }; });
+      var qa2 = (a2.questions || []).map(function (q) { return { question: q.question || '', answer: q.answer || '' }; });
+      var attempt1Data = { score: a1.score, evaluation_summary: a1.evaluation_summary || '', questions_and_answers: qa1 };
+      var attempt2Data = { score: a2.score, evaluation_summary: a2.evaluation_summary || '', questions_and_answers: qa2 };
+      return window.electronAPI.compareAttempts(DEFAULT_AUDIO_BASE, attempt1Data, attempt2Data);
+    }).then(function (data) {
+      if (compareAttemptsBtn) compareAttemptsBtn.disabled = false;
+      if (!data || data.error) {
+        if (compareError) { compareError.textContent = data && data.error ? data.error : 'Comparison failed.'; compareError.hidden = false; }
+        return;
+      }
+      if (compareError) compareError.hidden = true;
+      var metrics = data.metrics || {};
+      var m1 = metrics.attempt_1 || {};
+      var m2 = metrics.attempt_2 || {};
+      var summary = data.improvement_summary || '';
+      var labels = [
+        { key: 'technical_knowledge', label: 'Technical knowledge' },
+        { key: 'communication', label: 'Communication' },
+        { key: 'confidence', label: 'Confidence' },
+        { key: 'job_fit', label: 'Job fit' },
+        { key: 'overall', label: 'Overall' },
+      ];
+      if (compareMetricsTable) {
+        compareMetricsTable.innerHTML = '<thead><tr><th>Metric</th><th>Attempt 1</th><th>Attempt 2</th></tr></thead><tbody>' +
+          labels.map(function (l) {
+            var v1 = m1[l.key] != null ? Number(m1[l.key]) : '—';
+            var v2 = m2[l.key] != null ? Number(m2[l.key]) : '—';
+            return '<tr><td class="metric-name">' + l.label + '</td><td>' + v1 + '</td><td>' + v2 + '</td></tr>';
+          }).join('') + '</tbody>';
+      }
+      if (compareSummaryText) compareSummaryText.textContent = summary;
+      if (compareResult) compareResult.style.display = 'block';
+      drawCompareRadar(m1, m2);
+    }).catch(function () {
+      if (compareAttemptsBtn) compareAttemptsBtn.disabled = false;
+      if (compareError) { compareError.textContent = 'Comparison failed.'; compareError.hidden = false; }
+    });
+  }
+  function drawCompareRadar(m1, m2) {
+    if (!compareRadarCanvas) return;
+    var keys = ['technical_knowledge', 'communication', 'confidence', 'job_fit', 'overall'];
+    var labels = ['Technical', 'Communication', 'Confidence', 'Job fit', 'Overall'];
+    var w = compareRadarCanvas.width;
+    var h = compareRadarCanvas.height;
+    var ctx = compareRadarCanvas.getContext('2d');
+    if (!ctx) return;
+    var cx = w / 2;
+    var cy = h / 2 - 10;
+    var r = Math.min(cx, cy) * 0.75;
+    var n = keys.length;
+    var scale = 10;
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = '#2a2a30';
+    ctx.fillStyle = '#1a1a1f';
+    for (var level = 1; level <= 5; level++) {
+      ctx.beginPath();
+      for (var i = 0; i <= n; i++) {
+        var angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+        var x = cx + (r * level / 5) * Math.cos(angle);
+        var y = cy + (r * level / 5) * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+    for (var j = 0; j < n; j++) {
+      var angle = (Math.PI * 2 * j) / n - Math.PI / 2;
+      var x = cx + r * Math.cos(angle);
+      var y = cy + r * Math.sin(angle);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'center';
+    for (var k = 0; k < n; k++) {
+      var ang = (Math.PI * 2 * k) / n - Math.PI / 2;
+      var tx = cx + (r + 18) * Math.cos(ang);
+      var ty = cy + (r + 18) * Math.sin(ang);
+      ctx.fillText(labels[k], tx, ty);
+    }
+    function plotPolygon(values, strokeColor, fillColor) {
+      if (!values || values.length === 0) return;
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) {
+        var v = Math.max(0, Math.min(scale, Number(values[i]) || 0));
+        var angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+        var x = cx + (r * v / scale) * Math.cos(angle);
+        var y = cy + (r * v / scale) * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      if (fillColor) {
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+      }
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    var vals1 = keys.map(function (key) { return m1[key]; });
+    var vals2 = keys.map(function (key) { return m2[key]; });
+    plotPolygon(vals2, 'rgba(34, 197, 94, 0.9)', 'rgba(34, 197, 94, 0.15)');
+    plotPolygon(vals1, 'rgba(99, 102, 241, 0.95)', 'rgba(99, 102, 241, 0.2)');
+    ctx.fillStyle = '#888';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.fillText('Attempt 1', cx - r - 30, cy);
+    ctx.fillStyle = '#22c55e';
+    ctx.fillText('Attempt 2', cx + r + 10, cy);
+  }
+  if (compareAttemptsBtn) compareAttemptsBtn.addEventListener('click', runCompareAttempts);
+  function openReportModal(attemptId) {
+    if (!window.electronAPI || !window.electronAPI.getAttempt || !reportModalBackdrop || !reportModalBody) return;
+    reportModalBody.innerHTML = 'Loading…';
+    reportModalBackdrop.classList.add('visible');
+    reportModalBackdrop.setAttribute('aria-hidden', 'false');
+    window.electronAPI.getAttempt(DEFAULT_API_BASE, attemptId).then(function (data) {
+      if (!reportModalBody) return;
+      if (data && data.error) {
+        reportModalBody.innerHTML = '<p style="color:#ef4444;">Failed to load report.</p>';
+        return;
+      }
+      var score = data.score != null ? data.score : '—';
+      var summary = (data.evaluation_summary || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      var qaHtml = '';
+      var qs = (data.questions || []).slice().sort(function (x, y) { return (x.order_index || 0) - (y.order_index || 0); });
+      qs.forEach(function (q) {
+        qaHtml += '<div class="report-qa"><p class="q">' + (q.question || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</p><p class="a">' + (q.answer || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</p></div>';
+      });
+      reportModalBody.innerHTML = '<p><strong>Score:</strong> ' + score + ' / 10</p>' + qaHtml + '<div class="report-summary">' + summary + '</div>';
+      if (reportModalTitle) reportModalTitle.textContent = 'Attempt report';
+    });
+  }
+  function closeReportModal() {
+    if (reportModalBackdrop) {
+      reportModalBackdrop.classList.remove('visible');
+      reportModalBackdrop.setAttribute('aria-hidden', 'true');
+    }
+  }
+  if (reportModalClose) reportModalClose.addEventListener('click', closeReportModal);
+  if (reportModalBackdrop) reportModalBackdrop.addEventListener('click', function (e) { if (e.target === reportModalBackdrop) closeReportModal(); });
+
+  function startRetakeFlow(topicId, topicName) {
+    if (!window.electronAPI || !window.electronAPI.createAttempt || !window.electronAPI.generateQuestions || !window.electronAPI.addAttemptQuestion || !window.electronAPI.evaluateAttempt || !window.electronAPI.completeAttempt) return;
+    var topic = null;
+    for (var i = 0; i < historyTopicsCache.length; i++) {
+      if (historyTopicsCache[i].id === topicId) { topic = historyTopicsCache[i]; break; }
+    }
+    if (!topic) { alert('Topic not found.'); return; }
+    var jobDescription = (topic.job_description || '').slice(0, 3000);
+    var cvText = '';
+    var cvPromise = topic.cv_id && window.electronAPI.getCv
+      ? window.electronAPI.getCv(DEFAULT_API_BASE, topic.cv_id).then(function (d) { return (d && !d.error && d.parsed_text) ? d.parsed_text : ''; })
+      : Promise.resolve('');
+    cvPromise.then(function (ct) {
+      cvText = (ct || '').slice(0, 3000);
+      return window.electronAPI.getTopicAttempts(DEFAULT_API_BASE, topicId);
+    }).then(function (attemptsData) {
+      var prevQuestions = [];
+      var list = Array.isArray(attemptsData) ? attemptsData : [];
+      return Promise.all(list.map(function (a) { return window.electronAPI.getAttempt(DEFAULT_API_BASE, a.id); })).then(function (attempts) {
+        attempts.forEach(function (att) {
+          if (att && !att.error && Array.isArray(att.questions)) att.questions.forEach(function (q) { if (q.question) prevQuestions.push(q.question); });
+        });
+        return prevQuestions;
+      });
+    }).then(function (previousQuestions) {
+      return window.electronAPI.createAttempt(DEFAULT_API_BASE, topicId).then(function (createRes) {
+        if (createRes && createRes.error) throw new Error(createRes.body || createRes.message || 'Failed to create attempt');
+        var attemptId = createRes.id;
+        var interviewType = createRes.interview_type || topic.interview_type || 'technical';
+        var numQuestions = 5;
+        return window.electronAPI.generateQuestions(DEFAULT_AUDIO_BASE, jobDescription, cvText, previousQuestions, interviewType, numQuestions).then(function (genRes) {
+          if (genRes && genRes.error) throw new Error(genRes.error || genRes.body || 'Failed to generate questions');
+          var questions = Array.isArray(genRes.questions) ? genRes.questions : [];
+          if (questions.length === 0) throw new Error('No questions generated');
+          return { attemptId: attemptId, questions: questions };
+        });
+      });
+    }).then(function (_ref) {
+      var attemptId = _ref.attemptId;
+      var questions = _ref.questions;
+      retakeState.topicId = topicId;
+      retakeState.attemptId = attemptId;
+      retakeState.topicName = topicName;
+      retakeState.questions = questions;
+      retakeState.questionIndex = 0;
+      retakeState.questionIds = [];
+      retakePanel.classList.add('visible');
+      retakeAnswerInput.value = '';
+      retakeFinishBtn.style.display = 'none';
+      retakeNextBtn.style.display = '';
+      showRetakeQuestion();
+    }).catch(function (err) {
+      alert(err.message || 'Could not start retake.');
+    });
+  }
+  function showRetakeQuestion() {
+    var idx = retakeState.questionIndex;
+    var total = retakeState.questions.length;
+    if (idx >= total) {
+      if (retakeProgress) retakeProgress.textContent = 'All answers submitted. Click Finish to get your score.';
+      if (retakeQuestionText) retakeQuestionText.textContent = '';
+      if (retakeAnswerInput) retakeAnswerInput.value = '';
+      return;
+    }
+    if (retakeProgress) retakeProgress.textContent = 'Question ' + (idx + 1) + ' of ' + total;
+    if (retakeQuestionText) retakeQuestionText.textContent = retakeState.questions[idx] || '';
+    if (retakeAnswerInput) retakeAnswerInput.value = '';
+  }
+  function retakeNextOrFinish() {
+    var idx = retakeState.questionIndex;
+    var total = retakeState.questions.length;
+    var answer = retakeAnswerInput ? retakeAnswerInput.value.trim() : '';
+    var question = retakeState.questions[idx];
+    if (!question) return;
+    window.electronAPI.addAttemptQuestion(DEFAULT_API_BASE, retakeState.attemptId, question, answer, idx).then(function (res) {
+      if (res && res.id) retakeState.questionIds.push(res.id);
+      retakeState.questionIndex++;
+      if (retakeState.questionIndex >= total) {
+        if (retakeNextBtn) retakeNextBtn.style.display = 'none';
+        if (retakeFinishBtn) retakeFinishBtn.style.display = '';
+      }
+      showRetakeQuestion();
+    });
+  }
+  function retakeFinish() {
+    var total = retakeState.questions.length;
+    var qaList = [];
+    for (var i = 0; i < total; i++) {
+      qaList.push({ question: retakeState.questions[i], answer: '' });
+    }
+    window.electronAPI.getAttempt(DEFAULT_API_BASE, retakeState.attemptId).then(function (data) {
+      if (data && data.questions) {
+        var qs = data.questions.slice().sort(function (a, b) { return (a.order_index || 0) - (b.order_index || 0); });
+        qaList = qs.map(function (q) { return { question: q.question || '', answer: q.answer || '' }; });
+      }
+      return window.electronAPI.evaluateAttempt(DEFAULT_AUDIO_BASE, qaList);
+    }).then(function (evalRes) {
+      if (evalRes && evalRes.error) throw new Error(evalRes.error || 'Evaluation failed');
+      var score = evalRes.score != null ? evalRes.score : 0;
+      var summary = evalRes.evaluation_summary || '';
+      return window.electronAPI.completeAttempt(DEFAULT_API_BASE, retakeState.attemptId, score, summary).then(function () {
+        retakePanel.classList.remove('visible');
+        alert('Attempt complete. Score: ' + score + ' / 10');
+        loadAttempts();
+      });
+    }).catch(function (err) {
+      alert(err.message || 'Could not complete attempt.');
+    });
+  }
+  if (retakeNextBtn) retakeNextBtn.addEventListener('click', retakeNextOrFinish);
+  if (retakeFinishBtn) retakeFinishBtn.addEventListener('click', retakeFinish);
+
+  function drawProgressGraph(attempts) {
+    if (!progressGraphWrap || !attempts.length) { if (progressGraphWrap) progressGraphWrap.innerHTML = ''; return; }
+    var scores = attempts.map(function (a) { return a.score != null ? Number(a.score) : 0; });
+    var labels = attempts.map(function (a) { return 'Attempt ' + (a.attempt_number || 0); });
+    var w = Math.min(400, progressGraphWrap.offsetWidth || 400);
+    var h = 120;
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.display = 'block';
+    progressGraphWrap.innerHTML = '';
+    progressGraphWrap.appendChild(canvas);
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#0f0f12';
+    ctx.fillRect(0, 0, w, h);
+    var padding = { top: 10, right: 10, bottom: 24, left: 32 };
+    var plotW = w - padding.left - padding.right;
+    var plotH = h - padding.top - padding.bottom;
+    var maxScore = 10;
+    var minScore = Math.max(0, Math.min.apply(null, scores) - 1);
+    var scaleY = function (v) { return padding.top + plotH - (v - minScore) / (maxScore - minScore) * plotH; };
+    var scaleX = function (i) { return padding.left + (i / Math.max(1, scores.length - 1)) * plotW; };
+    ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (var i = 0; i < scores.length; i++) {
+      var x = scaleX(i);
+      var y = scaleY(scores[i]);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
+    ctx.lineTo(scaleX(scores.length - 1), padding.top + plotH);
+    ctx.lineTo(padding.left, padding.top + plotH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#888';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    for (var j = 0; j < labels.length; j++) {
+      var tx = scaleX(j);
+      ctx.fillText(labels[j], tx, h - 6);
+    }
+    ctx.textAlign = 'left';
+    ctx.fillText('Score', 4, padding.top + 10);
+  }
+  if (loadAttemptsBtn) loadAttemptsBtn.addEventListener('click', loadAttempts);
+
+  function startLevelMeterFromStream(stream) {
+    if (!stream || !listeningBarWrap || !listeningBarFill) return;
+    levelStream = stream;
+    var showMockBar = isMockVoiceSession && mockListeningBarWrap && mockListeningBarFill;
+    if (showMockBar) {
+      mockListeningBarWrap.style.display = '';
+      mockListeningBarWrap.classList.add('active');
+    }
+    try {
+      levelContext = new (window.AudioContext || window.webkitAudioContext)();
+      var src = levelContext.createMediaStreamSource(stream);
+      levelAnalyser = levelContext.createAnalyser();
+      levelAnalyser.fftSize = 256;
+      levelAnalyser.smoothingTimeConstant = 0.6;
+      src.connect(levelAnalyser);
+      listeningBarWrap.classList.add('active');
+      var data = new Uint8Array(levelAnalyser.frequencyBinCount);
+      function update() {
+        if (!levelAnalyser || !listeningBarFill) return;
+        levelAnalyser.getByteFrequencyData(data);
+        var sum = 0;
+        for (var i = 0; i < data.length; i++) sum += data[i];
+        var avg = sum / data.length;
+        var pct = Math.min(100, Math.round(avg * 0.4));
+        listeningBarFill.style.width = pct + '%';
+        listeningBarFill.setAttribute('aria-valuenow', pct);
+        if (showMockBar && mockListeningBarFill) {
+          mockListeningBarFill.style.width = pct + '%';
+          mockListeningBarFill.setAttribute('aria-valuenow', pct);
+        }
+        levelAnimationId = requestAnimationFrame(update);
+      }
+      update();
+    } catch (_) {}
+  }
+  function stopLevelMeter() {
+    if (levelAnimationId) { cancelAnimationFrame(levelAnimationId); levelAnimationId = null; }
+    if (levelStream) { levelStream.getTracks().forEach(function(t) { t.stop(); }); levelStream = null; }
+    if (levelContext) { levelContext.close(); levelContext = null; }
+    levelAnalyser = null;
+    if (listeningBarWrap) listeningBarWrap.classList.remove('active');
+    if (listeningBarFill) { listeningBarFill.style.width = '0%'; listeningBarFill.setAttribute('aria-valuenow', 0); }
+    if (mockListeningBarWrap) { mockListeningBarWrap.style.display = 'none'; mockListeningBarWrap.classList.remove('active'); }
+    if (mockListeningBarFill) { mockListeningBarFill.style.width = '0%'; mockListeningBarFill.setAttribute('aria-valuenow', 0); }
+  }
+
+  function startTimer() {
+    stopTimer();
+    var start = Date.now();
+    timerEl.textContent = '0:00';
+    timerInterval = setInterval(function() {
+      var sec = Math.floor((Date.now() - start) / 1000);
+      var m = Math.floor(sec / 60);
+      var s = sec % 60;
+      timerEl.textContent = (m > 0 ? m + ' min ' : '') + (s < 10 && m > 0 ? '0' : '') + s + ' s elapsed';
+    }, 1000);
+  }
+  function stopTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    timerEl.textContent = '';
+  }
+
+  var mediaStream = null, audioContext = null, workletNode = null, scriptProcessor = null, source = null;
+  var wavChunks = [];
+  var segmentChunks = [];
+  var lastSpeechAt = 0;
+  var SAMPLE_RATE = 16000;
+  var SILENCE_MS = 1000;
+  var SENTENCE_END_SILENCE_MS = 500;
+  var SPEECH_THRESHOLD = 0.015;
+  var MIN_SEGMENT_SAMPLES = 8000;
+  var lastLiveTranscript = '';
+
+  var WORKLET_CODE = "class RecorderProcessor extends AudioWorkletProcessor { process(inputs) { var i=inputs[0]; if(i&&i[0]&&i[0].length) this.port.postMessage(new Float32Array(i[0])); return true; } } registerProcessor('recorder-processor', RecorderProcessor);";
+
+  function rms(samples) {
+    var sum = 0;
+    for (var i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+    return Math.sqrt(sum / samples.length) || 0;
+  }
+
+  function maybeFinalizeSegment() {
+    if (segmentChunks.length === 0) return;
+    var total = 0;
+    for (var i = 0; i < segmentChunks.length; i++) total += segmentChunks[i].length;
+    if (total < MIN_SEGMENT_SAMPLES) return;
+    if (!(window.electronAPI && window.electronAPI.sendAudioSegment)) {
+      segmentChunks = [];
+      lastSpeechAt = 0;
+      setStatus('Listening… (use desktop app for auto-answers)');
+      return;
+    }
+    var samples = new Float32Array(total), offset = 0;
+    for (var j = 0; j < segmentChunks.length; j++) { samples.set(segmentChunks[j], offset); offset += segmentChunks[j].length; }
+    var wavBuffer = encodeWAV(samples, audioContext ? audioContext.sampleRate : SAMPLE_RATE);
+    lastChunkSendSamples = 0;
+    segmentChunks = [];
+    lastSpeechAt = 0;
+    setStatus('Processing…');
+    if (liveAnswerEl) liveAnswerEl.textContent = '';
+    startTimer();
+    window.electronAPI.sendAudioSegment(Array.from(new Uint8Array(wavBuffer))).then(function(data) {
+      stopTimer();
+      if (data && data.error) {
+        showError(data.error);
+        var msg = (data.error.indexOf('Session ended') !== -1)
+          ? 'Session ended. Click Start to try again.'
+          : (data.error.indexOf('No active session') !== -1 || data.error.indexOf('Connection closed') !== -1)
+            ? 'Connection lost. Click Start to try again.'
+            : 'Listening… Question transcribed live. Answer will appear automatically when you pause.';
+        setStatus(msg);
+        return;
+      }
+      if (data && data.answer_transcript !== undefined) {
+        if (mockAnswerInput) mockAnswerInput.value = data.answer_transcript;
+        if (mockStatus) mockStatus.textContent = 'Answer saved.';
+        setStatus('Answer saved.');
+      } else if (data && data.situation !== undefined) {
+        showAnswer(data);
+        setStatus('Listening… Speak your next question. Answer will appear automatically when you pause.');
+      }
+    }).catch(function(err) {
+      stopTimer();
+      showError(err && err.message ? err.message : 'Failed to get answer');
+      setStatus('Listening… Question transcribed live. Answer will appear automatically when you pause.');
+    });
+  }
+
+  function onAudioChunk(float32Chunk) {
+    wavChunks.push(float32Chunk);
+    segmentChunks.push(float32Chunk);
+    var level = rms(float32Chunk);
+    var now = Date.now();
+    if (level >= SPEECH_THRESHOLD) lastSpeechAt = now;
+    else if (lastSpeechAt > 0) {
+      var silenceDuration = now - lastSpeechAt;
+      var sentenceEnd = /[.?!]\s*$/.test(lastLiveTranscript);
+      if (silenceDuration >= SILENCE_MS || (sentenceEnd && silenceDuration >= SENTENCE_END_SILENCE_MS)) maybeFinalizeSegment();
+    }
+  }
+
+  function useScriptProcessorFallback(stream) {
+    try {
+      source = audioContext.createMediaStreamSource(stream);
+      scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+      wavChunks = [];
+      segmentChunks = [];
+      lastChunkSendSamples = 0;
+      lastSpeechAt = 0;
+      scriptProcessor.onaudioprocess = function(e) {
+        try {
+          var ch = new Float32Array(e.inputBuffer.getChannelData(0));
+          onAudioChunk(ch);
+        } catch (_) {}
+      };
+      source.connect(scriptProcessor);
+      scriptProcessor.connect(audioContext.destination);
+      setStatus('Listening… Question transcribed live. Answer will appear automatically when you pause (~1 s silence).');
+      startLevelMeterFromStream(stream);
+      startChunkSender();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    } catch (err) {
+      showError('Recording failed: ' + (err.message || err));
+      setStatus('');
+      if (typeof resetMockVoiceUI === 'function' && isMockVoiceSession) resetMockVoiceUI();
+    }
+  }
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+  function showError(msg) {
+    errorSection.hidden = false;
+    if (msg && msg.indexOf('No speech detected') !== -1) {
+      errorText.innerHTML = 'No speech detected. Ensure the backend (with Whisper) is running. <button type="button" class="btn primary" style="margin-left: 0.5rem; padding: 0.35rem 0.75rem; font-size: 0.85rem;" id="useTextBoxBtn">Use text box instead</button>';
+      var btn = document.getElementById('useTextBoxBtn');
+      if (btn && typedQuestionInput) {
+        btn.onclick = function() { hideError(); typedQuestionInput.focus(); };
+      }
+    } else {
+      errorText.textContent = msg;
+    }
+  }
+  function hideError() { errorSection.hidden = true; }
+  function showAnswer(star) {
+    answerSection.hidden = false;
+    situationEl.textContent = star.situation || '—';
+    taskEl.textContent = star.task || '—';
+    actionEl.textContent = star.action || '—';
+    resultEl.textContent = star.result || '—';
+  }
+
+  function encodeWAV(samples, sampleRate) {
+    var numChannels = 1, bitsPerSample = 16, bytesPerSample = 2, blockAlign = 2, byteRate = sampleRate * blockAlign;
+    var dataSize = samples.length * 2, buffer = new ArrayBuffer(44 + dataSize), view = new DataView(buffer);
+    function writeStr(offset, str) { for (var i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); }
+    writeStr(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true); view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true); view.setUint16(34, 16, true);
+    writeStr(36, 'data'); view.setUint32(40, dataSize, true);
+    for (var i = 0; i < samples.length; i++) {
+      var s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return buffer;
+  }
+
+  function startChunkSender() {
+    stopChunkSender();
+    lastChunkSendSamples = 0;
+    // Send only new audio every 500ms so backend appends for real-time live transcription
+    var chunkIntervalMs = 500;
+    var minNewSamples = 4000;
+    chunkInterval = setInterval(function() {
+      if (segmentChunks.length === 0 || !(window.electronAPI && window.electronAPI.sendAudioChunk)) return;
+      var total = 0;
+      for (var i = 0; i < segmentChunks.length; i++) total += segmentChunks[i].length;
+      var newSamples = total - lastChunkSendSamples;
+      if (newSamples < minNewSamples) return;
+      var samples = new Float32Array(total), offset = 0;
+      for (var j = 0; j < segmentChunks.length; j++) { samples.set(segmentChunks[j], offset); offset += segmentChunks[j].length; }
+      var slice = samples.subarray(lastChunkSendSamples, total);
+      lastChunkSendSamples = total;
+      var wavBuffer = encodeWAV(slice, audioContext ? audioContext.sampleRate : SAMPLE_RATE);
+      window.electronAPI.sendAudioChunk(Array.from(new Uint8Array(wavBuffer)));
+    }, chunkIntervalMs);
+  }
+  function stopChunkSender() {
+    if (chunkInterval) { clearInterval(chunkInterval); chunkInterval = null; }
+    lastChunkSendSamples = 0;
+  }
+
+  function startRecording() {
+    setStatus('Starting…');
+    hideError();
+    answerSection.hidden = true;
+    lastLiveTranscript = '';
+    if (liveQuestionEl) liveQuestionEl.textContent = '';
+    if (liveAnswerEl) liveAnswerEl.textContent = '';
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showError('Microphone not supported.'); setStatus(''); if (typeof resetMockVoiceUI === 'function' && isMockVoiceSession) resetMockVoiceUI(); return;
+    }
+    var url = DEFAULT_WS_URL;
+    var cvId = getInterviewCvId() || undefined;
+    var topicId = getInterviewTopicId() || undefined;
+    var startSession = (window.electronAPI && window.electronAPI.startAudioSession)
+      ? window.electronAPI.startAudioSession(url, cvId, topicId)
+      : Promise.resolve({ ok: true });
+    setStatus('Requesting microphone…');
+    startSession.then(function() {
+      if (mockQuestionForNextSegment && window.electronAPI && window.electronAPI.sendMockQuestion) {
+        window.electronAPI.sendMockQuestion(mockQuestionForNextSegment);
+        mockQuestionForNextSegment = null;
+      }
+      return navigator.mediaDevices.getUserMedia({ audio: true });
+    }).then(function(stream) {
+      mediaStream = stream;
+      setTimeout(function() {
+        try {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+          wavChunks = [];
+          segmentChunks = [];
+          lastChunkSendSamples = 0;
+          lastSpeechAt = 0;
+          if (audioContext.audioWorklet && typeof audioContext.audioWorklet.addModule === 'function') {
+            var blob = new Blob([WORKLET_CODE], { type: 'application/javascript' });
+            var workletUrl = URL.createObjectURL(blob);
+            audioContext.audioWorklet.addModule(workletUrl).then(function() {
+              URL.revokeObjectURL(workletUrl);
+              source = audioContext.createMediaStreamSource(stream);
+              workletNode = new AudioWorkletNode(audioContext, 'recorder-processor', { numberOfInputs: 1, numberOfOutputs: 1 });
+              workletNode.port.onmessage = function(e) { onAudioChunk(e.data); };
+              source.connect(workletNode); workletNode.connect(audioContext.destination);
+              setStatus('Listening… Question transcribed live. Answer will appear automatically when you pause (~1 s silence).');
+              startLevelMeterFromStream(stream);
+              startChunkSender();
+              startBtn.disabled = true; stopBtn.disabled = false;
+            }).catch(function(err) {
+              useScriptProcessorFallback(stream);
+            });
+          } else {
+            useScriptProcessorFallback(stream);
+          }
+        } catch (err) {
+          showError('Audio setup failed: ' + (err.message || err)); setStatus('');
+          if (typeof resetMockVoiceUI === 'function' && isMockVoiceSession) resetMockVoiceUI();
+        }
+      }, 100);
+    }).catch(function(err) {
+      showError(err && err.message ? err.message : 'Failed to start'); setStatus('');
+      if (typeof resetMockVoiceUI === 'function' && isMockVoiceSession) resetMockVoiceUI();
+    });
+  }
+
+  function stopLocalRecordingOnly() {
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    if (!source) return;
+    stopLevelMeter();
+    if (workletNode) { workletNode.disconnect(); workletNode = null; }
+    if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
+    source.disconnect(); source = null;
+    if (mediaStream) mediaStream.getTracks().forEach(function(t) { t.stop(); });
+    stopChunkSender();
+    mediaStream = null; audioContext = null; scriptProcessor = null; source = null;
+    wavChunks = []; segmentChunks = []; lastSpeechAt = 0;
+    setStatus('Session ended.');
+  }
+  function stopRecording() {
+    stopLocalRecordingOnly();
+    if (window.electronAPI && window.electronAPI.endAudioSession) window.electronAPI.endAudioSession();
+  }
+
+  if (window.electronAPI && window.electronAPI.onAudioStatus) {
+    window.electronAPI.onAudioStatus(function(msg) { setStatus(msg); });
+  }
+  if (window.electronAPI && window.electronAPI.onAudioTranscript) {
+    window.electronAPI.onAudioTranscript(function(text) {
+      lastLiveTranscript = text || '';
+      if (liveQuestionEl) liveQuestionEl.textContent = lastLiveTranscript;
+      if (isMockVoiceSession && mockAnswerInput) mockAnswerInput.value = lastLiveTranscript;
+    });
+  }
+  if (window.electronAPI && window.electronAPI.onAudioAnswerChunk && liveAnswerEl) {
+    window.electronAPI.onAudioAnswerChunk(function(token) { liveAnswerEl.textContent += token; });
+  }
+  function askTypedQuestion() {
+    if (!window.electronAPI || !window.electronAPI.sendTextQuestion) {
+      showError('Typed question is only available in the Electron app.'); return;
+    }
+    var text = (typedQuestionInput && typedQuestionInput.value) ? typedQuestionInput.value.trim() : '';
+    if (!text) { showError('Type a question first.'); return; }
+    var url = DEFAULT_WS_URL;
+    hideError();
+    answerSection.hidden = true;
+    if (liveQuestionEl) liveQuestionEl.textContent = text;
+    if (liveAnswerEl) liveAnswerEl.textContent = '';
+    setStatus('Sending question…');
+    askTypedBtn.disabled = true;
+    var cvId = getInterviewCvId() || undefined;
+    var topicId = getInterviewTopicId() || undefined;
+    window.electronAPI.sendTextQuestion(url, text, cvId, topicId).then(function(data) {
+      askTypedBtn.disabled = false;
+      setStatus('Done.');
+      if (data && data.error) {
+        showError(data.error); return;
+      }
+      if (data && (data.situation !== undefined || data.result !== undefined)) {
+        situationEl.textContent = data.situation || '';
+        taskEl.textContent = data.task || '';
+        actionEl.textContent = data.action || '';
+        resultEl.textContent = data.result || '';
+        answerSection.hidden = false;
+      }
+    }).catch(function(err) {
+      askTypedBtn.disabled = false;
+      setStatus('');
+      showError(err && err.message ? err.message : 'Request failed.');
+    });
+  }
+
+  startBtn.addEventListener('click', startRecording);
+  stopBtn.addEventListener('click', stopRecording);
+  if (askTypedBtn) askTypedBtn.addEventListener('click', askTypedQuestion);
+  if (typedQuestionInput) {
+    typedQuestionInput.addEventListener('focus', function() { hideError(); });
+    typedQuestionInput.addEventListener('input', function() { hideError(); });
+  }
+})();

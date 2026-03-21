@@ -43,6 +43,7 @@ Microphone
 | **Formatter Service** | Parses LLM output into STAR fields | FastAPI |
 | **Ollama** | Local LLM; run once (`ollama serve`) so model stays loaded | Ollama (Qwen 0.5B / Llama 3.2 1B / Phi-3) |
 | **Ingress** | (Optional) Exposes API and WebSocket | Traefik (k3s default) |
+| **Monitoring** | (Optional) Lightweight admin UI + JSON API for pods/services/logs/restart | FastAPI + in-cluster RBAC (`monitoring-service`) |
 
 ---
 
@@ -68,7 +69,25 @@ This starts: **MongoDB** (port 27017), **api-service** (8001), **audio-service**
 
 The **audio service** is on **port 8000** (WebSocket: `ws://localhost:8000/ws/audio`). Questions are **transcribed live**; after ~1 s of silence the question is sent to the LLM and the answer **streams back**.
 
-### 2. Desktop client (Electron)
+### 2. Full stack + Next.js web (browser UI, `/admin` without Kubernetes)
+
+From the repo root:
+
+```bash
+npm run local:up
+# First time only:
+docker compose --profile ollama exec ollama ollama pull qwen2.5:0.5b
+```
+
+- **Web app:** http://localhost:3002 (interview flows, ATS, history)
+- **Admin:** same origin `/admin` (uses a **local monitoring stub** — not real cluster metrics)
+- **API:** http://localhost:8001
+
+Details, hybrid dev (Docker backends + `npm run dev` in `web/`), and **production** env vars: **[docs/LOCAL-FULL-STACK.md](docs/LOCAL-FULL-STACK.md)**.
+
+### 3. Desktop client (Electron)
+
+Defaults to **production** (`https://interviewgenie.teckiz.com` + `wss://…/ws/audio`). For **local** Docker, set `INTERVIEWGENIE_API_BASE`, `INTERVIEWGENIE_AUDIO_BASE`, and `INTERVIEWGENIE_WS_URL` — see `clients/electron-app/README.md`.
 
 ```bash
 cd clients/electron-app
@@ -78,7 +97,7 @@ npm start
 
 Click **Start recording** — the question appears **live** as you speak. After ~1 s of silence the answer streams in automatically. Click **Stop** to end the session.
 
-### 3. Test that it’s working
+### 4. Test that it’s working
 
 | Step | What to do | Expected |
 |------|------------|----------|
@@ -92,7 +111,7 @@ Click **Start recording** — the question appears **live** as you speak. After 
 
 For **no-login** use, send **`X-User-Id: default`** on all API requests and, in the client, send `user_id: "default"` in the first WebSocket message to enable saving Q&A to the API.
 
-### 3. Mobile client (Flutter)
+### 5. Mobile client (Flutter)
 
 ```bash
 cd clients/flutter-app
@@ -137,12 +156,35 @@ To run the **full k8s stack** (all services in this repo: API, Audio, MongoDB, S
 ### Deploy
 
 ```bash
-# Create namespace and all resources
+# Traefik ACME / TLS (must be kube-system — not part of kustomize namespace)
+kubectl apply -f k8s/traefik/helmchartconfig.yaml
+
+# Namespace and app resources
 kubectl apply -k k8s/
 
 # Pull LLM model inside cluster (after Ollama pod is running; Qwen 0.5B for low latency)
 kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 ```
+
+### Rolling updates & autoscaling (k3s)
+
+- Deployments use **readiness probes** and **rolling update** strategies: stateless services allow **`maxSurge: 1`** so traffic can move to a new pod before the old one terminates (when the node has capacity).
+- **`api-service`** / **ollama** use **ReadWriteOnce** volumes → **`maxSurge: 0`** (only one pod can mount the volume). There may be a **brief** gap on image updates; for stricter HA use shared/RWX storage or S3 for uploads.
+- **HPA** (`k8s/hpa/stateless-services.yaml`) scales **audio, stt, question, llm, formatter** on CPU/memory (needs **metrics-server**, included with k3s). Tune **`maxReplicas`** to your VM size — HPA does **not** grow the VM itself.
+- Details: **`docs/K8S-SCALING-AND-ROLLING.md`**.
+
+### Operations host (admin subdomain)
+
+- **Host**: `https://admin.interviewgenie.teckiz.com` → **`web`** (Next.js) on port **3002**; IngressRoute: `k8s/ingress/admin-ingressroute.yaml`. DNS **A** record → same IP as the main site.
+- **Data**: Next.js proxies **`/api/mon/*`** to **`monitoring-service`** (FastAPI + Kubernetes API). **metrics-server** supplies CPU/RAM when available; no Prometheus/Grafana.
+- **Security**: optional `ADMIN_TOKEN` on **monitoring-service** — mirror with **`MONITORING_ADMIN_TOKEN`** on the **`web`** deployment for the BFF.
+- Full setup: **`docs/MONITORING-ADMIN.md`**.
+
+### Web UI (same flows as Electron)
+
+- **Next.js** app: **`web/`** — served on **`https://interviewgenie.teckiz.com/`** in k3s (IngressRoute sends `/` + `/_next` + `/api/*` BFF to **`web`**, while `/ws` → audio and `/topics`, `/cv`, `/app`, … → **api-service**). **Vue 3 + Vite**: **`backend/api-service/frontend/`** (legacy **`/app`** shell still on api-service). See **`docs/VUE-FRONTENDS.md`** and **`k8s/ingress/ingressroute.yaml`**.
+- **`/`** — Landing (Vue); CTA → **`/app`**.
+- **`/app`** — Interview workspace (Vue route; loads **`workspace.js`** + **`web-bridge.js`** — same behavior as the former single `app.html`).
 
 ### Expose the API
 
@@ -254,7 +296,7 @@ Tests mock external HTTP (e.g. Whisper, Ollama) so they run offline.
 - **Test**: On push/PR, runs backend unit tests (pytest) then builds.
 - **Build**: Builds all backend Docker images.
 - **Push**: On push to `main`, logs in to Docker Hub (if `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` are set) and pushes images.
-- **Deploy**: If `KUBE_CONFIG` (base64 kubeconfig) is set, runs `kubectl apply -k k8s/` (and, when `DOCKERHUB_USERNAME` is set, uses your registry images). See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
+- **Deploy**: Set repository **variable** `DEPLOY_MODE` to `ssh`, `remote`, or `self_hosted` (GitHub does not allow `secrets` in workflow `if:`). Add matching secrets (`KUBE_CONFIG`, SSH secrets, or a self-hosted runner). See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 
 ---
 

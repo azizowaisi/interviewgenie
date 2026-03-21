@@ -1,0 +1,229 @@
+<div class="workspace-root">
+  <div class="app">
+    <header>
+      <div class="header-row">
+        <h1>Interview Genie</h1>
+        <div class="info-wrap">
+          <button type="button" id="infoBtn" class="info-btn" aria-label="How it works" title="How it works">i</button>
+          <div id="infoPopover" class="info-popover" role="tooltip">
+            Click <strong>Start recording</strong> — your question is transcribed live as you speak. When you pause (~1 s silence), the answer streams in automatically. No stop button needed; the app keeps listening for the next question. You can also type a question and click <strong>Get STAR answer</strong>.
+          </div>
+        </div>
+      </div>
+      <p class="subtitle">Get STAR-format answers to interview questions · <a href="/" style="color:#818cf8;">← Product home</a></p>
+      <nav class="menu-nav" aria-label="Main menu">
+        <button type="button" id="menuPrepare" class="active">1. Prepare</button>
+        <button type="button" id="menuAts">2. ATS</button>
+        <button type="button" id="menuMock">3. Mock interview</button>
+        <button type="button" id="menuInterview">4. Live interview</button>
+        <button type="button" id="menuHistory">5. History</button>
+      </nav>
+    </header>
+    <main>
+      <div id="panelPrepare" class="menu-panel active" role="tabpanel" aria-labelledby="menuPrepare">
+      <section class="topics-section" aria-label="Prepare: job title, description, CV">
+        <h2>Prepare</h2>
+        <p style="color:#888; font-size:0.9rem; margin:0 0 0.75rem 0;">Add a job title, job description, and optionally upload one CV for this job. Create topic saves everything (title, description, and CV) in one step. CV is stored on persistent storage.</p>
+        <label style="display:block; font-size:0.875rem; color:#888; margin-bottom:0.25rem;">Job title</label>
+        <input type="text" id="topicNameInput" placeholder="e.g. Senior Java Backend – Spotify" style="margin-bottom:0.5rem;" />
+        <label style="display:block; font-size:0.875rem; color:#888; margin-bottom:0.25rem;">Job description (paste)</label>
+        <textarea id="jobDescInput" placeholder="Paste the job description here..."></textarea>
+        <label style="display:block; font-size:0.875rem; color:#888; margin-bottom:0.25rem;">Upload CV (optional, one per job — PDF, DOCX, or TXT)</label>
+        <input type="file" id="topicCvFileInput" accept=".pdf,.doc,.docx,.txt" style="display:block; margin-bottom:0.75rem; font-size:0.9rem; color:#e8e8ed;" />
+        <input type="file" id="topicCvReplaceInput" accept=".pdf,.doc,.docx,.txt" style="display:none" aria-hidden="true" />
+        <button type="button" id="createTopicBtn" class="btn primary">Create topic</button>
+        <p id="topicError2" hidden></p>
+        <div id="topicList" class="cv-list" style="margin-top:1rem;"></div>
+      </section>
+      </div>
+      <div id="panelAts" class="menu-panel" role="tabpanel" aria-labelledby="menuAts">
+      <section class="ats-section" aria-label="ATS results">
+        <h2>ATS results</h2>
+        <p style="color:#888; font-size:0.9rem; margin:0 0 0.75rem 0;">Select a job title. If a result is already saved it will show here; otherwise run analysis (uses the CV you uploaded for that job in Prepare).</p>
+        <label style="font-size:0.875rem; color:#888;">Job title</label>
+        <select id="atsTopicSelect" style="width:100%; padding:0.5rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; margin-top:0.25rem; margin-bottom:0.75rem;"></select>
+        <button type="button" id="runAtsBtn" class="btn primary" style="margin-bottom:0.5rem;">Run ATS analysis</button>
+        <p id="atsError" hidden></p>
+        <div id="atsResult"></div>
+      </section>
+      </div>
+      <div id="panelMock" class="menu-panel" role="tabpanel" aria-labelledby="menuMock">
+      <section class="mock-section">
+        <h2>Mock interview</h2>
+        <p style="color:#888; font-size:0.9rem; margin:0 0 1rem 0;">Practice with written questions for your job. Answer in writing or by voice. Answers are saved under the job title and appear in History.</p>
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.875rem; color:#888;">Job title</label>
+          <select id="mockTopicSelect" style="width:100%; padding:0.5rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; margin-top:0.25rem;"></select>
+        </div>
+        <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+          <div>
+            <label style="font-size:0.875rem; color:#888;">Interview type</label>
+            <select id="mockInterviewType" style="width:100%; min-width:140px; padding:0.5rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; margin-top:0.25rem;">
+              <option value="technical">Technical</option>
+              <option value="hr">HR</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.875rem; color:#888;">Duration (minutes)</label>
+            <input type="number" id="mockDurationMinutes" min="5" max="120" value="30" style="width:5rem; padding:0.5rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; margin-top:0.25rem;" />
+          </div>
+        </div>
+        <button type="button" id="mockGetQuestionBtn" class="btn secondary" style="margin-bottom:1rem;">Get question</button>
+        <div id="mockQuestionBlock" style="margin-bottom:1rem; padding:1rem; background:#1a1a1f; border:1px solid #2a2a30; border-radius:10px; min-height:3em;">
+          <span style="color:#888; font-size:0.9rem;">Click &quot;Get question&quot; to show a practice question.</span>
+        </div>
+        <label style="display:block; font-size:0.875rem; color:#888; margin-bottom:0.25rem;">Your answer</label>
+        <textarea id="mockAnswerInput" placeholder="Type your answer here, or use Answer by voice below." style="width:100%; min-height:100px; padding:0.5rem 0.75rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; font-size:0.9rem; margin-bottom:0.5rem; resize:vertical;"></textarea>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+          <button type="button" id="mockSubmitWrittenBtn" class="btn primary">Submit written answer</button>
+          <button type="button" id="mockVoiceBtn" class="btn secondary">Answer by voice</button>
+          <button type="button" id="mockStopRecordingBtn" class="btn secondary" style="display:none;">Stop recording</button>
+        </div>
+        <div id="mockListeningBarWrap" class="listening-bar-wrap" style="display:none; margin-bottom:0.75rem;" aria-live="polite">
+          <div class="listening-bar-label">Listening — speak now</div>
+          <div class="listening-bar-track"><div id="mockListeningBarFill" class="listening-bar-fill" role="meter" aria-valuemin="0" aria-valuemax="100" aria-label="Microphone level"></div></div>
+        </div>
+        <p id="mockStatus" style="font-size:0.9rem; color:#888;" aria-live="polite"></p>
+        <p id="mockError" style="font-size:0.9rem; color:#ef4444;" hidden></p>
+        <div style="margin-top:1rem;">
+          <button type="button" id="mockFeedbackBtn" class="btn secondary">Get feedback on my answer</button>
+        </div>
+        <div id="mockFeedbackBlock" style="margin-top:0.75rem; padding:1rem; background:#1a1a1f; border:1px solid #2a2a30; border-radius:10px; min-height:2em; display:none;">
+          <h3 style="font-size:0.95rem; color:#a5b4fc; margin:0 0 0.5rem 0;">Feedback &amp; suggestions</h3>
+          <div id="mockFeedbackContent" class="mock-feedback-content"></div>
+        </div>
+      </section>
+      </div>
+      <div id="panelInterview" class="menu-panel" role="tabpanel" aria-labelledby="menuInterview">
+      <p style="color:#888; font-size:0.9rem; margin:0 0 1rem 0;">Select a job title. The CV you uploaded for that job in Prepare will be used. Answers are saved under that title and shown in History.</p>
+      <div style="margin-bottom:1rem;">
+        <label style="font-size:0.875rem; color:#888;">Job title</label>
+        <select id="interviewTopicSelect" style="width:100%; padding:0.5rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; margin-top:0.25rem;"></select>
+      </div>
+      <div class="typed-question" style="margin-bottom: 1.25rem;">
+        <label>Type your question (works without microphone)</label>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
+          <input type="text" id="typedQuestion" placeholder="e.g. Tell me about a time you led a project" style="flex: 1; margin-bottom: 0;" />
+          <button id="askTypedBtn" class="btn primary">Get STAR answer</button>
+        </div>
+      </div>
+      <div class="controls" style="margin-top: 1.5rem;">
+        <button id="startBtn" class="btn primary">Start recording</button>
+        <button id="stopBtn" class="btn secondary" disabled>Stop recording</button>
+      </div>
+      <div id="listeningBarWrap" class="listening-bar-wrap" aria-live="polite">
+        <div class="listening-bar-label">Listening — speak now</div>
+        <div class="listening-bar-track"><div id="listeningBarFill" class="listening-bar-fill" role="meter" aria-valuemin="0" aria-valuemax="100" aria-label="Microphone level"></div></div>
+      </div>
+      <p id="status" class="status"></p>
+      <p id="timer" class="timer" aria-live="polite"></p>
+      <section class="live-question" aria-label="Live question">
+        <h2 class="live-heading">Question</h2>
+        <p id="liveQuestion" class="live-text" aria-live="polite"></p>
+      </section>
+      <section class="live-answer" aria-label="Live answer">
+        <h2 class="live-heading">Answer</h2>
+        <div id="liveAnswer" class="live-text" aria-live="polite"></div>
+      </section>
+      <section class="answer" id="answerSection" hidden>
+        <h2>STAR answer</h2>
+        <div class="star-grid">
+          <div class="star-card"><h3>Situation</h3><p id="situation"></p></div>
+          <div class="star-card"><h3>Task</h3><p id="task"></p></div>
+          <div class="star-card"><h3>Action</h3><p id="action"></p></div>
+          <div class="star-card"><h3>Result</h3><p id="result"></p></div>
+        </div>
+      </section>
+      <section id="errorSection" class="error" hidden><p id="errorText"></p></section>
+      </div>
+      <div id="panelHistory" class="menu-panel" role="tabpanel" aria-labelledby="menuHistory">
+      <section class="history-section">
+        <h2>History by job title</h2>
+        <p style="color:#888; font-size:0.9rem; margin:0 0 0.75rem 0;">Select a job title, then use the tabs below to view ATS, scored attempts, or Q&amp;A.</p>
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.875rem; color:#888;">Job title</label>
+          <select id="historyTopicSelect" style="width:100%; padding:0.5rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; margin-top:0.25rem;"></select>
+        </div>
+        <button id="loadHistoryBtn" class="btn secondary" style="margin-bottom:0.75rem;">View history</button>
+        <p id="historyError" style="color:#ef4444; font-size:0.9rem; margin-top:0.5rem;" hidden></p>
+
+        <nav class="history-tabs" aria-label="History sections">
+          <button type="button" id="historyTabAts" class="history-tab active">ATS results</button>
+          <button type="button" id="historyTabAttempts" class="history-tab">Mock Interview results</button>
+          <button type="button" id="historyTabMock" class="history-tab">Mock Interview</button>
+          <button type="button" id="historyTabLive" class="history-tab">Live Interview</button>
+        </nav>
+
+        <div id="historyPanelAts" class="history-tab-panel active">
+          <div id="historyAtsBlock" class="ats-section"></div>
+        </div>
+
+        <div id="historyPanelAttempts" class="history-tab-panel">
+          <section class="attempts-section">
+            <p style="color:#888; font-size:0.9rem; margin:0 0 0.75rem 0;">Scored attempts for the selected job. View report, retake, or compare attempts.</p>
+            <button id="loadAttemptsBtn" class="btn secondary" style="margin-bottom:0.75rem;">Load attempts</button>
+            <p id="attemptsError" style="color:#ef4444; font-size:0.9rem; margin-top:0.5rem;" hidden></p>
+            <div id="attemptsList"></div>
+            <div id="retakePanel" class="retake-panel">
+              <p class="retake-progress" id="retakeProgress"></p>
+              <p class="retake-question" id="retakeQuestionText"></p>
+              <textarea id="retakeAnswerInput" placeholder="Type your answer..."></textarea>
+              <div class="attempt-card attempt-actions">
+                <button type="button" id="retakeNextBtn" class="btn primary">Next question</button>
+                <button type="button" id="retakeFinishBtn" class="btn primary" style="display:none;">Finish &amp; get score</button>
+              </div>
+            </div>
+            <div class="progress-graph-wrap" id="progressGraphWrap" style="margin-top:1rem;"></div>
+            <div class="compare-section" style="margin-top:2rem;">
+              <h3 style="font-size:1rem; color:#888; margin:0 0 0.75rem 0;">Compare two attempts</h3>
+              <p style="color:#888; font-size:0.875rem; margin:0 0 0.5rem 0;">Select two attempts to see improvement metrics and a comparison chart.</p>
+              <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:0.75rem;">
+                <div>
+                  <label style="font-size:0.8rem; color:#666;">First attempt</label>
+                  <select id="compareAttempt1Select" style="min-width:160px; padding:0.5rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; margin-top:0.25rem;"></select>
+                </div>
+                <div>
+                  <label style="font-size:0.8rem; color:#666;">Second attempt</label>
+                  <select id="compareAttempt2Select" style="min-width:160px; padding:0.5rem; background:#1a1a1f; border:1px solid #333; border-radius:8px; color:#e8e8ed; margin-top:0.25rem;"></select>
+                </div>
+                <button type="button" id="compareAttemptsBtn" class="btn primary">Compare</button>
+              </div>
+              <p id="compareError" style="color:#ef4444; font-size:0.9rem; margin:0 0 0.5rem 0;" hidden></p>
+              <div id="compareResult" style="display:none; margin-top:1rem;">
+                <div class="compare-metrics-table-wrap" style="margin-bottom:1rem;">
+                  <table class="compare-metrics-table" id="compareMetricsTable"></table>
+                </div>
+                <div class="compare-summary-wrap" style="margin-bottom:1rem;">
+                  <h4 style="font-size:0.95rem; color:#a5b4fc; margin:0 0 0.35rem 0;">Improvement summary</h4>
+                  <p id="compareSummaryText" style="margin:0; font-size:0.9rem; color:#b0b0b5; line-height:1.5;"></p>
+                </div>
+                <div class="compare-radar-wrap" style="margin-top:1rem;">
+                  <h4 style="font-size:0.95rem; color:#a5b4fc; margin:0 0 0.5rem 0;">Comparison chart</h4>
+                  <canvas id="compareRadarCanvas" width="320" height="280"></canvas>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="historyPanelMock" class="history-tab-panel">
+          <div id="historyMockList" class="history-subsection"></div>
+        </div>
+
+        <div id="historyPanelLive" class="history-tab-panel">
+          <div id="historyLiveList" class="history-subsection"></div>
+        </div>
+      </section>
+      <div id="reportModalBackdrop" class="report-modal-backdrop" aria-hidden="true">
+        <div class="report-modal" role="dialog" aria-labelledby="reportModalTitle">
+          <h3 id="reportModalTitle">Attempt report</h3>
+          <div class="report-body" id="reportModalBody"></div>
+          <div style="padding:1rem 1.25rem; border-top:1px solid #2a2a30;">
+            <button type="button" id="reportModalClose" class="btn secondary">Close</button>
+          </div>
+        </div>
+      </div>
+      </div>
+    </main>
+  </div>
+</div>

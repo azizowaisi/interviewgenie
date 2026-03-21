@@ -4,10 +4,12 @@ API Service: Auth0 (optional), CV upload/parsing, MongoDB (users, CVs, Q&A histo
 import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from db import (
@@ -24,6 +26,15 @@ from cv_parser import parse_cv
 from ats_analyzer import compute_ats
 
 app = FastAPI(title="Interview Genie API", version="0.1.0")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+DIST_DIR = STATIC_DIR / "dist"
+DIST_ASSETS_DIR = DIST_DIR / "assets"
+# Vite build (Vue SPA) emits /assets/* — mount before /static so hashed chunks resolve.
+if DIST_ASSETS_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(DIST_ASSETS_DIR)), name="vite_assets")
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Auth: if AUTH0_DOMAIN not set, use X-User-Id header for local dev
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "").rstrip("/")
@@ -155,7 +166,33 @@ async def get_user_id(
 
 @app.get("/")
 async def root():
-    return JSONResponse({"service": "interviewgenie-api", "docs": "/docs", "openapi": "/openapi.json"})
+    """Vue SPA landing (Vite build in static/dist) or legacy landing.html."""
+    vite_index = DIST_DIR / "index.html"
+    if vite_index.is_file():
+        return FileResponse(vite_index)
+    landing = STATIC_DIR / "landing.html"
+    if landing.is_file():
+        return FileResponse(landing)
+    return JSONResponse(
+        {
+            "service": "Interview Genie API",
+            "health": "/health",
+            "docs": "/docs",
+            "web_app": "/app",
+        }
+    )
+
+
+@app.get("/app")
+async def web_app():
+    """Vue SPA workspace route (same entry as / — Vue Router shows /app). Legacy app.html if no build."""
+    vite_index = DIST_DIR / "index.html"
+    if vite_index.is_file():
+        return FileResponse(vite_index)
+    app_html = STATIC_DIR / "app.html"
+    if not app_html.is_file():
+        raise HTTPException(503, "Web app bundle missing")
+    return FileResponse(app_html)
 
 
 @app.get("/health")
