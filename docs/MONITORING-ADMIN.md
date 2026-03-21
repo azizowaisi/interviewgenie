@@ -18,8 +18,10 @@ Lightweight **in-cluster** monitoring: one pod (`monitoring-service`) serves a s
 
 | URL | Purpose |
 |-----|---------|
-| `https://admin.interviewgenie.teckiz.com/` | Dashboard (same UI as below) |
-| `https://admin.interviewgenie.teckiz.com/admin/` | Dashboard (hash routes: `#/`, `#/services`, `#/pods`, `#/logs`) |
+| `https://admin.interviewgenie.teckiz.com/` | Admin UI (sidebar + dashboard) |
+| `https://admin.interviewgenie.teckiz.com/admin/` | Same app. **Preferred routes:** `#/admin/`, `#/admin/pods`, `#/admin/services`, `#/admin/logs`, `#/admin/infrastructure`, `#/admin/settings`, `#/admin/service/<name>` (legacy `#/pods` etc. still work). |
+
+The UI is a **Vue 3 + Vite** build (`backend/monitoring-service/frontend/`). Production assets are `/assets/*.js` and `/assets/*.css` at the admin host root (same pod). Top bar **Environment** / **Server** labels come from `DASHBOARD_ENV_LABEL` and `DASHBOARD_SERVER_LABEL`. See **`docs/VUE-FRONTENDS.md`**.
 
 ## metrics-server (k3s)
 
@@ -37,7 +39,9 @@ kubectl -n kube-system edit deployment metrics-server
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/healthz` | Liveness |
+| GET | `/api/config` | UI labels (`environment_label`, `server_label`, `auth_required`) |
 | GET | `/api/cluster` | Overview JSON |
+| GET | `/api/infrastructure` | Node capacity, OS, kubelet, disk/memory totals |
 | GET | `/api/pods` | Pods in `TARGET_NAMESPACE` |
 | GET | `/api/services` | Services in namespace |
 | GET | `/api/logs?pod=&container=&tail=` | Pod logs (text) |

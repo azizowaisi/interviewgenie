@@ -26,6 +26,10 @@ spec:
           env:
             - name: TARGET_NAMESPACE
               value: interview-ai
+            - name: DASHBOARD_ENV_LABEL
+              value: Production
+            - name: DASHBOARD_SERVER_LABEL
+              value: Oracle ARM
             # Optional: lock down /api/* (set via Secret monitoring-admin)
             - name: ADMIN_TOKEN
               valueFrom:

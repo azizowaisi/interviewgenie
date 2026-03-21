@@ -28,6 +28,11 @@ from ats_analyzer import compute_ats
 app = FastAPI(title="Interview Genie API", version="0.1.0")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+DIST_DIR = STATIC_DIR / "dist"
+DIST_ASSETS_DIR = DIST_DIR / "assets"
+# Vite build (Vue SPA) emits /assets/* — mount before /static so hashed chunks resolve.
+if DIST_ASSETS_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(DIST_ASSETS_DIR)), name="vite_assets")
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -161,7 +166,10 @@ async def get_user_id(
 
 @app.get("/")
 async def root():
-    """Product landing page (marketing + link to full web workspace)."""
+    """Vue SPA landing (Vite build in static/dist) or legacy landing.html."""
+    vite_index = DIST_DIR / "index.html"
+    if vite_index.is_file():
+        return FileResponse(vite_index)
     landing = STATIC_DIR / "landing.html"
     if landing.is_file():
         return FileResponse(landing)
@@ -177,7 +185,10 @@ async def root():
 
 @app.get("/app")
 async def web_app():
-    """Full interview workspace (same flows as the Electron client, browser + fetch/WebSocket)."""
+    """Vue SPA workspace route (same entry as / — Vue Router shows /app). Legacy app.html if no build."""
+    vite_index = DIST_DIR / "index.html"
+    if vite_index.is_file():
+        return FileResponse(vite_index)
     app_html = STATIC_DIR / "app.html"
     if not app_html.is_file():
         raise HTTPException(503, "Web app bundle missing")
