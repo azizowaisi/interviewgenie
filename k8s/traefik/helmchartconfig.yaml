@@ -12,11 +12,11 @@ spec:
     additionalArguments:
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      # Replaced at deploy time (GitHub sed or: sed -i 's/CHANGE_ME_LE_EMAIL/your@email.com/' ...)
-      - "--certificatesresolvers.le.acme.email=CHANGE_ME_LE_EMAIL"
+      # Optional: GitHub secret LETSENCRYPT_EMAIL overrides this during SSH deploy
+      - "--certificatesresolvers.le.acme.email=azizowaisi@teckiz.com"
       - "--certificatesresolvers.le.acme.storage=/data/acme.json"
-      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      # TLS-ALPN-01 on :443 (HTTP-01 on :80 breaks when web entrypoint redirects to HTTPS)
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
     persistence:
       enabled: true
       name: data
