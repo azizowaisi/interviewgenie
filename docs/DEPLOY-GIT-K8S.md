@@ -9,8 +9,8 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 ## Overview
 
 1. **Pull requests** → workflow **CI** (`ci.yml`): `backend-tests` (pytest matrix), parallel `frontend-verify` (Next + Vue), parallel `docker-verify` matrix (8 images), `ci-gate`; no push, no deploy.
-2. **Pushes to `main`** → workflow **Build and Deploy** (`build-and-deploy.yml`): tests, build, **push** images, then **`kubectl apply` + rollout** on the cluster. By default **`DEPLOY_MODE` is unset = remote deploy** (needs secret **`KUBE_CONFIG`**). Separate from CI so merging does not double-trigger deploy.
-3. **Override** with repository variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only (no `kubectl`).
+2. **Pushes to `main`** → workflow **Build and Deploy** (`build-and-deploy.yml`): tests, build, **push** images, then deploy. **Default** (`DEPLOY_MODE` unset): use **`KUBE_CONFIG`** for remote `kubectl` if set; otherwise use **SSH secrets** (same path as `DEPLOY_MODE=ssh`) when `SSH_HOST`, `SSH_USER`, and `SSH_PRIVATE_KEY` are present.
+3. **Override** with repository variable **`DEPLOY_MODE`**: `ssh` (always SSH), `self_hosted`, `remote`, or **`none`** / **`off`** to push images only (no `kubectl`).
 
 ### Rolling deploys & HPA
 
@@ -43,16 +43,17 @@ If a mis-placed config exists in `interview-ai`, delete it:
 
 If Let’s Encrypt was rate-limited or stuck, delete Traefik’s ACME storage PVC/data and restart Traefik (last resort).
 
-### Required: repository variable `DEPLOY_MODE`
+### Repository variable `DEPLOY_MODE` (optional)
 
-In **Settings → Secrets and variables → Actions → Variables** (not Secrets), add:
+In **Settings → Secrets and variables → Actions → Variables**:
 
 | Variable | Value | Effect |
 |----------|--------|--------|
-| `DEPLOY_MODE` | `ssh` | SSH bootstrap deploy (Oracle “do nothing on server”) |
-| `DEPLOY_MODE` | `remote` | Deploy using `KUBE_CONFIG` from GitHub-hosted runner (API 6443 reachable) |
+| *(unset)* | — | **`KUBE_CONFIG` set** → remote `kubectl`. **No `KUBE_CONFIG`** but **SSH secrets set** → SSH deploy (same as `ssh`). **Neither** → no deploy job (images may still push). |
+| `DEPLOY_MODE` | `ssh` | Always SSH/rsync deploy (even if `KUBE_CONFIG` exists). |
+| `DEPLOY_MODE` | `remote` | Same as unset; remote job runs only if **`KUBE_CONFIG`** secret is non-empty. |
 | `DEPLOY_MODE` | `self_hosted` | Deploy from a self-hosted runner on the VM |
-| *(omit or other)* | — | No automatic deploy job (build/push still run on `main`) |
+| `DEPLOY_MODE` | `none` / `off` | Push images only; no `kubectl` |
 
 ### What every k3s deploy path runs (same behavior)
 
@@ -74,6 +75,12 @@ All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rs
 ```bash
 export DOCKERHUB_USERNAME=youruser   # optional, if cluster pulls from Hub
 ./scripts/deploy-k3s.sh
+```
+
+**From your laptop** (valid kubeconfig for the cluster):
+
+```bash
+./scripts/deploy/apply-k8s-from-repo.sh
 ```
 
 ---
@@ -185,11 +192,9 @@ newgrp docker
    - If `DOCKERHUB_*` are set, it also rewrites images to your Docker Hub repo and the cluster pulls them.
    - Optionally runs a one-time `ollama pull qwen2.5:0.5b` in the cluster (non-blocking).
 
-5. **deploy_remote** – If **`DEPLOY_MODE` is unset, empty, or `remote`**:
-   - If secret **`KUBE_CONFIG`** is set: decodes kubeconfig and runs `kubectl apply -k k8s/` from a GitHub-hosted runner (API 6443 must be reachable from GitHub).
-   - If **`KUBE_CONFIG` is missing**: the job **succeeds** but **skips** `kubectl apply` and prints a **warning** (images may still be pushed). Add the secret to enable remote apply, or set **`DEPLOY_MODE=none`** if you only want registry pushes.
+5. **deploy_remote** – If **`DEPLOY_MODE` is unset, empty, or `remote`** and secret **`KUBE_CONFIG`** is set: decodes kubeconfig and runs `kubectl apply` from a GitHub-hosted runner (API 6443 must be reachable from GitHub). If **`KUBE_CONFIG` is missing**, this job is **skipped**.
 
-6. **deploy_ssh_bootstrap** – If **`DEPLOY_MODE=ssh`**: SSH to the VM, install k3s if needed, apply manifests.
+6. **deploy_ssh_bootstrap** – If **`DEPLOY_MODE=ssh`**, **or** (unset/`remote` with **no** `KUBE_CONFIG` but **SSH_HOST**, **SSH_USER**, **SSH_PRIVATE_KEY** set): SSH to the VM, rsync `k8s/` + `scripts/ci/`, install k3s if needed, run `k8s-apply.sh`.
 
 Result: every push to `main` runs **test → build → push**; **deploy** runs by default (**remote**) unless `DEPLOY_MODE` is `none` / `off`, or you use `ssh` / `self_hosted` instead.
 

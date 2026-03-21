@@ -29,8 +29,8 @@ Plus **one** deploy path:
 
 | `DEPLOY_MODE` (Variable) | Also need |
 |--------------------------|-----------|
-| *(unset)* **default** | Secret **`KUBE_CONFIG`** — same as `remote`; full deploy on every merge to `main`. If the secret is **missing**, the workflow **skips** `kubectl apply` (warning only; images may still push). |
-| `remote` | Secret `KUBE_CONFIG` (base64 kubeconfig; API must be reachable from GitHub). Same skip-with-warning behavior if secret absent. |
+| *(unset)* **default** | **`KUBE_CONFIG`** → remote `kubectl` on merge. **No `KUBE_CONFIG`** but **SSH_HOST / SSH_USER / SSH_PRIVATE_KEY** → **SSH deploy** automatically (same as `ssh`). |
+| `remote` | Requires **`KUBE_CONFIG`**; remote job skipped if secret empty (then SSH auto path applies if SSH secrets exist). |
 | `self_hosted` | Runner installed **on the k3s node** (recommended; no public 6443) |
 | `ssh` | `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `LETSENCRYPT_EMAIL` |
 | `none` or `off` | Docker push only; no `kubectl` |
