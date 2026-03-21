@@ -107,7 +107,10 @@ async def test_run_pipeline_from_text_success():
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(side_effect=mock_post)
-    mock_client.stream = AsyncMock(return_value=mock_stream_ctx)
+    # httpx.AsyncClient.stream() returns an async context manager directly.
+    # Our production code uses: `async with client3.stream(...) as resp: ...`
+    # So the mock must return the context manager (not a coroutine).
+    mock_client.stream = MagicMock(return_value=mock_stream_ctx)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
