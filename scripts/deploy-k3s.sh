@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
-# Apply manifests to k3s / kubectl current context (namespace: interview-ai).
-# Run from repo root on a machine with a working kubeconfig (e.g. your k3s VM).
+# Apply manifests to k3s (namespace interview-ai). Run from repo root with kubeconfig set.
 #
-# If images live on Docker Hub (after CI push), set DOCKERHUB_USERNAME first:
+# Optional: point Deployments at Docker Hub (after CI built & pushed images):
 #   export DOCKERHUB_USERNAME=youruser
 #   ./scripts/deploy-k3s.sh
 #
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT/k8s"
+NS=interview-ai
+
+kubectl apply -k "$ROOT/k8s"
 
 if [[ -n "${DOCKERHUB_USERNAME:-}" ]]; then
   DH="$DOCKERHUB_USERNAME"
-  for s in api-service audio-service stt-service question-service llm-service formatter-service monitoring-service; do
-    kustomize edit set image "interview-ai/${s}:latest=${DH}/interview-ai-${s}:latest"
-  done
-  kustomize edit set image "interview-ai/web:latest=${DH}/interview-ai-web:latest"
+  kubectl set image deployment/api-service -n "$NS" "api-service=${DH}/interview-ai-api-service:latest"
+  kubectl set image deployment/audio-service -n "$NS" "audio-service=${DH}/interview-ai-audio-service:latest"
+  kubectl set image deployment/stt-service -n "$NS" "stt-service=${DH}/interview-ai-stt-service:latest"
+  kubectl set image deployment/question-service -n "$NS" "question-service=${DH}/interview-ai-question-service:latest"
+  kubectl set image deployment/llm-service -n "$NS" "llm-service=${DH}/interview-ai-llm-service:latest"
+  kubectl set image deployment/formatter-service -n "$NS" "formatter-service=${DH}/interview-ai-formatter-service:latest"
+  kubectl set image deployment/monitoring-service -n "$NS" "monitoring-service=${DH}/interview-ai-monitoring-service:latest"
+  kubectl set image deployment/web -n "$NS" "web=${DH}/interview-ai-web:latest"
 fi
 
-kubectl apply -k .
+kubectl rollout restart deployment/web -n "$NS" 2>/dev/null || true
+kubectl rollout status deployment/web -n "$NS" --timeout=180s || true
 
-echo "Rollout web (new deployment)…"
-kubectl rollout restart deployment/web -n interview-ai 2>/dev/null || true
-kubectl rollout status deployment/web -n interview-ai --timeout=180s || true
-
-echo "Done. Check: kubectl get pods -n interview-ai -l app=web"
+echo "Pods: kubectl get pods -n $NS -l app=web"
