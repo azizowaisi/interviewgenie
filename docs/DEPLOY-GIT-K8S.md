@@ -43,17 +43,17 @@ If a mis-placed config exists in `interview-ai`, delete it:
 
 If Let’s Encrypt was rate-limited or stuck, delete Traefik’s ACME storage PVC/data and restart Traefik (last resort).
 
-### Repository variable `DEPLOY_MODE` (optional)
+### `DEPLOY_MODE` — Variable **or** Secret (optional)
 
-In **Settings → Secrets and variables → Actions → Variables**:
+The workflow reads **`vars.DEPLOY_MODE`** first; if that is empty, **`secrets.DEPLOY_MODE`**. Use either **Actions → Variables** or **Actions → Secrets** (your repo already uses a secret — that works).
 
-| Variable | Value | Effect |
-|----------|--------|--------|
-| *(unset)* | — | **`KUBE_CONFIG` set** → remote `kubectl`. **No `KUBE_CONFIG`** but **SSH secrets set** → SSH deploy (same as `ssh`). **Neither** → no deploy job (images may still push). |
-| `DEPLOY_MODE` | `ssh` | Always SSH/rsync deploy (even if `KUBE_CONFIG` exists). |
-| `DEPLOY_MODE` | `remote` | Same as unset; remote job runs only if **`KUBE_CONFIG`** secret is non-empty. |
-| `DEPLOY_MODE` | `self_hosted` | Deploy from a self-hosted runner on the VM |
-| `DEPLOY_MODE` | `none` / `off` | Push images only; no `kubectl` |
+| Value | Effect |
+|--------|--------|
+| *(unset)* | **`KUBE_CONFIG` set** → remote `kubectl`. **No `KUBE_CONFIG`** but **SSH secrets set** → SSH deploy. **Neither** → no deploy job (images may still push). |
+| `ssh` | Always SSH/rsync deploy (even if `KUBE_CONFIG` exists). |
+| `remote` | Same as unset; remote job runs only if **`KUBE_CONFIG`** is non-empty. |
+| `self_hosted` | Deploy from a self-hosted runner on the VM |
+| `none` / `off` | Push images only; no `kubectl` |
 
 ### What every k3s deploy path runs (same behavior)
 
