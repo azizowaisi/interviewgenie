@@ -1,9 +1,9 @@
 # Pull requests only — full verification before merge (no push / no deploy).
 # Merge to main → build-and-deploy.yml runs separately (single deploy pipeline).
 #
-# Branch protection: require both jobs below before merging to main.
+# Branch protection: require the jobs below (backend-tests is a matrix — add each check name GitHub shows).
 #   GitHub → Settings → Rules → Branch rules → main → Require status checks:
-#     - "CI / backend-tests"
+#     - "CI / backend-tests (question-service)" … and each matrix leg, or use a ruleset that groups them
 #     - "CI / build-verify"
 name: CI
 
@@ -18,7 +18,11 @@ env:
 
 jobs:
   backend-tests:
-    name: backend-tests
+    name: backend-tests (${{ matrix.service }})
+    strategy:
+      fail-fast: true
+      matrix:
+        service: [question-service, formatter-service, llm-service, stt-service, audio-service]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -27,14 +31,13 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/${{ matrix.service }}/requirements.txt
 
       - name: Run backend unit tests
         run: |
-          for s in question-service formatter-service llm-service stt-service audio-service; do
-            echo "---- Testing $s ----"
-            pip install -q -r backend/$s/requirements.txt
-            (cd backend/$s && python -m pytest tests/ -v --tb=short) || exit 1
-          done
+          pip install -q -r "backend/${{ matrix.service }}/requirements.txt"
+          (cd "backend/${{ matrix.service }}" && python -m pytest tests/ -q --tb=short)
 
   build-verify:
     name: build-verify

@@ -305,11 +305,11 @@ Two workflows so **merging a PR does not start two pipelines**:
 | Workflow | When | What |
 |----------|------|------|
 | **CI** (`.github/workflows/ci.yml`) | **Pull request** to `main` | **`backend-tests`** (pytest) then **`build-verify`** (Next build, both Vue Vite builds, then all **Docker** images — no push) |
-| **Build and Deploy** | **Push to `main`** (merge) or **manual dispatch** | Test + build + **Docker Hub push** + **Kubernetes deploy** (per `DEPLOY_MODE`) |
+| **Build and Deploy** | **Push to `main`** (merge) or **manual dispatch** | Test + build + **Docker Hub push** + **Kubernetes deploy on the server** (default: **remote** `kubectl` via `KUBE_CONFIG`; set `DEPLOY_MODE=none` to skip deploy) |
 
 **Before merge:** turn on branch protection and require **`CI / backend-tests`** and **`CI / build-verify`**. See **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**. **Build and Deploy** runs once per merge (concurrency cancels overlapping runs on `main`).
 
-- **Deploy**: Set repository **variable** `DEPLOY_MODE` to `ssh`, `remote`, or `self_hosted`. Add matching secrets. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
+- **Deploy**: By default the workflow **deploys to the cluster** (remote `kubectl`). Add secret **`KUBE_CONFIG`** (base64). Override with variable **`DEPLOY_MODE`**: `ssh`, `self_hosted`, `remote`, or **`none`** / **`off`** to push images only. See [Deploy through Git to Kubernetes (single VM)](docs/DEPLOY-GIT-K8S.md).
 
 ---
 
