@@ -188,14 +188,16 @@ jobs:
         env:
           DOCKER_BUILD_PLATFORMS: ${{ vars.DOCKER_BUILD_PLATFORMS }}
         run: |
-          P="${DOCKER_BUILD_PLATFORMS:-linux/amd64}"
+          # Default: amd64+arm64 so Oracle Ampere / Graviton / mixed clusters pull valid images.
+          # For faster CI on amd64-only clusters, set repo variable DOCKER_BUILD_PLATFORMS=linux/amd64.
+          P="${DOCKER_BUILD_PLATFORMS:-linux/amd64,linux/arm64}"
           echo "platforms=${P}" >> "$GITHUB_OUTPUT"
           if echo "${P}" | grep -q ',' || echo "${P}" | grep -qiE 'arm64|aarch64'; then
             echo "need_qemu=true" >> "$GITHUB_OUTPUT"
           else
             echo "need_qemu=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "Using PLATFORMS=${P} (set repo var DOCKER_BUILD_PLATFORMS to override)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Using PLATFORMS=${P} (override with repo var DOCKER_BUILD_PLATFORMS)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check Docker Hub credentials
         id: dh
@@ -247,6 +249,8 @@ jobs:
     env:
       IMAGE_TAG: sha-${{ github.sha }}
       PLATFORMS: ${{ needs.build-prep.outputs.platforms }}
+      # Avoid attestations that appear as unknown/unknown in manifest lists (easier to verify arm64).
+      BUILDX_NO_DEFAULT_ATTESTATIONS: 1
       ENABLE_REGISTRY_CACHE: ${{ vars.DOCKER_REGISTRY_CACHE != 'false' && 'true' || 'false' }}
       WEB_PUBLIC_APP_URL: ${{ vars.WEB_PUBLIC_APP_URL }}
       WEB_ADMIN_SITE_URL: ${{ vars.WEB_ADMIN_SITE_URL }}
@@ -254,6 +258,11 @@ jobs:
       WEB_MAIN_APP_HOSTS: ${{ vars.WEB_MAIN_APP_HOSTS }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Warn if images lack linux/arm64 (aarch64 clusters will fail)
+        if: ${{ !contains(needs.build-prep.outputs.platforms, 'arm64') }}
+        run: |
+          echo "::warning::Resolved PLATFORMS=${{ needs.build-prep.outputs.platforms }} — no arm64. Oracle / Ampere / Graviton nodes need linux/arm64 in the manifest. In GitHub → Settings → Actions → Variables: delete DOCKER_BUILD_PLATFORMS or set it to linux/amd64,linux/arm64 (not linux/amd64 alone)."
 
       - name: Gate — build this image?
         id: gate

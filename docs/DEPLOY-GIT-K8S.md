@@ -18,7 +18,9 @@ Manifests include **readiness probes**, **rolling update** strategies, and **Hor
 
 ### ARM64 (Oracle Ampere, Graviton, Apple Silicon nodes)
 
-GitHub-hosted runners build **amd64** images by default (`DOCKER_BUILD_PLATFORMS` unset). If your nodes are **aarch64**, set Actions variable **`DOCKER_BUILD_PLATFORMS`** to `linux/amd64,linux/arm64` (or `linux/arm64` only); otherwise pulls can fail with `exec format error`. Then push to `main` to rebuild and roll workloads.
+The workflow builds **multi-arch** (`linux/amd64,linux/arm64`) by default so **aarch64** nodes (e.g. Oracle Ampere) get valid images. If your cluster is **amd64-only** and you want faster CI, set **`DOCKER_BUILD_PLATFORMS=linux/amd64`**. If you see **`no match for platform in manifest`** on the node, push to `main` after fixing platforms so Hub gets an arm (or multi-arch) manifest.
+
+**Alternative (often simpler):** run k3s on an **x86_64 (AMD) Ubuntu** VM so the node matches **`linux/amd64`** images — see **`docs/DEPLOY-ORACLE-CLOUD.md`** (Option B, “Ubuntu vs the 502 issue”). Switching OS from Oracle Linux to Ubuntu alone does **not** fix platform mismatch; **AMD64 vs ARM** does.
 
 ### HTTPS / Let’s Encrypt (Electron & CLI TLS errors)
 
@@ -62,7 +64,7 @@ All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rs
 1. **`kubectl apply -f k8s/traefik/helmchartconfig.yaml`** (kube-system — Let’s Encrypt / Traefik)
 2. **`kubectl apply -k k8s/`** (namespace `interview-ai`: apps, ingress, mongo, ollama, HPA, …)
 3. If **`DOCKERHUB_USERNAME`** is set: **`kubectl set image`** always runs — **`sha-<commit>`** for services built this run when images were pushed; otherwise **`:latest`** on **all** app workloads (fixes raw manifest names like `interview-ai/web` → `youruser/interview-ai-web`). If **`DOCKERHUB_USERNAME`** is unset, only `kubectl apply` runs.
-4. **`kubectl rollout status`** on `api-service`, `audio-service`, `web`, `monitoring-service` **in parallel** (each uses `K8S_ROLLOUT_TIMEOUT`, default `180s`)
+4. **`kubectl rollout status`** on the **same deployments** as `kubectl set image` (all eight app services by default, or a partial list from CI) **in parallel** — wall time ≈ one `K8S_ROLLOUT_TIMEOUT` (default `180s`), not eight serial waits.
 5. **`kubectl get pods`** and a best-effort **`ollama pull qwen2.5:0.5b`**
 
 **Manual workflow:** **Actions → Build and Deploy → Run workflow** — also **pushes images** (same as a push to `main`). Options:

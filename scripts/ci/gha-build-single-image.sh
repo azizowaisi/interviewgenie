@@ -48,6 +48,7 @@ if [[ "${SLUG}" == "web" ]]; then
   echo "Web NEXT_PUBLIC_* PUB=$PUB ADM_SITE=$ADM_SITE"
   docker buildx build \
     --platform "${PLATFORMS}" \
+    --provenance=false \
     --push \
     "${cache_args[@]}" \
     -t "${DH_USER}/interview-ai-${SLUG}:${IMAGE_TAG}" \
@@ -60,6 +61,7 @@ if [[ "${SLUG}" == "web" ]]; then
 else
   docker buildx build \
     --platform "${PLATFORMS}" \
+    --provenance=false \
     --push \
     "${cache_args[@]}" \
     -t "${DH_USER}/interview-ai-${SLUG}:${IMAGE_TAG}" \
