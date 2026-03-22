@@ -54,6 +54,9 @@ kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik -o wide 2>/dev
 
 echo ""
 echo "Done. Fix patterns:"
-echo "  ImagePullBackOff / ErrImagePull → set GitHub secrets DOCKERHUB_USERNAME + DOCKERHUB_TOKEN; re-run deploy, or kubectl set image to your Hub repo."
+echo "  ImagePullBackOff / ErrImagePull / long Pending on new pods → often missing sha-* on Hub after a partial CI push. Quick recovery:"
+echo "    ./scripts/k8s-recover-stuck-rollouts.sh        # dry-run"
+echo "    ./scripts/k8s-recover-stuck-rollouts.sh --apply"
+echo "  Or set DOCKERHUB_* + push all images for that commit, then re-deploy."
 echo "  no match for platform / exec format error → Hub image arch must match node (Ampere=arm64). See docs/ORACLE-ARCHITECTURE.md"
 echo "  0 endpoints for svc/web → pods not Ready; check logs: kubectl logs -n $NS deploy/web --tail=80"
