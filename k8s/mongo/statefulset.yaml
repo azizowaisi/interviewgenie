@@ -8,6 +8,10 @@ metadata:
 spec:
   serviceName: mongo
   replicas: 1
+  # Keep PVCs/PVs when StatefulSet is deleted or scaled to 0 (Kubernetes 1.27+).
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       app: mongo
@@ -44,6 +48,7 @@ spec:
         name: mongo-data
       spec:
         accessModes: ["ReadWriteOnce"]
+        storageClassName: interview-mongo
         resources:
           requests:
-            storage: 10Gi
+            storage: 20Gi
