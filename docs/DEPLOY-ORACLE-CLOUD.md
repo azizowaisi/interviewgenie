@@ -112,12 +112,13 @@ kubectl apply -k k8s/
 
 ### MongoDB storage (dedicated, survives StatefulSet deletes)
 
-The repo defines a **StorageClass** `interview-mongo` (`k8s/mongo/storageclass.yaml`) that uses k3s **local-path** with **`reclaimPolicy: Retain`**, so the **PV (and data on disk) is kept** if someone deletes the PVC by mistake. The **StatefulSet** also sets **`persistentVolumeClaimRetentionPolicy: Retain`** so PVCs are **not** garbage-collected when you delete or scale the StatefulSet.
+The repo defines a **StorageClass** `interview-mongo` (`k8s/mongo/storageclass.yaml`) that uses k3s **local-path** with **`reclaimPolicy: Retain`**, so the **PV (and data on disk) is kept** if someone deletes the PVC by mistake. The **StatefulSet** sets **`persistentVolumeClaimRetentionPolicy: Retain`** so PVCs are **not** garbage-collected when you delete or scale the StatefulSet.
 
-- **New cluster:** `kubectl apply -k k8s/` creates the class and a **20 Gi** PVC for `mongo-0` bound to `interview-mongo`.
+- **`kubectl apply -k` and existing Mongo:** The StatefulSet’s **`volumeClaimTemplates` (size + `storageClassName`) are immutable** after creation. The checked-in StatefulSet therefore keeps the **default StorageClass** and **10 Gi** so CI/CD and upgrades **do not fail** on `kubectl apply`. The **`interview-mongo`** class is still applied for optional use and for **new** PVCs you create after migration.
+- **Brand-new cluster and you want `interview-mongo` + larger disk:** Before the **first** `kubectl apply` that creates Mongo, edit `k8s/mongo/statefulset.yaml` and add under `volumeClaimTemplates[0].spec`: `storageClassName: interview-mongo` and your desired `storage` size (e.g. `20Gi`).
 - **Still node-local:** data lives on that VM’s disk (under k3s local-path). Replacing the **whole** VM without restoring a **snapshot** or **attached block volume** still loses data unless you use external storage below.
 - **Survive new instances / infra moves (Oracle):** attach an **OCI Block Volume**, install the **OCI Block Volume CSI** driver (or run on **OKE**), then use a StorageClass like the commented example in `k8s/mongo/storageclass-oci.example.yaml` and set `storageClassName` in the StatefulSet’s `volumeClaimTemplates` to that class **before** Mongo is created the first time.
-- **Already have Mongo with the default `local-path` class:** Kubernetes **does not allow** changing `volumeClaimTemplates` on an existing StatefulSet. To switch classes or size: **mongodump** (or backup), delete the StatefulSet and PVC, apply the updated manifests, **mongorestore**. Plan a short maintenance window.
+- **Switch class or size on an existing StatefulSet:** **mongodump** (or backup), delete the StatefulSet and PVC, apply manifests (optionally with `interview-mongo` / new size in git), **mongorestore**. Plan a short maintenance window.
 
 ### 4. Pull Ollama model in the cluster
 
