@@ -151,7 +151,8 @@ done
   kubectl get pods -n "$NS" -o wide || true
   if kubectl get pods -n "$NS" --no-headers 2>/dev/null | grep -E 'ImagePullBackOff|ErrImagePull' >/dev/null; then
     echo "WARN: Some pods cannot pull images. If CI only updated part of the stack, other deployments may still reference a Hub tag that was never pushed for this commit." >&2
-    echo "WARN: Fix: push the missing images, or kubectl rollout undo deployment/<name> -n ${NS}. Diagnose: ./scripts/k8s-diagnose-interview-ai.sh" >&2
+    echo "WARN: Fix: push the missing images, or on the node run: ./scripts/k8s-recover-stuck-rollouts.sh --apply" >&2
+    echo "WARN: (dry-run first without --apply). Also: ./scripts/k8s-diagnose-interview-ai.sh" >&2
   fi
 
   echo "=== Ollama model (non-fatal) ==="

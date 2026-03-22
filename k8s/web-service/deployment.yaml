@@ -53,14 +53,11 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-          # Use main app Host so behavior matches ingress (middleware is host-aware).
+          # TCP readiness so the pod joins Service endpoints for every Host (main + admin).
+          # HTTP-only with interviewgenie.teckiz.com left admin.interviewgenie.teckiz.com out of Ready set in edge cases.
           readinessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: 3002
-              httpHeaders:
-                - name: Host
-                  value: interviewgenie.teckiz.com
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
