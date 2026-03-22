@@ -22,7 +22,7 @@ Ingress uses **Traefik** + **Let’s Encrypt** (`certResolver: le`). Ports **80*
 
 | Secret | Purpose |
 |--------|---------|
-| `DOCKERHUB_USERNAME` | Docker Hub user |
+| `DOCKERHUB_USERNAME` | Docker Hub user or org (**secret** or **variable** `DOCKERHUB_USERNAME`; secret wins if both set) |
 | `DOCKERHUB_TOKEN` | **Required** for image push (without it, push step skips and deploy won’t get new images) |
 | `DEPLOY_MODE` | *(optional)* Same values as the variable below. If you only use **Secrets** (no Variable), this is read by CI. **Repository Variable `DEPLOY_MODE` overrides** the secret when both are set. |
 
