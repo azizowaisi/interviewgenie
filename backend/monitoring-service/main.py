@@ -22,8 +22,8 @@ API surface (JSON unless noted)
 GET  /healthz           Liveness.
 GET  /api/config        UI labels + whether auth is required.
 GET  /api/cluster       Node summary, pod counts, metrics when metrics-server is installed.
-GET  /api/infrastructure  Per-node capacity / allocatable / usage (metrics optional).
-GET  /api/pods          Pod list with phase, restarts, optional cpu/mem from metrics.
+GET  /api/infrastructure  Per-node capacity, allocatable, used/remaining CPU & memory, ephemeral totals, summary{}.
+GET  /api/pods          Pod list: node, phase, usage from metrics, requests/limits from spec.
 GET  /api/services      Services with endpoint health-style status and aggregated metrics.
 GET  /api/logs          Pod logs (query: pod, optional container, tail).
 POST /api/restart       Rollout restart for allowlisted deployments only.
@@ -124,6 +124,49 @@ def _parse_quantity_mem(s: str) -> int:
         return int(float(s) * mult)
     except ValueError:
         return 0
+
+
+def _format_usage_cpu_string(millicores: float) -> str:
+    if millicores <= 0:
+        return ""
+    if millicores < 1000:
+        return f"{int(round(millicores))}m"
+    return f"{millicores / 1000:.3g}"
+
+
+def _format_usage_memory_string(num_bytes: int) -> str:
+    if num_bytes <= 0:
+        return ""
+    ki = 1024
+    if num_bytes >= ki**3:
+        return f"{num_bytes / ki**3:.1f}Gi"
+    if num_bytes >= ki**2:
+        return f"{num_bytes / ki**2:.1f}Mi"
+    if num_bytes >= ki:
+        return f"{num_bytes / ki:.0f}Ki"
+    return str(num_bytes)
+
+
+def _sum_pod_spec_resources(pod) -> dict[str, Any]:
+    """Aggregate requests/limits across regular containers (scheduling view)."""
+    rq_cpu, rq_mem = 0.0, 0
+    lm_cpu, lm_mem = 0.0, 0
+    for c in pod.spec.containers or []:
+        res = c.resources
+        if not res:
+            continue
+        if res.requests:
+            rq_cpu += _parse_quantity_cpu(res.requests.get("cpu") or "0")
+            rq_mem += _parse_quantity_mem(res.requests.get("memory") or "0")
+        if res.limits:
+            lm_cpu += _parse_quantity_cpu(res.limits.get("cpu") or "0")
+            lm_mem += _parse_quantity_mem(res.limits.get("memory") or "0")
+    return {
+        "requests_cpu_millicores": round(rq_cpu, 1),
+        "requests_memory_bytes": rq_mem,
+        "limits_cpu_millicores": round(lm_cpu, 1),
+        "limits_memory_bytes": lm_mem,
+    }
 
 
 @app.middleware("http")
@@ -269,6 +312,17 @@ async def api_cluster():
     running = sum(1 for p in pods.items if p.status.phase == "Running")
     failed = sum(1 for p in pods.items if pod_is_failed(p))
 
+    ns_rq_cpu = 0.0
+    ns_rq_mem_i = 0
+    ns_lm_cpu = 0.0
+    ns_lm_mem_i = 0
+    for p in pods.items:
+        agg = _sum_pod_spec_resources(p)
+        ns_rq_cpu += float(agg["requests_cpu_millicores"])
+        ns_rq_mem_i += int(agg["requests_memory_bytes"])
+        ns_lm_cpu += float(agg["limits_cpu_millicores"])
+        ns_lm_mem_i += int(agg["limits_memory_bytes"])
+
     return {
         "namespace": NAMESPACE,
         "nodes": nodes_out,
@@ -276,6 +330,10 @@ async def api_cluster():
         "pods_running": running,
         "pods_failed": failed,
         "metrics_available": bool(metrics_items),
+        "namespace_requests_cpu_millicores": round(ns_rq_cpu, 1),
+        "namespace_requests_memory_bytes": ns_rq_mem_i,
+        "namespace_limits_cpu_millicores": round(ns_lm_cpu, 1),
+        "namespace_limits_memory_bytes": ns_lm_mem_i,
     }
 
 
@@ -305,14 +363,18 @@ async def api_infrastructure():
         mem_b = _parse_quantity_mem(alloc_mem)
         cpu_pct = None
         mem_pct = None
+        used_cpu_m = None
+        used_mem_b = None
         mi = m_by_name.get(name)
         if mi and cpu_m > 0:
             u = mi.get("usage", {})
             used_cpu = _parse_quantity_cpu(u.get("cpu", "0"))
+            used_cpu_m = round(used_cpu, 1)
             cpu_pct = min(100.0, round(100.0 * used_cpu / cpu_m, 1))
         if mi and mem_b > 0:
             u = mi.get("usage", {})
             used_mem = _parse_quantity_mem(u.get("memory", "0"))
+            used_mem_b = used_mem
             mem_pct = min(100.0, round(100.0 * used_mem / mem_b, 1))
 
         cap_cpu_raw = cap.get("cpu", "")
@@ -323,6 +385,9 @@ async def api_infrastructure():
                 cores_display = f"{int(cval) if cval == int(cval) else cval} cores"
             except ValueError:
                 pass
+
+        rem_cpu = round(cpu_m - used_cpu_m, 1) if used_cpu_m is not None else None
+        rem_mem = (mem_b - used_mem_b) if used_mem_b is not None else None
 
         out.append(
             {
@@ -343,13 +408,45 @@ async def api_infrastructure():
                 "allocatable_cpu": alloc_cpu,
                 "allocatable_memory": alloc.get("memory", ""),
                 "allocatable_ephemeral_bytes": _parse_quantity_mem(alloc.get("ephemeral-storage", "0")),
+                "allocatable_cpu_millicores": round(cpu_m, 1),
+                "allocatable_memory_bytes": mem_b,
+                "used_cpu_millicores": used_cpu_m,
+                "used_memory_bytes": used_mem_b,
+                "remaining_cpu_millicores": rem_cpu,
+                "remaining_memory_bytes": rem_mem,
                 "cpu_percent": cpu_pct,
                 "memory_percent": mem_pct,
             }
         )
+
+    summary: dict[str, Any] = {
+        "nodes_total": len(out),
+        "nodes_ready": sum(1 for n in out if n["ready"]),
+        "allocatable_cpu_millicores_total": round(sum(n["allocatable_cpu_millicores"] for n in out), 1),
+        "allocatable_memory_bytes_total": sum(n["allocatable_memory_bytes"] for n in out),
+        "capacity_ephemeral_bytes_total": sum(n["capacity_ephemeral_bytes"] for n in out),
+        "allocatable_ephemeral_bytes_total": sum(n["allocatable_ephemeral_bytes"] for n in out),
+    }
+    if metrics_items:
+        uc = sum((n["used_cpu_millicores"] or 0) for n in out)
+        um = sum((n["used_memory_bytes"] or 0) for n in out)
+        ac = summary["allocatable_cpu_millicores_total"]
+        am = summary["allocatable_memory_bytes_total"]
+        summary["used_cpu_millicores_total"] = round(uc, 1)
+        summary["used_memory_bytes_total"] = um
+        summary["remaining_cpu_millicores_total"] = round(max(0.0, ac - uc), 1)
+        summary["remaining_memory_bytes_total"] = max(0, am - um)
+    else:
+        summary["used_cpu_millicores_total"] = None
+        summary["used_memory_bytes_total"] = None
+        summary["remaining_cpu_millicores_total"] = None
+        summary["remaining_memory_bytes_total"] = None
+
     return {
         "nodes": out,
         "metrics_available": bool(metrics_items),
+        "summary": summary,
+        "note_ephemeral": "Node ephemeral-storage is capacity/allocatable from the kubelet; live disk usage is not provided by metrics-server.",
     }
 
 
@@ -367,6 +464,7 @@ async def api_pods():
     for p in pods.items:
         name = p.metadata.name
         phase = p.status.phase or ""
+        node_name = p.spec.node_name or ""
         restarts = 0
         for cs in p.status.container_statuses or []:
             restarts += cs.restart_count or 0
@@ -374,20 +472,34 @@ async def api_pods():
         if p.status.start_time:
             start = p.status.start_time.isoformat()
         cpu_s, mem_s = "", ""
+        usage_cpu_m = 0.0
+        usage_mem_b = 0
         for cs in p.status.container_statuses or []:
             key = (name, cs.name)
             if key in mm:
-                cpu_s = mm[key].get("cpu", "")
-                mem_s = mm[key].get("memory", "")
-                break
+                u = mm[key]
+                usage_cpu_m += _parse_quantity_cpu(u.get("cpu", "0"))
+                usage_mem_b += _parse_quantity_mem(u.get("memory", "0"))
+        if usage_cpu_m > 0:
+            cpu_s = _format_usage_cpu_string(usage_cpu_m)
+        if usage_mem_b > 0:
+            mem_s = _format_usage_memory_string(usage_mem_b)
+        spec_agg = _sum_pod_spec_resources(p)
         rows.append(
             {
                 "name": name,
+                "node": node_name,
                 "status": phase,
                 "restarts": restarts,
                 "started_at": start,
                 "cpu": cpu_s,
                 "memory": mem_s,
+                "usage_cpu_millicores": round(usage_cpu_m, 1) if usage_cpu_m else None,
+                "usage_memory_bytes": usage_mem_b if usage_mem_b else None,
+                "requests_cpu_millicores": spec_agg["requests_cpu_millicores"],
+                "requests_memory_bytes": spec_agg["requests_memory_bytes"],
+                "limits_cpu_millicores": spec_agg["limits_cpu_millicores"],
+                "limits_memory_bytes": spec_agg["limits_memory_bytes"],
             }
         )
     return {"pods": rows}
