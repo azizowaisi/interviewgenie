@@ -5,7 +5,8 @@
 # Env: KUBECONFIG. Optional: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN, K8S_NAMESPACE (default interview-ai).
 # When both Hub env vars are set: creates pull secret + patches SAs so cluster pulls (mongo, app images) use authenticated Hub (higher rate limits).
 # Optional: K8S_IMAGE_TAG — CI uses sha-<full github sha>; local default latest if unset when set_image runs.
-# Optional: K8S_SKIP_SET_IMAGE=1 — only apply manifests (used when DOCKERHUB_USERNAME is unset in CI).
+# Optional: K8S_SKIP_SET_IMAGE=1 — no new tag this run (CI skips set image). We snapshot live images before
+#   `kubectl apply -k` and restore them after, so manifest placeholders (interview-ai/*:latest) do not clobber Hub tags.
 # Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
 #   If unset/empty, all app deployments get `kubectl set image` (CI uses this when pinning :latest).
 # Rollout: same deployments as set image (all app workloads in parallel; one timeout window wall time).
@@ -18,9 +19,30 @@ ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-180s}"
 ALL_APP_DEPLOYMENTS="api-service audio-service stt-service question-service llm-service formatter-service monitoring-service web"
 ROLLOUT_TARGETS="${ALL_APP_DEPLOYMENTS}"
 
+SNAP_DIR=""
+cleanup_snap() {
+  [[ -n "${SNAP_DIR}" && -d "${SNAP_DIR}" ]] && rm -rf "${SNAP_DIR}"
+}
+trap cleanup_snap EXIT
+
 echo "ROOT=$ROOT"
 echo "=== Apply Traefik HelmChartConfig (kube-system) ==="
 kubectl apply -f "$ROOT/k8s/traefik/helmchartconfig.yaml"
+
+if [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
+  echo "=== Snapshot app deployment images (before apply — placeholders in git must not replace live Hub tags) ==="
+  SNAP_DIR="$(mktemp -d)"
+  for d in ${ALL_APP_DEPLOYMENTS}; do
+    if kubectl get "deployment/$d" -n "$NS" &>/dev/null; then
+      cname=$(kubectl get "deployment/$d" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].name}' 2>/dev/null || true)
+      img=$(kubectl get "deployment/$d" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+      if [[ -n "${cname:-}" && -n "${img:-}" ]]; then
+        printf '%s' "$cname" >"${SNAP_DIR}/${d}.container"
+        printf '%s' "$img" >"${SNAP_DIR}/${d}.image"
+      fi
+    fi
+  done
+fi
 
 echo "=== kubectl apply -k ($NS) ==="
 kubectl apply -k "$ROOT/k8s/"
@@ -76,11 +98,26 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]];
     esac
   done
 elif [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
-  echo "=== Skipping kubectl set image (K8S_SKIP_SET_IMAGE=1) — cluster keeps current images ==="
-  echo "WARN: Manifests use placeholder names (e.g. interview-ai/web:latest). If the node cannot pull them,"
-  echo "WARN: pods stay ImagePullBackOff and Traefik returns 502. Set DOCKERHUB_USERNAME in CI or run:"
-  echo "WARN:   DOCKERHUB_USERNAME=you ./scripts/deploy-k3s.sh"
-  echo "WARN: Diagnose: ./scripts/k8s-diagnose-interview-ai.sh"
+  echo "=== Skipping kubectl set image (K8S_SKIP_SET_IMAGE=1) — no new image tag pushed this run ==="
+  restored=0
+  if [[ -n "${SNAP_DIR}" && -d "${SNAP_DIR}" ]]; then
+    for d in ${ALL_APP_DEPLOYMENTS}; do
+      [[ -f "${SNAP_DIR}/${d}.image" && -f "${SNAP_DIR}/${d}.container" ]] || continue
+      cname="$(cat "${SNAP_DIR}/${d}.container")"
+      img="$(cat "${SNAP_DIR}/${d}.image")"
+      if kubectl set image "deployment/${d}" -n "$NS" "${cname}=${img}"; then
+        restored=$((restored + 1))
+      fi
+    done
+  fi
+  if [[ "$restored" -gt 0 ]]; then
+    echo "Restored ${restored} deployment image ref(s) from pre-apply snapshot."
+  else
+    echo "WARN: Manifests use placeholder names (e.g. interview-ai/web:latest). No snapshot to restore —"
+    echo "WARN: if the node cannot pull them, pods stay ImagePullBackOff and Traefik returns 502."
+    echo "WARN: Run a workflow that builds/pushes images, or: DOCKERHUB_USERNAME=you ./scripts/deploy-k3s.sh"
+    echo "WARN: Diagnose: ./scripts/k8s-diagnose-interview-ai.sh"
+  fi
 fi
 
 # Rollouts in parallel so wall time ≈ one timeout, not N × timeout (set -e: wait || true).
