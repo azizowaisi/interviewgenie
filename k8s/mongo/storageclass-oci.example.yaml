@@ -1,0 +1,18 @@
+# Example: Oracle Cloud **Block Volume CSI** (OKE or k3s with CSI installed).
+# Do NOT add this file to kustomization.yaml until the driver is installed and the provisioner name matches your cluster.
+#
+# 1. Install the OCI Block Volume CSI driver for your environment.
+# 2. kubectl get csistoragecapacities -A  (or docs) → confirm provisioner, e.g. blockvolume.csi.oraclecloud.com
+# 3. Copy this file to storageclass-oci.yaml, adjust parameters, add to kustomization before mongo/statefulset.yaml
+# 4. Set storageClassName in mongo/statefulset.yaml volumeClaimTemplates to match metadata.name below.
+#
+# apiVersion: storage.k8s.io/v1
+# kind: StorageClass
+# metadata:
+#   name: oci-bv-mongo
+# provisioner: blockvolume.csi.oraclecloud.com
+# volumeBindingMode: WaitForFirstConsumer
+# reclaimPolicy: Retain
+# allowVolumeExpansion: true
+# parameters:
+#   attachment-type: paravirtualized
