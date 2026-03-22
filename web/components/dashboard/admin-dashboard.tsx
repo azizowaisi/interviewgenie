@@ -56,6 +56,8 @@ type Cluster = {
   pods_total?: number;
   pods_running?: number;
   pods_failed?: number;
+  /** From monitoring API: false when metrics.k8s.io (metrics-server) has no data */
+  metrics_available?: boolean;
 };
 
 function isValidClusterPayload(data: unknown): data is Cluster {
@@ -418,12 +420,27 @@ export function AdminDashboard() {
                 </CardContent>
               </Card>
             </div>
+            {hasValidCluster && cluster.metrics_available === false && (
+              <p className="mt-3 max-w-3xl text-xs text-muted-foreground">
+                CPU and memory stay empty until the cluster exposes{" "}
+                <span className="font-mono text-[11px]">metrics.k8s.io</span> (install or enable{" "}
+                <strong className="font-normal">metrics-server</strong>; on k3s,{" "}
+                <span className="font-mono text-[11px]">kubectl top nodes</span> should work). Pod list
+                CPU/memory columns use the same source.
+              </p>
+            )}
           </section>
 
           <Separator />
 
           <section>
-            <h2 className="mb-4 text-sm font-medium text-muted-foreground">Services</h2>
+            <h2 className="mb-2 text-sm font-medium text-muted-foreground">Services</h2>
+            <p className="mb-4 max-w-3xl text-xs text-muted-foreground">
+              <strong className="font-normal text-foreground">Degraded</strong> means the Service&apos;s selector
+              matches pods that are not all <span className="font-mono text-[11px]">Running</span> (for example a
+              second pod stuck <span className="font-mono text-[11px]">Pending</span> on a bad image during rollout).
+              Fix stuck rollouts or missing Docker Hub tags; CPU/memory here also need metrics-server.
+            </p>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {displayServices.slice(0, 12).map((svc) => (
                 <Card key={svc.name} className="shadow-md">
