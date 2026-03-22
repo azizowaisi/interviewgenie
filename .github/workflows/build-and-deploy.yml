@@ -502,9 +502,11 @@ jobs:
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
+          # Same as deploy_remote: sha-<commit> when images pushed; else skip set image (no :latest rollout).
           if [ -z "${DOCKERHUB_USERNAME}" ]; then
             export K8S_SKIP_SET_IMAGE=1
             unset K8S_UPDATE_DEPLOYMENTS || true
+            echo "No DOCKERHUB_USERNAME — skipping kubectl set image."
           elif [ "${{ needs.build-meta.result }}" = "success" ] && \
                [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
                [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
@@ -520,11 +522,18 @@ jobs:
             [ "${{ needs.detect.outputs.build_monitoring_service }}" = "true" ] && UPD="$UPD monitoring-service"
             [ "${{ needs.detect.outputs.build_web }}" = "true" ] && UPD="$UPD web"
             export K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
+            echo "Pinning to K8S_IMAGE_TAG=${K8S_IMAGE_TAG} deployments=[${K8S_UPDATE_DEPLOYMENTS}]"
           else
             export K8S_SKIP_SET_IMAGE=1
             unset K8S_UPDATE_DEPLOYMENTS || true
+            echo "No image push this run — skipping kubectl set image (cluster keeps current image tags)."
           fi
           scripts/ci/k8s-apply.sh
+
+      - name: Rollback hint on failure
+        if: failure()
+        run: |
+          echo "::error::Deploy failed. To roll back one revision: kubectl rollout undo deployment/<name> -n interview-ai"
 
       - name: Pull Ollama model (non-fatal)
         run: |
