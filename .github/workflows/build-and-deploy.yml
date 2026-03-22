@@ -1,5 +1,6 @@
 # Push to main + manual dispatch — tests (when relevant), conditional image build/push, deploy.
-# PR validation: ci.yml
+# PR validation: ci.yml (multi-arch Docker Hub push for changed paths: tag pr-<#>-<headSha>).
+# Merge still builds sha-<mergeCommit> — deploy pins that immutable tag; it differs from PR head SHA.
 #
 # Deploy modes — read from repository VARIABLE `DEPLOY_MODE` first; if empty, from secret `DEPLOY_MODE` (same names).
 # Other settings: optional same-named repository Variables when the secret is empty — `secrets.* || vars.*`

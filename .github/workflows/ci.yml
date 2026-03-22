@@ -1,8 +1,12 @@
-# Pull requests only — full verification before merge (no push / no deploy).
-# Merge to main → build-and-deploy.yml runs separately (single deploy pipeline).
+# Pull requests to main — tests, frontend builds, amd64 docker-verify, and (same-repo only)
+# multi-arch Docker Hub push for changed services: tag pr-<number>-<headSha> (see build-images-pr).
 #
-# Branch protection: require **CI / ci-gate** (aggregates backend + frontend + Docker).
-#   Or require individual jobs: backend-tests / frontend-verify / docker-verify matrix legs.
+# After merge, build-and-deploy.yml still builds/pushes sha-<merge commit> — that tag is what
+# kubectl set image uses; the merge commit SHA differs from the PR head SHA, so a second push is
+# required unless you change deploy to promote/retag (not implemented here). PR pushes warm
+# registry + GHA BuildKit cache so main builds are usually much faster.
+#
+# Branch protection: require **CI / ci-gate** (aggregates backend + frontend + Docker + optional PR image push).
 name: CI
 
 on:
@@ -10,11 +14,87 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened]
 
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write # BuildKit GHA cache (docker/buildx)
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SERVICES: api-service audio-service stt-service question-service llm-service formatter-service monitoring-service
 
 jobs:
+  # Path filter + build flags (aligned with build-and-deploy detect job).
+  detect-pr:
+    name: detect-pr
+    runs-on: ubuntu-24.04
+    outputs:
+      build_any: ${{ steps.resolve.outputs.build_any }}
+      build_api_service: ${{ steps.resolve.outputs.build_api_service }}
+      build_audio_service: ${{ steps.resolve.outputs.build_audio_service }}
+      build_stt_service: ${{ steps.resolve.outputs.build_stt_service }}
+      build_question_service: ${{ steps.resolve.outputs.build_question_service }}
+      build_llm_service: ${{ steps.resolve.outputs.build_llm_service }}
+      build_formatter_service: ${{ steps.resolve.outputs.build_formatter_service }}
+      build_monitoring_service: ${{ steps.resolve.outputs.build_monitoring_service }}
+      build_web: ${{ steps.resolve.outputs.build_web }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Make CI scripts executable
+        run: chmod +x scripts/ci/gha-resolve-detect-outputs.sh
+
+      - name: Paths filter
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            api_service:
+              - 'backend/api-service/**'
+            audio_service:
+              - 'backend/audio-service/**'
+            stt_service:
+              - 'backend/stt-service/**'
+            question_service:
+              - 'backend/question-service/**'
+            llm_service:
+              - 'backend/llm-service/**'
+            formatter_service:
+              - 'backend/formatter-service/**'
+            monitoring_service:
+              - 'backend/monitoring-service/**'
+            web:
+              - 'web/**'
+            python_tests:
+              - 'backend/question-service/**'
+              - 'backend/formatter-service/**'
+              - 'backend/llm-service/**'
+              - 'backend/stt-service/**'
+              - 'backend/audio-service/**'
+
+      - name: Resolve build flags
+        id: resolve
+        env:
+          EVENT_NAME: pull_request
+          INPUT_DEPLOY_ONLY: "false"
+          INPUT_FORCE_BUILD: "false"
+          INPUT_SKIP_TESTS: "false"
+          FILTER_API_SERVICE: ${{ steps.filter.outputs.api_service }}
+          FILTER_AUDIO_SERVICE: ${{ steps.filter.outputs.audio_service }}
+          FILTER_STT_SERVICE: ${{ steps.filter.outputs.stt_service }}
+          FILTER_QUESTION_SERVICE: ${{ steps.filter.outputs.question_service }}
+          FILTER_LLM_SERVICE: ${{ steps.filter.outputs.llm_service }}
+          FILTER_FORMATTER_SERVICE: ${{ steps.filter.outputs.formatter_service }}
+          FILTER_MONITORING_SERVICE: ${{ steps.filter.outputs.monitoring_service }}
+          FILTER_WEB: ${{ steps.filter.outputs.web }}
+          FILTER_PYTHON_TESTS: ${{ steps.filter.outputs.python_tests }}
+        run: bash scripts/ci/gha-resolve-detect-outputs.sh
+
   backend-tests:
     name: backend-tests (${{ matrix.service }})
     strategy:
@@ -104,9 +184,142 @@ jobs:
             docker build -t "interview-ai/${{ matrix.image }}:latest" "./backend/${{ matrix.image }}"
           fi
 
+  # Multi-arch push to Docker Hub (same-repo PRs only; forks skip — no secrets). Tags: pr-<n>-<headSha>.
+  build-prep-pr:
+    name: build-prep-pr
+    needs: [detect-pr]
+    if: |
+      needs.detect-pr.outputs.build_any == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    outputs:
+      platforms: ${{ steps.plat.outputs.platforms }}
+      need_qemu: ${{ steps.plat.outputs.need_qemu }}
+      dh_skip: ${{ steps.dh.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure Docker platforms
+        id: plat
+        run: |
+          P="linux/amd64,linux/arm64"
+          echo "platforms=${P}" >> "$GITHUB_OUTPUT"
+          echo "need_qemu=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check Docker Hub credentials
+        id: dh
+        env:
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "${DH_TOKEN}" ]; then
+            echo "No DOCKERHUB_TOKEN — skipping PR image push (docker-verify still ran)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
+          if [ -z "${DH_USER}" ]; then
+            echo "::error::DOCKERHUB_USERNAME is empty for PR image push."
+            exit 1
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+  build-images-pr:
+    name: build-images-pr (${{ matrix.slug }})
+    needs: [detect-pr, build-prep-pr, backend-tests]
+    if: |
+      always() &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.backend-tests.result == 'success' &&
+      needs.detect-pr.outputs.build_any == 'true' &&
+      needs.build-prep-pr.result == 'success' &&
+      needs.build-prep-pr.outputs.dh_skip != 'true'
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        slug:
+          - api-service
+          - audio-service
+          - stt-service
+          - question-service
+          - llm-service
+          - formatter-service
+          - monitoring-service
+          - web
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE_TAG: pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+      PLATFORMS: ${{ needs.build-prep-pr.outputs.platforms }}
+      BUILDX_NO_DEFAULT_ATTESTATIONS: 1
+      ENABLE_REGISTRY_CACHE: ${{ vars.DOCKER_REGISTRY_CACHE != 'false' && 'true' || 'false' }}
+      WEB_PUBLIC_APP_URL: ${{ vars.WEB_PUBLIC_APP_URL }}
+      WEB_ADMIN_SITE_URL: ${{ vars.WEB_ADMIN_SITE_URL }}
+      WEB_ADMIN_HOSTS: ${{ vars.WEB_ADMIN_HOSTS }}
+      WEB_MAIN_APP_HOSTS: ${{ vars.WEB_MAIN_APP_HOSTS }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Gate — build this image?
+        id: gate
+        run: |
+          case "${{ matrix.slug }}" in
+            api-service) B="${{ needs.detect-pr.outputs.build_api_service }}" ;;
+            audio-service) B="${{ needs.detect-pr.outputs.build_audio_service }}" ;;
+            stt-service) B="${{ needs.detect-pr.outputs.build_stt_service }}" ;;
+            question-service) B="${{ needs.detect-pr.outputs.build_question_service }}" ;;
+            llm-service) B="${{ needs.detect-pr.outputs.build_llm_service }}" ;;
+            formatter-service) B="${{ needs.detect-pr.outputs.build_formatter_service }}" ;;
+            monitoring-service) B="${{ needs.detect-pr.outputs.build_monitoring_service }}" ;;
+            web) B="${{ needs.detect-pr.outputs.build_web }}" ;;
+            *) echo "Unknown slug"; exit 1 ;;
+          esac
+          echo "build=${B}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        if: steps.gate.outputs.build == 'true' && needs.build-prep-pr.outputs.need_qemu == 'true'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        if: steps.gate.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        if: steps.gate.outputs.build == 'true'
+        env:
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
+          if [ -z "${DH_USER}" ] || [ -z "${DH_TOKEN}" ]; then
+            echo "::error::Docker Hub credentials missing"
+            exit 1
+          fi
+          printf '%s' "${DH_TOKEN}" | docker login -u "${DH_USER}" --password-stdin
+
+      - name: Build & push image (PR tag)
+        if: steps.gate.outputs.build == 'true'
+        env:
+          IMAGE_SLUG: ${{ matrix.slug }}
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
+        run: |
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
+          export DH_USER
+          chmod +x scripts/ci/gha-build-single-image.sh
+          scripts/ci/gha-build-single-image.sh
+
   ci-gate:
     name: ci-gate
-    needs: [backend-tests, frontend-verify, docker-verify]
+    needs: [detect-pr, backend-tests, frontend-verify, docker-verify, build-prep-pr, build-images-pr]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -114,6 +327,11 @@ jobs:
         run: |
           set -euo pipefail
           ok() { [ "$1" = "success" ]; }
+          sk() { [ "$1" = "success" ] || [ "$1" = "skipped" ]; }
+          if ! ok "${{ needs.detect-pr.result }}"; then
+            echo "::error::detect-pr did not succeed (result=${{ needs.detect-pr.result }})"
+            exit 1
+          fi
           if ! ok "${{ needs.backend-tests.result }}"; then
             echo "::error::backend-tests did not succeed (result=${{ needs.backend-tests.result }})"
             exit 1
@@ -124,6 +342,14 @@ jobs:
           fi
           if ! ok "${{ needs.docker-verify.result }}"; then
             echo "::error::docker-verify did not succeed (result=${{ needs.docker-verify.result }})"
+            exit 1
+          fi
+          if ! sk "${{ needs.build-prep-pr.result }}"; then
+            echo "::error::build-prep-pr did not succeed or skip (result=${{ needs.build-prep-pr.result }})"
+            exit 1
+          fi
+          if ! sk "${{ needs.build-images-pr.result }}"; then
+            echo "::error::build-images-pr did not succeed or skip (result=${{ needs.build-images-pr.result }})"
             exit 1
           fi
           echo "All CI jobs succeeded."
