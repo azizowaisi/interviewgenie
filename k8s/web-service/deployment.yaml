@@ -53,13 +53,41 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-          # TCP readiness so the pod joins Service endpoints for every Host (main + admin).
-          # HTTP-only with interviewgenie.teckiz.com left admin.interviewgenie.teckiz.com out of Ready set in edge cases.
+          # HTTP readiness (not TCP): require 2xx for both main and admin Host headers (middleware differs by host).
           readinessProbe:
-            tcpSocket:
-              port: 3002
+            exec:
+              command:
+                - node
+                - -e
+                - |
+                  const http = require("http");
+                  const hosts = ["interviewgenie.teckiz.com", "admin.interviewgenie.teckiz.com"];
+                  let i = 0;
+                  function fail() {
+                    process.exit(1);
+                  }
+                  function step() {
+                    if (i >= hosts.length) process.exit(0);
+                    const req = http.get(
+                      { hostname: "127.0.0.1", port: 3002, path: "/", headers: { Host: hosts[i] } },
+                      (res) => {
+                        const ok = res.statusCode >= 200 && res.statusCode < 500;
+                        res.resume();
+                        res.on("end", () => {
+                          if (!ok) fail();
+                          else {
+                            i++;
+                            step();
+                          }
+                        });
+                      }
+                    );
+                    req.on("error", fail);
+                  }
+                  step();
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /

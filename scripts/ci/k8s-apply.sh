@@ -158,9 +158,12 @@ done
     case "${K8S_AUTO_RECOVER_IMAGE_PULL:-}" in
       1 | true | TRUE | yes | YES)
         rec="${ROOT}/scripts/k8s-recover-stuck-rollouts.sh"
-        if [[ -x "$rec" ]]; then
+        # Use bash + -f (not -x): script must run after git checkout even if +x was stripped (e.g. some FS/CI).
+        if [[ -f "$rec" ]]; then
           echo "=== Auto-recover (K8S_AUTO_RECOVER_IMAGE_PULL) — rollout undo for stuck deployments ===" >&2
           bash "$rec" --apply || echo "WARN: auto-recover script failed (ignored)." >&2
+        else
+          echo "WARN: K8S_AUTO_RECOVER_IMAGE_PULL set but missing ${rec}; skipping auto-recover." >&2
         fi
         ;;
     esac
