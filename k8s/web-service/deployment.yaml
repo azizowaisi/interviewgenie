@@ -28,7 +28,8 @@ spec:
               value: "http://audio-service:8000"
             - name: MONITORING_URL
               value: "http://monitoring-service:3001"
-            # Must match monitoring-service ADMIN_TOKEN when Secret monitoring-admin is used.
+            # Must equal monitoring-service ADMIN_TOKEN when Secret monitoring-admin is set (same secret on both Deployments).
+            # If this env is empty, users can still use the admin site token field (browser → /api/mon → monitoring).
             - name: MONITORING_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
