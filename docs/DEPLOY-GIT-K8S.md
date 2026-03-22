@@ -22,6 +22,8 @@ The workflow builds **multi-arch** (`linux/amd64,linux/arm64`) by default so **a
 
 **Alternative (often simpler):** run k3s on an **x86_64 (AMD) Ubuntu** VM so the node matches **`linux/amd64`** images — see **`docs/DEPLOY-ORACLE-CLOUD.md`** (Option B, “Ubuntu vs the 502 issue”). Switching OS from Oracle Linux to Ubuntu alone does **not** fix platform mismatch; **AMD64 vs ARM** does.
 
+Full diagram and checklist: **`docs/ORACLE-ARCHITECTURE.md`**.
+
 ### HTTPS / Let’s Encrypt (Electron & CLI TLS errors)
 
 If browsers show **certificate** errors, Traefik is often still on the **default self-signed** cert. Ensure:

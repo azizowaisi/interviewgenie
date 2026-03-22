@@ -55,5 +55,5 @@ kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik -o wide 2>/dev
 echo ""
 echo "Done. Fix patterns:"
 echo "  ImagePullBackOff / ErrImagePull → set GitHub secrets DOCKERHUB_USERNAME + DOCKERHUB_TOKEN; re-run deploy, or kubectl set image to your Hub repo."
-echo "  exec format error → rebuild with DOCKER_BUILD_PLATFORMS matching node arch (e.g. linux/arm64 for Ampere)."
+echo "  no match for platform / exec format error → Hub image arch must match node (Ampere=arm64). See docs/ORACLE-ARCHITECTURE.md"
 echo "  0 endpoints for svc/web → pods not Ready; check logs: kubectl logs -n $NS deploy/web --tail=80"
