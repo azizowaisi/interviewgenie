@@ -18,6 +18,9 @@
 #   skip_tests / skip_deploy — unchanged
 #
 # See docs/DEPLOY-GIT-K8S.md, docs/GITHUB-ACTIONS-K8S-OIDC.md
+#
+# Optional repository Variable: K8S_AUTO_RECOVER_IMAGE_PULL = true
+#   After deploy, if any pod is ImagePullBackOff/ErrImagePull, run scripts/k8s-recover-stuck-rollouts.sh --apply.
 
 name: Build and Deploy
 
@@ -459,6 +462,7 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -526,6 +530,7 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -621,6 +626,7 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL || vars.LETSENCRYPT_EMAIL }}
           GITHUB_SHA: ${{ github.sha }}
+          K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
         run: |
           # Same as deploy_remote: sha-<commit> when images pushed; else skip set image (no :latest rollout).
           K8S_UPDATE_DEPLOYMENTS=""
@@ -653,6 +659,7 @@ jobs:
             export K8S_SKIP_SET_IMAGE=\"${K8S_SKIP_SET_IMAGE}\"
             export K8S_IMAGE_TAG=\"${K8S_IMAGE_TAG}\"
             export K8S_UPDATE_DEPLOYMENTS=\"${K8S_UPDATE_DEPLOYMENTS}\"
+            export K8S_AUTO_RECOVER_IMAGE_PULL=\"${K8S_AUTO_RECOVER_IMAGE_PULL}\"
             LE_MAIL=\"${LETSENCRYPT_EMAIL}\"
 
             if ! command -v curl >/dev/null 2>&1; then

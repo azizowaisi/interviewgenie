@@ -7,6 +7,8 @@
 # Optional: K8S_IMAGE_TAG — CI uses sha-<full github sha>; local default latest if unset when set_image runs.
 # Optional: K8S_SKIP_SET_IMAGE=1 — no new tag this run (CI skips set image). We snapshot live images before
 #   `kubectl apply -k` and restore them after, so manifest placeholders (interview-ai/*:latest) do not clobber Hub tags.
+# Optional: K8S_AUTO_RECOVER_IMAGE_PULL — if 1/true/yes and pods show ImagePullBackOff/ErrImagePull after apply,
+#   run scripts/k8s-recover-stuck-rollouts.sh --apply (GitHub: set repository Variable of the same name).
 # Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
 #   If unset/empty, all app deployments get `kubectl set image` (CI uses this when pinning :latest).
 # Rollout: same deployments as set image (all app workloads in parallel; one timeout window wall time).
@@ -151,7 +153,17 @@ done
   kubectl get pods -n "$NS" -o wide || true
   if kubectl get pods -n "$NS" --no-headers 2>/dev/null | grep -E 'ImagePullBackOff|ErrImagePull' >/dev/null; then
     echo "WARN: Some pods cannot pull images. If CI only updated part of the stack, other deployments may still reference a Hub tag that was never pushed for this commit." >&2
-    echo "WARN: Fix: push the missing images, or kubectl rollout undo deployment/<name> -n ${NS}. Diagnose: ./scripts/k8s-diagnose-interview-ai.sh" >&2
+    echo "WARN: Fix: push the missing images, or on the node run: ./scripts/k8s-recover-stuck-rollouts.sh --apply" >&2
+    echo "WARN: (dry-run first without --apply). Also: ./scripts/k8s-diagnose-interview-ai.sh" >&2
+    case "${K8S_AUTO_RECOVER_IMAGE_PULL:-}" in
+      1 | true | TRUE | yes | YES)
+        rec="${ROOT}/scripts/k8s-recover-stuck-rollouts.sh"
+        if [[ -x "$rec" ]]; then
+          echo "=== Auto-recover (K8S_AUTO_RECOVER_IMAGE_PULL) — rollout undo for stuck deployments ===" >&2
+          bash "$rec" --apply || echo "WARN: auto-recover script failed (ignored)." >&2
+        fi
+        ;;
+    esac
   fi
 
   echo "=== Ollama model (non-fatal) ==="
