@@ -28,8 +28,9 @@ services:
       mongo:
         condition: service_healthy
 
+  # Align major with k8s/mongo/statefulset.yaml (8.0.x line avoids jumping straight to 8.2+ on older FCV data).
   mongo:
-    image: mongo:8
+    image: mongo:8.0
     ports:
       - "27017:27017"
     volumes:
@@ -60,8 +61,8 @@ services:
       - formatter-service
       - api-service
 
+  # Native arm64 on M1 / Oracle Ampere (matches CI default). For amd64-only hosts, set: platform: linux/amd64
   whisper-service:
-    platform: linux/amd64
     build:
       context: ./backend/whisper-service
       dockerfile: Dockerfile

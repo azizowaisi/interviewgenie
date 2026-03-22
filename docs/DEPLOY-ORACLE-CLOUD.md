@@ -83,10 +83,18 @@ From your machine:
 
 Use this if you want a Kubernetes deployment (e.g. for scaling or production).
 
+### Ubuntu vs “the 502 / ImagePullBackOff issue”
+
+- **Use Ubuntu 22.04 or 24.04** on the VM — that part is already correct.
+- The failures you saw (**`no match for platform in manifest`**, Traefik **502**) come from **CPU architecture**, not from “Oracle Linux vs Ubuntu”. **This repo defaults CI to `linux/arm64`** (M1 + Oracle Ampere). **x86_64 AMD** VMs need **`DOCKER_BUILD_PLATFORMS=linux/amd64`** (or multi-arch).
+- **Ampere (ARM) free tier:** matches the default — ensure GitHub builds ran successfully and Hub manifests show **arm64**.
+- **AMD x86_64 shape:** set **`DOCKER_BUILD_PLATFORMS=linux/amd64`** so the node pulls **amd64** layers; or use multi-arch if you serve both kinds of nodes from one tag.
+
 ### 1. Create a VM (same as above)
 
 - **Shape**: 4+ OCPUs, **24 GB RAM** recommended for full stack (Ollama + STT + API + Mongo + rest).
 - **OS**: Ubuntu 22.04/24.04.
+- **For least friction with default CI:** use **Ampere ARM** (matches **`linux/arm64`**). For **AMD x86_64**, set **`DOCKER_BUILD_PLATFORMS=linux/amd64`** in GitHub Actions variables.
 
 ### 2. Install k3s
 
