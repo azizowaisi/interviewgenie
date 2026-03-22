@@ -18,7 +18,8 @@ spec:
     spec:
       containers:
         - name: mongo
-          image: mongo:8
+          # Use 8.0.x line to upgrade from FCV 7.0 on-disk; `mongo:8` may track 8.2+ which rejects FCV 7.0 without prior upgrade.
+          image: mongo:8.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 27017

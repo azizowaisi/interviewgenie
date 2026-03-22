@@ -140,6 +140,8 @@ To run the **full k8s stack** (all services in this repo: API, Audio, MongoDB, S
 | **Disk** | **40 GB** | **60 GB+** | 20 GB (Ollama models PVC) + 5 GB (CV uploads PVC) + MongoDB + OS and images. |
 | **OS** | Linux (x86_64 or ARM64) | — | k3s runs on most Linux distros; ARM64 (e.g. Oracle Cloud free tier) is supported. |
 
+**CPU vs container images:** CI defaults to **`linux/arm64`** for **Apple Silicon dev** and **Oracle Ampere**. For **x86_64-only** servers, set **`DOCKER_BUILD_PLATFORMS=linux/amd64`**. See **`docs/ORACLE-ARCHITECTURE.md`** for **502** / **ImagePullBackOff** troubleshooting.
+
 **Example suitable servers:**
 
 - **Oracle Cloud Free Tier**: 4 OCPUs, 24 GB RAM (ARM) — fits the recommended profile.

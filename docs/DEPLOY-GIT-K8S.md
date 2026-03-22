@@ -16,9 +16,16 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 
 Manifests include **readiness probes**, **rolling update** strategies, and **HorizontalPodAutoscalers** for stateless app Deployments. See **`docs/K8S-SCALING-AND-ROLLING.md`** for single-node limits, PVC constraints, and tuning `maxReplicas`.
 
-### ARM64 (Oracle Ampere, Graviton, Apple Silicon nodes)
+### CPU architecture (default: **linux/arm64**)
 
-GitHub-hosted runners build **amd64** images by default (`DOCKER_BUILD_PLATFORMS` unset). If your nodes are **aarch64**, set Actions variable **`DOCKER_BUILD_PLATFORMS`** to `linux/amd64,linux/arm64` (or `linux/arm64` only); otherwise pulls can fail with `exec format error`. Then push to `main` to rebuild and roll workloads.
+The workflow defaults to **`linux/arm64`** so **Apple Silicon (M1) dev** and **Oracle Ampere (aarch64) production** use the same Hub tags without extra variables.
+
+- **amd64-only** clusters (x86_64 VMs): set **`DOCKER_BUILD_PLATFORMS=linux/amd64`** for faster CI on GitHub’s amd64 runners.
+- **Both** in one tag: **`DOCKER_BUILD_PLATFORMS=linux/amd64,linux/arm64`**.
+
+If you see **`no match for platform in manifest`**, the Hub image **architecture** does not match the node — fix **`DOCKER_BUILD_PLATFORMS`** and rebuild, or use a VM shape that matches the images you push.
+
+Full diagram and checklist: **`docs/ORACLE-ARCHITECTURE.md`**.
 
 ### HTTPS / Let’s Encrypt (Electron & CLI TLS errors)
 
@@ -62,7 +69,7 @@ All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rs
 1. **`kubectl apply -f k8s/traefik/helmchartconfig.yaml`** (kube-system — Let’s Encrypt / Traefik)
 2. **`kubectl apply -k k8s/`** (namespace `interview-ai`: apps, ingress, mongo, ollama, HPA, …)
 3. If **`DOCKERHUB_USERNAME`** is set: **`kubectl set image`** always runs — **`sha-<commit>`** for services built this run when images were pushed; otherwise **`:latest`** on **all** app workloads (fixes raw manifest names like `interview-ai/web` → `youruser/interview-ai-web`). If **`DOCKERHUB_USERNAME`** is unset, only `kubectl apply` runs.
-4. **`kubectl rollout status`** on `api-service`, `audio-service`, `web`, `monitoring-service` **in parallel** (each uses `K8S_ROLLOUT_TIMEOUT`, default `180s`)
+4. **`kubectl rollout status`** on the **same deployments** as `kubectl set image` (all eight app services by default, or a partial list from CI) **in parallel** — wall time ≈ one `K8S_ROLLOUT_TIMEOUT` (default `180s`), not eight serial waits.
 5. **`kubectl get pods`** and a best-effort **`ollama pull qwen2.5:0.5b`**
 
 **Manual workflow:** **Actions → Build and Deploy → Run workflow** — also **pushes images** (same as a push to `main`). Options:

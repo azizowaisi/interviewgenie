@@ -4,14 +4,14 @@
 # Caching: GHA cache (per service scope) + optional Docker registry cache (persists across runners).
 #
 # Env: DH_USER, IMAGE_TAG (e.g. sha-abc123def456)
-# Env: PLATFORMS — default linux/amd64 (set vars.DOCKER_BUILD_PLATFORMS=linux/amd64,linux/arm64 for multi-arch)
+# Env: PLATFORMS — default linux/arm64 (match CI; override linux/amd64 or multi-arch if needed)
 # Env: ENABLE_REGISTRY_CACHE — true/false (default true when DH_USER set); uses :cache tag per image repo
 # Flags: BUILD_API_SERVICE, BUILD_AUDIO_SERVICE, ... BUILD_WEB (true/false)
 # Optional: WEB_PUBLIC_APP_URL, WEB_ADMIN_SITE_URL, WEB_ADMIN_HOSTS, WEB_MAIN_APP_HOSTS
 set -euo pipefail
 
-# Single-platform amd64 is typically ~50% faster than amd64+arm64 on GitHub-hosted runners (no QEMU).
-PLATFORMS="${PLATFORMS:-linux/amd64}"
+# Default arm64: M1 dev + Oracle Ampere. CI runners are amd64 — buildx still uses QEMU for linux/arm64.
+PLATFORMS="${PLATFORMS:-linux/arm64}"
 ENABLE_REGISTRY_CACHE="${ENABLE_REGISTRY_CACHE:-true}"
 
 need() {
