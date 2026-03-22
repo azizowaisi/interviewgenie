@@ -2,6 +2,9 @@
 # PR validation: ci.yml
 #
 # Deploy modes — read from repository VARIABLE `DEPLOY_MODE` first; if empty, from secret `DEPLOY_MODE` (same names).
+# Other settings: optional same-named repository Variables when the secret is empty — `secrets.* || vars.*`
+#   (SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, LETSENCRYPT_EMAIL, DOCKERHUB_USERNAME). DOCKERHUB_TOKEN: secret only.
+# Modes:
 #   (unset / empty) — remote kubectl if KUBE_CONFIG is set; else SSH deploy if SSH_* secrets are set
 #   remote          — same as unset (needs KUBE_CONFIG for GitHub-hosted kubectl)
 #   self_hosted     — Runner on the k3s node
@@ -417,9 +420,9 @@ jobs:
       - id: check
         env:
           KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY || vars.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
         run: |
           if [ -n "${KUBE_CONFIG_B64}" ]; then echo "has_kube_config=true" >> "$GITHUB_OUTPUT"
           else echo "has_kube_config=false" >> "$GITHUB_OUTPUT"; fi
@@ -600,19 +603,22 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y openssh-client rsync
 
       - name: Configure SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY || vars.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
         run: |
           mkdir -p "$HOME/.ssh"
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > "$HOME/.ssh/id_rsa"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_rsa"
           chmod 600 "$HOME/.ssh/id_rsa"
-          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> "$HOME/.ssh/known_hosts"
+          ssh-keyscan -H "$SSH_HOST" >> "$HOME/.ssh/known_hosts"
 
       - name: Sync manifests + apply on server
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL || vars.LETSENCRYPT_EMAIL }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
           # Same as deploy_remote: sha-<commit> when images pushed; else skip set image (no :latest rollout).
