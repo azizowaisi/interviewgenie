@@ -185,20 +185,12 @@ jobs:
 
       - name: Configure Docker platforms
         id: plat
-        env:
-          DOCKER_BUILD_PLATFORMS: ${{ vars.DOCKER_BUILD_PLATFORMS }}
         run: |
-          # Default: linux/arm64 — Apple Silicon (M1) dev + Oracle Ampere production (aarch64).
-          # For amd64-only servers: DOCKER_BUILD_PLATFORMS=linux/amd64
-          # For both in one tag: DOCKER_BUILD_PLATFORMS=linux/amd64,linux/arm64
-          P="${DOCKER_BUILD_PLATFORMS:-linux/arm64}"
+          # Fixed multi-arch: Ampere (arm64) + amd64 VMs without repo variables or manual steps.
+          P="linux/amd64,linux/arm64"
           echo "platforms=${P}" >> "$GITHUB_OUTPUT"
-          if echo "${P}" | grep -q ',' || echo "${P}" | grep -qiE 'arm64|aarch64'; then
-            echo "need_qemu=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "need_qemu=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "Using PLATFORMS=${P} (override with repo var DOCKER_BUILD_PLATFORMS)" >> "$GITHUB_STEP_SUMMARY"
+          echo "need_qemu=true" >> "$GITHUB_OUTPUT"
+          echo "Using PLATFORMS=${P} (fixed in workflow)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check Docker Hub credentials
         id: dh
@@ -259,11 +251,6 @@ jobs:
       WEB_MAIN_APP_HOSTS: ${{ vars.WEB_MAIN_APP_HOSTS }}
     steps:
       - uses: actions/checkout@v6
-
-      - name: Warn if images lack linux/arm64 (breaks M1 + Ampere default path)
-        if: ${{ !contains(needs.build-prep.outputs.platforms, 'arm64') }}
-        run: |
-          echo "::warning::PLATFORMS=${{ needs.build-prep.outputs.platforms }} — no arm64. Repo default is ARM64 for Mac M1 dev + Oracle Ampere; amd64-only images will not run there. Use DOCKER_BUILD_PLATFORMS=linux/amd64 only if all targets are x86_64 VMs, or add linux/arm64 (or multi-arch)."
 
       - name: Gate — build this image?
         id: gate
@@ -384,7 +371,7 @@ jobs:
         if: always()
         run: |
           echo "### Images (parallel matrix)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Tag (when built):** \`sha-${{ github.sha }}\` and \`:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag (when built):** \`sha-${{ github.sha }}\` (immutable; no \`:latest\` push)" >> "$GITHUB_STEP_SUMMARY"
           echo "- **build_any:** ${{ needs.detect.outputs.build_any }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **images_pushed:** ${{ steps.push_outcome.outputs.images_pushed }}" >> "$GITHUB_STEP_SUMMARY"
 
@@ -444,11 +431,12 @@ jobs:
       - name: Deploy to cluster (k3s-compatible)
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
-          # Always pin to Docker Hub when DOCKERHUB_USERNAME is set (fixes raw manifest image names).
-          # This run pushed images → sha tag + optional partial deployments; else → :latest on all workloads.
+          # Pin to immutable sha-<commit> when this run pushed images (partial list = only rebuilt services).
+          # No push → skip set image so we never roll the cluster to a missing or stale :latest.
           if [ -z "${DOCKERHUB_USERNAME}" ]; then
             export K8S_SKIP_SET_IMAGE=1
             unset K8S_UPDATE_DEPLOYMENTS || true
@@ -470,10 +458,9 @@ jobs:
             export K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
             echo "Pinning to K8S_IMAGE_TAG=${K8S_IMAGE_TAG} deployments=[${K8S_UPDATE_DEPLOYMENTS}]"
           else
-            export K8S_SKIP_SET_IMAGE=0
-            export K8S_IMAGE_TAG="latest"
+            export K8S_SKIP_SET_IMAGE=1
             unset K8S_UPDATE_DEPLOYMENTS || true
-            echo "Pinning all workloads to Docker Hub :latest (no image push this run — manifest apply or skipped build)."
+            echo "No image push this run — skipping kubectl set image (cluster keeps current image tags)."
           fi
           scripts/ci/k8s-apply.sh
 
@@ -511,6 +498,7 @@ jobs:
       - name: Deploy to cluster
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -533,8 +521,7 @@ jobs:
             [ "${{ needs.detect.outputs.build_web }}" = "true" ] && UPD="$UPD web"
             export K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
           else
-            export K8S_SKIP_SET_IMAGE=0
-            export K8S_IMAGE_TAG="latest"
+            export K8S_SKIP_SET_IMAGE=1
             unset K8S_UPDATE_DEPLOYMENTS || true
           fi
           scripts/ci/k8s-apply.sh
@@ -596,31 +583,25 @@ jobs:
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          # Same pin logic as deploy_remote: Hub username set → always kubectl set image;
-          # this run pushed → sha tag + partial list; else → :latest on all workloads.
+          # Same as deploy_remote: sha-<commit> when images pushed; else skip set image (no :latest rollout).
           K8S_UPDATE_DEPLOYMENTS=""
-          K8S_IMAGE_TAG="latest"
           K8S_SKIP_SET_IMAGE="1"
-          if [ -n "${DOCKERHUB_USERNAME}" ]; then
+          if [ -n "${DOCKERHUB_USERNAME}" ] && \
+             [ "${{ needs.build-meta.result }}" = "success" ] && \
+             [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
+             [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
             K8S_SKIP_SET_IMAGE="0"
-            if [ "${{ needs.build-meta.result }}" = "success" ] && \
-               [ "${{ needs.build-meta.outputs.images_pushed }}" = "true" ] && \
-               [ "${{ needs.detect.outputs.build_any }}" = "true" ]; then
-              K8S_IMAGE_TAG="sha-${GITHUB_SHA}"
-              UPD=""
-              [ "${{ needs.detect.outputs.build_api_service }}" = "true" ] && UPD="$UPD api-service"
-              [ "${{ needs.detect.outputs.build_audio_service }}" = "true" ] && UPD="$UPD audio-service"
-              [ "${{ needs.detect.outputs.build_stt_service }}" = "true" ] && UPD="$UPD stt-service"
-              [ "${{ needs.detect.outputs.build_question_service }}" = "true" ] && UPD="$UPD question-service"
-              [ "${{ needs.detect.outputs.build_llm_service }}" = "true" ] && UPD="$UPD llm-service"
-              [ "${{ needs.detect.outputs.build_formatter_service }}" = "true" ] && UPD="$UPD formatter-service"
-              [ "${{ needs.detect.outputs.build_monitoring_service }}" = "true" ] && UPD="$UPD monitoring-service"
-              [ "${{ needs.detect.outputs.build_web }}" = "true" ] && UPD="$UPD web"
-              K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
-            else
-              K8S_IMAGE_TAG="latest"
-              K8S_UPDATE_DEPLOYMENTS=""
-            fi
+            K8S_IMAGE_TAG="sha-${GITHUB_SHA}"
+            UPD=""
+            [ "${{ needs.detect.outputs.build_api_service }}" = "true" ] && UPD="$UPD api-service"
+            [ "${{ needs.detect.outputs.build_audio_service }}" = "true" ] && UPD="$UPD audio-service"
+            [ "${{ needs.detect.outputs.build_stt_service }}" = "true" ] && UPD="$UPD stt-service"
+            [ "${{ needs.detect.outputs.build_question_service }}" = "true" ] && UPD="$UPD question-service"
+            [ "${{ needs.detect.outputs.build_llm_service }}" = "true" ] && UPD="$UPD llm-service"
+            [ "${{ needs.detect.outputs.build_formatter_service }}" = "true" ] && UPD="$UPD formatter-service"
+            [ "${{ needs.detect.outputs.build_monitoring_service }}" = "true" ] && UPD="$UPD monitoring-service"
+            [ "${{ needs.detect.outputs.build_web }}" = "true" ] && UPD="$UPD web"
+            K8S_UPDATE_DEPLOYMENTS="$(echo "${UPD}" | xargs)"
           fi
           export K8S_SKIP_SET_IMAGE K8S_IMAGE_TAG K8S_UPDATE_DEPLOYMENTS
 

@@ -2,8 +2,9 @@
 # Apply Traefik + kustomize stack + optional Docker Hub image overrides + rollout checks.
 # Layout: $ROOT/k8s/ (kustomization.yaml, traefik/, …) — same as Git repo root on CI, or ~/interviewgenie-k8s on SSH sync.
 #
-# Env: KUBECONFIG. Optional: DOCKERHUB_USERNAME, K8S_NAMESPACE (default interview-ai).
-# Optional: K8S_IMAGE_TAG (default latest) — immutable tag e.g. sha-<full github sha> from CI.
+# Env: KUBECONFIG. Optional: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN, K8S_NAMESPACE (default interview-ai).
+# When both Hub env vars are set: creates pull secret + patches SAs so cluster pulls (mongo, app images) use authenticated Hub (higher rate limits).
+# Optional: K8S_IMAGE_TAG — CI uses sha-<full github sha>; local default latest if unset when set_image runs.
 # Optional: K8S_SKIP_SET_IMAGE=1 — only apply manifests (used when DOCKERHUB_USERNAME is unset in CI).
 # Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
 #   If unset/empty, all app deployments get `kubectl set image` (CI uses this when pinning :latest).
@@ -23,6 +24,23 @@ kubectl apply -f "$ROOT/k8s/traefik/helmchartconfig.yaml"
 
 echo "=== kubectl apply -k ($NS) ==="
 kubectl apply -k "$ROOT/k8s/"
+
+if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ -n "${DOCKERHUB_TOKEN:-}" ]]; then
+  echo "=== Docker Hub pull secret ($NS) ==="
+  kubectl create secret docker-registry interview-ai-dockerhub \
+    --docker-server=https://index.docker.io/v1/ \
+    --docker-username="${DOCKERHUB_USERNAME}" \
+    --docker-password="${DOCKERHUB_TOKEN}" \
+    -n "$NS" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  for sa in default monitoring-service; do
+    if kubectl get serviceaccount "$sa" -n "$NS" &>/dev/null; then
+      kubectl patch serviceaccount "$sa" -n "$NS" --type=merge \
+        -p "{\"imagePullSecrets\":[{\"name\":\"interview-ai-dockerhub\"}]}" || true
+    fi
+  done
+  kubectl rollout restart statefulset/mongo -n "$NS" 2>/dev/null || true
+fi
 
 TAG="${K8S_IMAGE_TAG:-latest}"
 

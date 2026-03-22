@@ -23,7 +23,7 @@ spec:
       containers:
         - name: audio-service
           image: interview-ai/audio-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:

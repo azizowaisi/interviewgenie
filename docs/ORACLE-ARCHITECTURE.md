@@ -2,13 +2,11 @@
 
 This document ties together **CPU architecture**, **CI-built images**, and **how you run** the stack on Oracle (Docker Compose vs k3s). Use it when debugging **502**, **ImagePullBackOff**, or **exec format error**.
 
-## 0. Project default: **linux/arm64**
+## 0. CI default: **multi-arch (`linux/amd64` + `linux/arm64`)**
 
-**Intended targets:** **Apple Silicon (M1/M2/M3) dev machines** and **Oracle Ampere (aarch64) production**. CI and helper scripts default to **`linux/arm64`** so one image tag matches both.
+**Build and Deploy** builds **both** architectures every time (fixed in the workflow) so **Oracle Ampere** and **amd64** VMs both pull a matching manifest **without** setting a GitHub variable.
 
-**If you use x86_64 servers only:** set GitHub variable **`DOCKER_BUILD_PLATFORMS=linux/amd64`** (faster on GitHub’s amd64 runners — no QEMU for the app image build).
-
-**If you need one tag for both amd64 and arm64:** **`DOCKER_BUILD_PLATFORMS=linux/amd64,linux/arm64`**.
+**Deploy** (`scripts/ci/k8s-apply.sh`) also creates **`interview-ai-dockerhub`** pull credentials from **`DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`** and attaches them to the **`default`** and **`monitoring-service`** service accounts so **mongo** and other Hub pulls use **authenticated** limits (reduces anonymous **429** errors).
 
 ## 1. What Oracle gives you (two common paths)
 
@@ -28,10 +26,10 @@ flowchart LR
     WF[Build and Deploy workflow]
   end
   subgraph build [CI runner]
-    BX["docker buildx\nlinux/arm64 default"]
+    BX["docker buildx\namd64 + arm64"]
   end
   subgraph hub [Docker Hub]
-    IMG["interview-ai-* tags\narm64 manifest"]
+    IMG["interview-ai-* tags\nmulti-arch index"]
   end
   subgraph oci [Oracle Ampere VM]
     K3s[k3s / containerd]
@@ -40,7 +38,7 @@ flowchart LR
   Push --> WF --> BX --> IMG --> K3s --> Pods
 ```
 
-- **`.github/workflows/build-and-deploy.yml`** uses **`DOCKER_BUILD_PLATFORMS`** or defaults to **`linux/arm64`**.
+- **`.github/workflows/build-and-deploy.yml`** sets **`linux/amd64,linux/arm64`** in the **Configure Docker platforms** step (not driven by repo variables).
 - **`scripts/ci/k8s-apply.sh`** sets deployments to **`${DOCKERHUB_USERNAME}/interview-ai-<service>:<tag>`**.
 - **Ampere** + **amd64-only** Hub images → **`no match for platform in manifest`**.
 
@@ -50,7 +48,7 @@ flowchart LR
 docker manifest inspect YOURUSER/interview-ai-web:latest
 ```
 
-With the default workflow you should see **`"architecture": "arm64"`** (single-arch index or multi-arch entry).
+You should see **both** **`arm64`** and **`amd64`** entries in the index for **`interview-ai-web:latest`** (plus no useless `unknown/unknown` attestations when **BUILDX_NO_DEFAULT_ATTESTATIONS** / **--provenance=false** apply).
 
 ## 3. Kubernetes stack in this repo (what runs on the VM)
 
@@ -63,18 +61,17 @@ With the default workflow you should see **`"architecture": "arm64"`** (single-a
 
 - **Whisper:** no forced **`platform: linux/amd64`** — builds **arm64** on M1 and on Ampere. On **amd64-only** hosts, add under `whisper-service`: **`platform: linux/amd64`**.
 - **Mongo:** **`mongo:8.0`** in compose, aligned with **`k8s/mongo/statefulset.yaml`**.
-- **Public images** (`mongo`, `ollama/ollama`): **`docker login`** on the VM avoids Docker Hub **rate limits**.
+- **k3s:** deploy applies **pull secrets** from CI; for Compose-only on a VM you may still **`docker login`** locally.
 
 ## 5. Checklist before blaming “Oracle”
 
 1. **`uname -m`** on the VM: `aarch64` vs `x86_64`.
-2. **Hub manifest** **`architecture`** matches the node (**arm64** vs **amd64**).
-3. **`DOCKER_BUILD_PLATFORMS`** not wrong for your hardware (default **arm64**; use **amd64** only for x86_64-only fleets).
-4. **Secrets:** `DOCKERHUB_TOKEN`, `DOCKERHUB_USERNAME`, deploy (`KUBE_CONFIG` or SSH).
-5. **Mongo:** **`mongo:8.0`** for FCV safety; Hub auth for pulls.
+2. **Hub manifest** includes **`arm64` or `amd64`** as needed (CI builds both).
+3. **Secrets:** `DOCKERHUB_TOKEN`, `DOCKERHUB_USERNAME`, deploy (`KUBE_CONFIG` or SSH) — token is used for cluster pull secret + builds.
+4. **Mongo:** **`mongo:8.0`** for FCV safety.
 
 ## 6. Related docs
 
 - **`docs/DEPLOY-ORACLE-CLOUD.md`** — create VM, Compose vs k3s.
 - **`docs/DEPLOY-GIT-K8S.md`** — GitHub Actions deploy modes.
-- **`docs/DEPLOY-SPEED.md`** — `DOCKER_BUILD_PLATFORMS`, QEMU, speed.
+- **`docs/DEPLOY-SPEED.md`** — QEMU, cache, timing.

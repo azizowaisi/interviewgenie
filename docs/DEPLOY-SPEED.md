@@ -9,12 +9,12 @@
 | **Web** (Next.js) changed | **~5–15 min** first run, **~2–6 min** with warm cache |
 | **Force rebuild all** images (7 backends + web) | **~8–25+ min** typical with **parallel matrix** (8 jobs); wall time ≈ slowest image + prep, not sum of all |
 
-\*Network, registry, and layer cache variance is large. **Default `linux/arm64`** targets **M1 dev + Oracle Ampere**; GitHub runners are **amd64**, so buildx uses **QEMU** for that arm64 build (some CPU overhead vs native amd64 builds). **Multi-arch** `linux/amd64,linux/arm64` takes longer than arm64-only.
+\*Network, registry, and layer cache variance is large. **Build and Deploy** uses a **fixed** **`linux/amd64,linux/arm64`** list (no repo variable) so Oracle Ampere and amd64 nodes both get a valid manifest without manual platform tuning. That uses **QEMU** on GitHub’s amd64 runners for the arm64 leg.
 
 ## What we optimized
 
 1. **Path filters** — skip Docker when code under a service didn’t change.
-2. **Default `PLATFORMS=linux/arm64`** — matches **Apple Silicon + Ampere**. Override with **`DOCKER_BUILD_PLATFORMS=linux/amd64`** for amd64-only clusters (no QEMU arm leg). Use **`linux/amd64,linux/arm64`** for one tag on both architectures.
+2. **Fixed multi-arch in workflow** — one tag works on **Ampere and amd64**; deploy applies a **Docker Hub pull secret** from **`DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`** so in-cluster pulls (e.g. **mongo**) use authenticated rate limits.
 3. **Registry cache** — each image uses a `:cache` tag on Docker Hub (plus GHA cache) so layers survive runner rotation.
 4. **QEMU** — `setup-qemu` runs when the resolved platforms include **`arm64`** (default) or multiple platforms; skipped for **`linux/amd64` only**.
 5. **Parallel pytest** — five backend test jobs in parallel with pip caching (`fail-fast: false` so one failure doesn’t cancel the rest).
@@ -26,7 +26,7 @@
 
 | Variable | Purpose |
 |----------|---------|
-| `DOCKER_BUILD_PLATFORMS` | Unset → **`linux/arm64`** (M1 + Ampere). **`linux/amd64`** for x86_64-only. **`linux/amd64,linux/arm64`** for multi-arch. |
+| `DOCKER_BUILD_PLATFORMS` | *(unused by workflow — platforms are fixed in YAML)* |
 | `DOCKER_REGISTRY_CACHE` | Set to `false` to disable registry `:cache` tags (GHA cache only) |
 
 ## Going faster (1–2 min for *everything* is hard)
@@ -36,10 +36,6 @@
 - **Smaller images** — distroless / slim bases where compatible.
 - **Skip tests on hotfix** — manual workflow: **Skip tests** (use carefully).
 
-## x86_64-only clusters
+## Faster CI (optional fork)
 
-If **all** nodes are **amd64**, set:
-
-`DOCKER_BUILD_PLATFORMS=linux/amd64`
-
-for faster CI (no arm64/QEMU leg).
+To build **amd64-only** and drop the arm64/QEMU leg, change the **Configure Docker platforms** step in **`build-and-deploy.yml`** (not a repo variable in the current workflow).
