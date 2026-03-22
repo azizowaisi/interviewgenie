@@ -188,9 +188,10 @@ jobs:
         env:
           DOCKER_BUILD_PLATFORMS: ${{ vars.DOCKER_BUILD_PLATFORMS }}
         run: |
-          # Default: amd64+arm64 so Oracle Ampere / Graviton / mixed clusters pull valid images.
-          # For faster CI on amd64-only clusters, set repo variable DOCKER_BUILD_PLATFORMS=linux/amd64.
-          P="${DOCKER_BUILD_PLATFORMS:-linux/amd64,linux/arm64}"
+          # Default: linux/arm64 — Apple Silicon (M1) dev + Oracle Ampere production (aarch64).
+          # For amd64-only servers: DOCKER_BUILD_PLATFORMS=linux/amd64
+          # For both in one tag: DOCKER_BUILD_PLATFORMS=linux/amd64,linux/arm64
+          P="${DOCKER_BUILD_PLATFORMS:-linux/arm64}"
           echo "platforms=${P}" >> "$GITHUB_OUTPUT"
           if echo "${P}" | grep -q ',' || echo "${P}" | grep -qiE 'arm64|aarch64'; then
             echo "need_qemu=true" >> "$GITHUB_OUTPUT"
@@ -259,10 +260,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Warn if images lack linux/arm64 (aarch64 clusters will fail)
+      - name: Warn if images lack linux/arm64 (breaks M1 + Ampere default path)
         if: ${{ !contains(needs.build-prep.outputs.platforms, 'arm64') }}
         run: |
-          echo "::warning::Resolved PLATFORMS=${{ needs.build-prep.outputs.platforms }} — no arm64. Oracle / Ampere / Graviton nodes need linux/arm64 in the manifest. In GitHub → Settings → Actions → Variables: delete DOCKER_BUILD_PLATFORMS or set it to linux/amd64,linux/arm64 (not linux/amd64 alone)."
+          echo "::warning::PLATFORMS=${{ needs.build-prep.outputs.platforms }} — no arm64. Repo default is ARM64 for Mac M1 dev + Oracle Ampere; amd64-only images will not run there. Use DOCKER_BUILD_PLATFORMS=linux/amd64 only if all targets are x86_64 VMs, or add linux/arm64 (or multi-arch)."
 
       - name: Gate — build this image?
         id: gate

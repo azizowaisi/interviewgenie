@@ -16,11 +16,14 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 
 Manifests include **readiness probes**, **rolling update** strategies, and **HorizontalPodAutoscalers** for stateless app Deployments. See **`docs/K8S-SCALING-AND-ROLLING.md`** for single-node limits, PVC constraints, and tuning `maxReplicas`.
 
-### ARM64 (Oracle Ampere, Graviton, Apple Silicon nodes)
+### CPU architecture (default: **linux/arm64**)
 
-The workflow builds **multi-arch** (`linux/amd64,linux/arm64`) by default so **aarch64** nodes (e.g. Oracle Ampere) get valid images. If your cluster is **amd64-only** and you want faster CI, set **`DOCKER_BUILD_PLATFORMS=linux/amd64`**. If you see **`no match for platform in manifest`** on the node, push to `main` after fixing platforms so Hub gets an arm (or multi-arch) manifest.
+The workflow defaults to **`linux/arm64`** so **Apple Silicon (M1) dev** and **Oracle Ampere (aarch64) production** use the same Hub tags without extra variables.
 
-**Alternative (often simpler):** run k3s on an **x86_64 (AMD) Ubuntu** VM so the node matches **`linux/amd64`** images — see **`docs/DEPLOY-ORACLE-CLOUD.md`** (Option B, “Ubuntu vs the 502 issue”). Switching OS from Oracle Linux to Ubuntu alone does **not** fix platform mismatch; **AMD64 vs ARM** does.
+- **amd64-only** clusters (x86_64 VMs): set **`DOCKER_BUILD_PLATFORMS=linux/amd64`** for faster CI on GitHub’s amd64 runners.
+- **Both** in one tag: **`DOCKER_BUILD_PLATFORMS=linux/amd64,linux/arm64`**.
+
+If you see **`no match for platform in manifest`**, the Hub image **architecture** does not match the node — fix **`DOCKER_BUILD_PLATFORMS`** and rebuild, or use a VM shape that matches the images you push.
 
 Full diagram and checklist: **`docs/ORACLE-ARCHITECTURE.md`**.
 

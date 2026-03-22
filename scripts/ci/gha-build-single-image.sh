@@ -5,12 +5,12 @@
 # Required env: IMAGE_SLUG — api-service | audio-service | stt-service | question-service |
 #                          llm-service | formatter-service | monitoring-service | web
 # Required env: DH_USER, IMAGE_TAG (e.g. sha-abc123def456)
-# Optional: PLATFORMS (CI sets this; default here matches workflow: multi-arch for Oracle Ampere + amd64 nodes)
+# Optional: PLATFORMS (CI sets this; default matches workflow: linux/arm64 for M1 + Ampere)
 # Optional web build-args: WEB_PUBLIC_APP_URL, WEB_ADMIN_SITE_URL, WEB_ADMIN_HOSTS, WEB_MAIN_APP_HOSTS
 set -euo pipefail
 
 SLUG="${IMAGE_SLUG:?IMAGE_SLUG is required}"
-PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+PLATFORMS="${PLATFORMS:-linux/arm64}"
 ENABLE_REGISTRY_CACHE="${ENABLE_REGISTRY_CACHE:-true}"
 
 case "${SLUG}" in
