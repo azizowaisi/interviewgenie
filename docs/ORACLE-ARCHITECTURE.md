@@ -2,12 +2,20 @@
 
 This document ties together **CPU architecture**, **CI-built images**, and **how you run** the stack on Oracle (Docker Compose vs k3s). Use it when debugging **502**, **ImagePullBackOff**, or **exec format error**.
 
+## 0. Project default: **linux/arm64**
+
+**Intended targets:** **Apple Silicon (M1/M2/M3) dev machines** and **Oracle Ampere (aarch64) production**. CI and helper scripts default to **`linux/arm64`** so one image tag matches both.
+
+**If you use x86_64 servers only:** set GitHub variable **`DOCKER_BUILD_PLATFORMS=linux/amd64`** (faster on GitHub’s amd64 runners — no QEMU for the app image build).
+
+**If you need one tag for both amd64 and arm64:** **`DOCKER_BUILD_PLATFORMS=linux/amd64,linux/arm64`**.
+
 ## 1. What Oracle gives you (two common paths)
 
 | Oracle VM shape | Node OS / arch (Linux) | What must exist on Docker Hub for your app images |
 |-----------------|-------------------------|-----------------------------------------------------|
-| **Ampere A1** (common free tier) | **aarch64** → Kubernetes reports **arm64** | **`linux/arm64`** in the image index (or multi-arch with arm64) |
-| **AMD (x86_64)** | **amd64** | **`linux/amd64`** (multi-arch is fine; node picks amd64) |
+| **Ampere A1** (common free tier) | **aarch64** → **arm64** | **`linux/arm64`** (repo default) |
+| **AMD (x86_64)** | **amd64** | **`linux/amd64`** — set **`DOCKER_BUILD_PLATFORMS=linux/amd64`** (or multi-arch) |
 
 **Guest OS** (Ubuntu vs Oracle Linux) does not replace the table above: the **CPU** of the shape decides which manifest containerd pulls.
 
@@ -20,21 +28,21 @@ flowchart LR
     WF[Build and Deploy workflow]
   end
   subgraph build [CI runner]
-    BX[docker buildx multi-platform]
+    BX["docker buildx\nlinux/arm64 default"]
   end
   subgraph hub [Docker Hub]
-    IMG["interview-ai-* tags\nOCI index: amd64 + arm64"]
+    IMG["interview-ai-* tags\narm64 manifest"]
   end
-  subgraph oci [Oracle VM]
+  subgraph oci [Oracle Ampere VM]
     K3s[k3s / containerd]
-    Pods[Pods pull matching arch]
+    Pods[Pods pull arm64]
   end
   Push --> WF --> BX --> IMG --> K3s --> Pods
 ```
 
-- **`.github/workflows/build-and-deploy.yml`** resolves **`DOCKER_BUILD_PLATFORMS`** (repo variable) or defaults to **`linux/amd64,linux/arm64`** so **one tag** can serve **both** Oracle shape families.
+- **`.github/workflows/build-and-deploy.yml`** uses **`DOCKER_BUILD_PLATFORMS`** or defaults to **`linux/arm64`**.
 - **`scripts/ci/k8s-apply.sh`** sets deployments to **`${DOCKERHUB_USERNAME}/interview-ai-<service>:<tag>`**.
-- If **`vars.DOCKER_BUILD_PLATFORMS`** is set to **`linux/amd64` only**, **Ampere** nodes will fail with **`no match for platform in manifest`**.
+- **Ampere** + **amd64-only** Hub images → **`no match for platform in manifest`**.
 
 **Verify after a successful build:**
 
@@ -42,31 +50,31 @@ flowchart LR
 docker manifest inspect YOURUSER/interview-ai-web:latest
 ```
 
-You should see **`architecture": "arm64"`** and **`"amd64"`** when using the default multi-arch workflow.
+With the default workflow you should see **`"architecture": "arm64"`** (single-arch index or multi-arch entry).
 
 ## 3. Kubernetes stack in this repo (what runs on the VM)
 
 - **Ingress:** Traefik (k3s) → `web`, `api-service`, `audio-service`, etc.
-- **Stateful:** Mongo (`mongo:8.0` in manifests — FCV upgrade path from older 7.x data), Ollama (PVC).
-- **App images:** eight workloads receive Hub images from CI (`api-service`, `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`, `monitoring-service`, `web`).
-- **Whisper:** not deployed as its own Kubernetes Deployment in `k8s/`; local **Docker Compose** can run `whisper-service` with **`platform: linux/amd64`** (see below).
+- **Stateful:** Mongo (`mongo:8.0`), Ollama (PVC).
+- **App images:** eight workloads from CI (`api-service`, `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`, `monitoring-service`, `web`).
+- **Whisper:** not a separate Deployment in `k8s/`; **Docker Compose** builds `whisper-service` **native arm64** by default (same as M1 / Ampere).
 
-## 4. Docker Compose on Oracle (Option A in `DEPLOY-ORACLE-CLOUD.md`)
+## 4. Docker Compose (local + Oracle Option A)
 
-- **`whisper-service`** uses **`platform: linux/amd64`**. On an **Ampere ARM** VM, Docker runs that image via **QEMU emulation** (works but can be **slow**). On an **AMD64** VM, it runs natively.
-- **Mongo** in `docker-compose.yml` should stay aligned with **`k8s/mongo/statefulset.yaml`** (**`mongo:8.0`**) to avoid the same **FCV / major jump** issues as a bad **`mongo:8` → 8.2** jump on existing data.
-- **Public images** (`mongo`, `ollama/ollama`): anonymous **Docker Hub** pulls can hit **rate limits**; **`docker login`** on the VM helps.
+- **Whisper:** no forced **`platform: linux/amd64`** — builds **arm64** on M1 and on Ampere. On **amd64-only** hosts, add under `whisper-service`: **`platform: linux/amd64`**.
+- **Mongo:** **`mongo:8.0`** in compose, aligned with **`k8s/mongo/statefulset.yaml`**.
+- **Public images** (`mongo`, `ollama/ollama`): **`docker login`** on the VM avoids Docker Hub **rate limits**.
 
 ## 5. Checklist before blaming “Oracle”
 
 1. **`uname -m`** on the VM: `aarch64` vs `x86_64`.
-2. **Hub manifest** includes the matching **OS/arch** for that node.
-3. **GitHub Actions variable** `DOCKER_BUILD_PLATFORMS` is **not** locking **amd64-only** if the node is **ARM**.
-4. **Secrets:** `DOCKERHUB_TOKEN`, `DOCKERHUB_USERNAME`, and deploy (`KUBE_CONFIG` or SSH) are set.
-5. **Mongo:** if upgrading from old data, use **`mongo:8.0`** (see `k8s/mongo/statefulset.yaml`) and plan Docker Hub auth for pulls.
+2. **Hub manifest** **`architecture`** matches the node (**arm64** vs **amd64**).
+3. **`DOCKER_BUILD_PLATFORMS`** not wrong for your hardware (default **arm64**; use **amd64** only for x86_64-only fleets).
+4. **Secrets:** `DOCKERHUB_TOKEN`, `DOCKERHUB_USERNAME`, deploy (`KUBE_CONFIG` or SSH).
+5. **Mongo:** **`mongo:8.0`** for FCV safety; Hub auth for pulls.
 
 ## 6. Related docs
 
 - **`docs/DEPLOY-ORACLE-CLOUD.md`** — create VM, Compose vs k3s.
-- **`docs/DEPLOY-GIT-K8S.md`** — GitHub Actions deploy modes, ARM note.
-- **`docs/DEPLOY-SPEED.md`** — `DOCKER_BUILD_PLATFORMS`, build speed tradeoffs.
+- **`docs/DEPLOY-GIT-K8S.md`** — GitHub Actions deploy modes.
+- **`docs/DEPLOY-SPEED.md`** — `DOCKER_BUILD_PLATFORMS`, QEMU, speed.

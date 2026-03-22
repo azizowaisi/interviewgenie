@@ -61,9 +61,8 @@ services:
       - formatter-service
       - api-service
 
-  # amd64 only: on Oracle Ampere (ARM) Docker runs this via QEMU — slower but works. Use an AMD64 VM for native Whisper.
+  # Native arm64 on M1 / Oracle Ampere (matches CI default). For amd64-only hosts, set: platform: linux/amd64
   whisper-service:
-    platform: linux/amd64
     build:
       context: ./backend/whisper-service
       dockerfile: Dockerfile
