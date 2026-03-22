@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { monFetch } from "@/lib/api-fetch";
+import { monFetch, monRequestInit } from "@/lib/api-fetch";
+import { MONITORING_ADMIN_TOKEN_LS, readClientMonitoringToken } from "@/lib/monitoring-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Activity, Cpu, HardDrive, RefreshCw, Server, ScrollText, Boxes } from "lucide-react";
 import { publicAppUrl } from "@/lib/public-urls";
 
@@ -94,6 +96,11 @@ export function AdminDashboard() {
     services: false,
     config: false,
   });
+  const [adminTokenDraft, setAdminTokenDraft] = useState("");
+
+  useEffect(() => {
+    setAdminTokenDraft(readClientMonitoringToken());
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -175,7 +182,7 @@ export function AdminDashboard() {
       if (errs.length) {
         const hint401 =
           errs.some((e) => e.includes("401")) || c.status === 401 || cfg.status === 401
-            ? " If the monitoring API uses a token, set Secret monitoring-admin with key ADMIN_TOKEN and ensure the web pod has MONITORING_ADMIN_TOKEN (same value). Redeploy web after creating the secret."
+            ? " If the monitoring API uses a token: paste the same value as Secret monitoring-admin key ADMIN_TOKEN below (stored in this browser), or set MONITORING_ADMIN_TOKEN on the web Deployment and restart the web pod."
             : "";
         const hintUpstream =
           !hint401 && errs.some((e) => /HTTP (502|503|504)/.test(e))
@@ -230,10 +237,10 @@ export function AdminDashboard() {
   async function restartService() {
     setMsg(null);
     try {
-      const r = await fetch(`/api/mon/restart?deployment=${encodeURIComponent(restartDep)}`, {
-        method: "POST",
-        cache: "no-store",
-      });
+      const r = await fetch(
+        `/api/mon/restart?deployment=${encodeURIComponent(restartDep)}`,
+        monRequestInit({ method: "POST" }),
+      );
       const t = await r.text();
       setMsg(r.ok ? `Restart triggered: ${restartDep}` : t);
     } catch (e) {
@@ -286,14 +293,46 @@ export function AdminDashboard() {
               {config?.environment_label ?? "—"} · NS {config?.namespace ?? "—"}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" onClick={refresh} disabled={loading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-            <Button size="sm" variant="outline" asChild>
-              <a href={publicAppUrl}>Close</a>
-            </Button>
+          <div className="flex flex-col items-end gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex w-full min-w-[12rem] max-w-md flex-col gap-1 sm:w-auto">
+              <Label htmlFor="admin-mon-token" className="text-xs text-muted-foreground">
+                Monitoring API token (if cluster uses Secret monitoring-admin)
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="admin-mon-token"
+                  type="password"
+                  autoComplete="off"
+                  placeholder="ADMIN_TOKEN value"
+                  className="h-9 font-mono text-xs"
+                  value={adminTokenDraft}
+                  onChange={(e) => setAdminTokenDraft(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0"
+                  onClick={() => {
+                    const v = adminTokenDraft.trim();
+                    if (v) localStorage.setItem(MONITORING_ADMIN_TOKEN_LS, v);
+                    else localStorage.removeItem(MONITORING_ADMIN_TOKEN_LS);
+                    void refresh();
+                  }}
+                >
+                  Save and refresh
+                </Button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" onClick={refresh} disabled={loading}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <a href={publicAppUrl}>Close</a>
+              </Button>
+            </div>
           </div>
         </header>
 
