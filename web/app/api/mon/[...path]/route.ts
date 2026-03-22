@@ -15,7 +15,12 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const sub = path.join("/");
   const target = new URL(`${monitoringBase.replace(/\/$/, "")}/api/${sub}`);
   target.search = req.nextUrl.search;
-  const res = await fetch(target, { headers: upstreamHeaders(), cache: "no-store" });
+  let res: Response;
+  try {
+    res = await fetch(target, { headers: upstreamHeaders(), cache: "no-store" });
+  } catch {
+    return NextResponse.json({ error: "monitoring_upstream_unreachable", url: target.origin }, { status: 502 });
+  }
   const ct = res.headers.get("content-type") || "application/octet-stream";
   return new NextResponse(await res.arrayBuffer(), {
     status: res.status,
@@ -33,12 +38,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (body.byteLength) {
     headers.set("Content-Type", req.headers.get("content-type") || "application/json");
   }
-  const res = await fetch(target, {
-    method: "POST",
-    headers,
-    body: body.byteLength ? body : undefined,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(target, {
+      method: "POST",
+      headers,
+      body: body.byteLength ? body : undefined,
+      cache: "no-store",
+    });
+  } catch {
+    return NextResponse.json({ error: "monitoring_upstream_unreachable", url: target.origin }, { status: 502 });
+  }
   const ct = res.headers.get("content-type") || "application/json";
   return new NextResponse(await res.arrayBuffer(), {
     status: res.status,

@@ -56,6 +56,19 @@ type Cluster = {
   pods_failed?: number;
 };
 
+function isValidClusterPayload(data: unknown): data is Cluster {
+  if (data == null || typeof data !== "object") return false;
+  const o = data as Record<string, unknown>;
+  return (
+    typeof o.pods_total === "number" &&
+    typeof o.pods_running === "number" &&
+    typeof o.pods_failed === "number" &&
+    Array.isArray(o.nodes)
+  );
+}
+
+type MonEndpointsOk = { cluster: boolean; pods: boolean; services: boolean; config: boolean };
+
 type PodRow = { name: string; status: string; cpu: string; memory: string };
 type SvcRow = {
   name: string;
@@ -75,6 +88,12 @@ export function AdminDashboard() {
   const [restartDep, setRestartDep] = useState<string>(RESTART_DEPLOYMENTS[0]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [monOk, setMonOk] = useState<MonEndpointsOk>({
+    cluster: false,
+    pods: false,
+    services: false,
+    config: false,
+  });
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -87,40 +106,85 @@ export function AdminDashboard() {
         monFetch("config"),
       ]);
       const errs: string[] = [];
-      if (c.ok) setCluster(await c.json());
-      else {
+      const nextOk: MonEndpointsOk = { cluster: false, pods: false, services: false, config: false };
+
+      if (c.ok) {
+        try {
+          const raw = await c.json();
+          if (isValidClusterPayload(raw)) {
+            setCluster(raw);
+            nextOk.cluster = true;
+          } else {
+            setCluster(null);
+            errs.push("cluster: invalid or empty JSON (expected pods_total, pods_running, pods_failed, nodes[])");
+          }
+        } catch {
+          setCluster(null);
+          errs.push("cluster: response was not JSON");
+        }
+      } else {
         setCluster(null);
         errs.push(`cluster HTTP ${c.status}`);
       }
+
       if (p.ok) {
-        const j = (await p.json()) as { pods?: PodRow[] };
-        const list = j.pods || [];
-        setPods(list);
-        setLogPod((prev) => prev || list[0]?.name || "");
+        try {
+          const j = (await p.json()) as { pods?: PodRow[] };
+          const list = j.pods || [];
+          setPods(list);
+          setLogPod((prev) => prev || list[0]?.name || "");
+          nextOk.pods = true;
+        } catch {
+          setPods([]);
+          errs.push("pods: response was not JSON");
+        }
       } else {
         setPods([]);
         errs.push(`pods HTTP ${p.status}`);
       }
+
       if (s.ok) {
-        const j = (await s.json()) as { services?: SvcRow[] };
-        setServices(j.services || []);
+        try {
+          const j = (await s.json()) as { services?: SvcRow[] };
+          setServices(j.services || []);
+          nextOk.services = true;
+        } catch {
+          setServices([]);
+          errs.push("services: response was not JSON");
+        }
       } else {
         setServices([]);
         errs.push(`services HTTP ${s.status}`);
       }
-      if (cfg.ok) setConfig(await cfg.json());
-      else {
+
+      if (cfg.ok) {
+        try {
+          setConfig(await cfg.json());
+          nextOk.config = true;
+        } catch {
+          setConfig(null);
+          errs.push("config: response was not JSON");
+        }
+      } else {
         setConfig(null);
         errs.push(`config HTTP ${cfg.status}`);
       }
+
+      setMonOk(nextOk);
+
       if (errs.length) {
-        const hint =
+        const hint401 =
           errs.some((e) => e.includes("401")) || c.status === 401 || cfg.status === 401
-            ? " If the monitoring API uses a token, set Secret monitoring-admin and ensure the web pod has MONITORING_ADMIN_TOKEN (see k8s/web-service/deployment.yaml)."
+            ? " If the monitoring API uses a token, set Secret monitoring-admin with key ADMIN_TOKEN and ensure the web pod has MONITORING_ADMIN_TOKEN (same value). Redeploy web after creating the secret."
             : "";
-        setMsg(`${errs.join(". ")}.${hint}`);
+        const hintUpstream =
+          !hint401 && errs.some((e) => /HTTP (502|503|504)/.test(e))
+            ? " The Next.js BFF could not reach monitoring-service — check web env MONITORING_URL (e.g. http://monitoring-service:3001) and that the monitoring-service pod is running."
+            : "";
+        setMsg(`${errs.join(". ")}.${hint401}${hintUpstream}`);
       }
     } catch (e) {
+      setMonOk({ cluster: false, pods: false, services: false, config: false });
       setMsg(e instanceof Error ? e.message : "Refresh failed");
     } finally {
       setLoading(false);
@@ -139,9 +203,18 @@ export function AdminDashboard() {
   const avgMem =
     withMem.length > 0 ? withMem.reduce((a, n) => a + (n.memory_percent ?? 0), 0) / withMem.length : null;
 
-  const clusterReachable = cluster != null;
-  const systemOk = clusterReachable && (cluster.pods_failed ?? 0) === 0;
-  const systemUnknown = !loading && !clusterReachable;
+  const hasValidCluster = cluster != null && isValidClusterPayload(cluster);
+  /** Do not show Healthy unless the live pod list loaded; avoids false green when only placeholders render. */
+  const podsEndpointOk = monOk.pods;
+  const podCountMismatch =
+    hasValidCluster &&
+    podsEndpointOk &&
+    (cluster.pods_total ?? 0) > 0 &&
+    pods.length === 0;
+  const systemOk =
+    hasValidCluster && podsEndpointOk && !podCountMismatch && (cluster.pods_failed ?? 0) === 0;
+  const systemPartial = hasValidCluster && !podsEndpointOk;
+  const systemUnknown = !loading && !hasValidCluster;
 
   async function loadLogs() {
     if (!logPod) return;
@@ -267,8 +340,8 @@ export function AdminDashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-2xl font-bold">{cluster?.pods_running ?? "—"}</p>
-                  <p className="text-xs text-muted-foreground">of {cluster?.pods_total ?? "—"} total</p>
+                  <p className="text-2xl font-bold">{hasValidCluster ? cluster.pods_running : "—"}</p>
+                  <p className="text-xs text-muted-foreground">of {hasValidCluster ? cluster.pods_total : "—"} total</p>
                 </CardContent>
               </Card>
               <Card className="shadow-md">
@@ -287,13 +360,21 @@ export function AdminDashboard() {
                     <Badge variant="warning" className="text-sm">
                       Unavailable
                     </Badge>
+                  ) : systemPartial ? (
+                    <Badge variant="warning" className="text-sm">
+                      Partial data
+                    </Badge>
+                  ) : podCountMismatch ? (
+                    <Badge variant="warning" className="text-sm">
+                      Inconsistent
+                    </Badge>
                   ) : (
                     <Badge variant={systemOk ? "success" : "destructive"} className="text-sm">
                       {systemOk ? "Healthy" : "Check failures"}
                     </Badge>
                   )}
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Failed pods: {clusterReachable ? cluster.pods_failed : "—"}
+                    Failed pods: {hasValidCluster ? cluster.pods_failed : "—"}
                   </p>
                 </CardContent>
               </Card>
@@ -351,7 +432,8 @@ export function AdminDashboard() {
                     {pods.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center text-muted-foreground">
-                          No pod data (is monitoring API reachable?)
+                          No pod data — fix errors above (401 → align monitoring-admin / MONITORING_ADMIN_TOKEN; 5xx →
+                          MONITORING_URL / monitoring-service pod).
                         </TableCell>
                       </TableRow>
                     ) : (
