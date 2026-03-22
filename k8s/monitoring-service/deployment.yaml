@@ -46,7 +46,7 @@ spec:
                   optional: true
             # Comma-separated deployment names allowed for POST /api/restart
             - name: RESTARTABLE_DEPLOYMENTS
-              value: api-service,audio-service,stt-service,question-service,llm-service,formatter-service,ollama,whisper-service
+              value: api-service,audio-service,stt-service,question-service,llm-service,formatter-service,monitoring-service,web,ollama
           resources:
             requests:
               cpu: 50m

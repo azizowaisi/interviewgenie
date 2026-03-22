@@ -20,13 +20,15 @@ const RESTART_DEPLOYMENTS = [
   "question-service",
   "llm-service",
   "formatter-service",
+  "monitoring-service",
+  "web",
   "ollama",
-  "whisper-service",
 ] as const;
 
 const SERVICE_LABELS: Record<string, string> = {
   "api-service": "Backend",
   "audio-service": "Audio pipeline",
+  web: "Web",
   "frontend": "Frontend",
   "mongo": "MongoDB",
   "mongodb": "MongoDB",
@@ -51,6 +53,24 @@ function formatBytes(n: number | null | undefined) {
   return `${v.toFixed(1)} ${units[i]}`;
 }
 
+function formatCpuMillis(m: number | null | undefined) {
+  if (m == null || m <= 0) return "—";
+  if (m < 1000) return `${Math.round(m)}m`;
+  return `${(m / 1000).toFixed(2)} cores`;
+}
+
+function UsageBar({ pct }: { pct: number | null | undefined }) {
+  if (pct == null || Number.isNaN(pct)) {
+    return <div className="mt-1 h-1.5 w-full max-w-[12rem] rounded bg-muted" />;
+  }
+  const p = Math.min(100, Math.max(0, pct));
+  return (
+    <div className="mt-1 h-1.5 w-full max-w-[12rem] overflow-hidden rounded bg-muted">
+      <div className="h-full bg-primary transition-all" style={{ width: `${p}%` }} />
+    </div>
+  );
+}
+
 type Cluster = {
   nodes?: { name: string; cpu_percent?: number | null; memory_percent?: number | null }[];
   pods_total?: number;
@@ -58,6 +78,46 @@ type Cluster = {
   pods_failed?: number;
   /** From monitoring API: false when metrics.k8s.io (metrics-server) has no data */
   metrics_available?: boolean;
+  namespace_requests_cpu_millicores?: number;
+  namespace_requests_memory_bytes?: number;
+  namespace_limits_cpu_millicores?: number;
+  namespace_limits_memory_bytes?: number;
+};
+
+type InfraSummary = {
+  nodes_total: number;
+  nodes_ready: number;
+  allocatable_cpu_millicores_total: number;
+  allocatable_memory_bytes_total: number;
+  capacity_ephemeral_bytes_total: number;
+  allocatable_ephemeral_bytes_total: number;
+  used_cpu_millicores_total?: number | null;
+  used_memory_bytes_total?: number | null;
+  remaining_cpu_millicores_total?: number | null;
+  remaining_memory_bytes_total?: number | null;
+};
+
+type InfraNode = {
+  name: string;
+  ready: boolean;
+  instance_type?: string;
+  capacity_cpu_display?: string;
+  allocatable_cpu_millicores?: number;
+  allocatable_memory_bytes?: number;
+  used_cpu_millicores?: number | null;
+  used_memory_bytes?: number | null;
+  remaining_cpu_millicores?: number | null;
+  remaining_memory_bytes?: number | null;
+  cpu_percent?: number | null;
+  memory_percent?: number | null;
+  allocatable_ephemeral_bytes?: number;
+};
+
+type InfraPayload = {
+  nodes: InfraNode[];
+  summary: InfraSummary;
+  metrics_available?: boolean;
+  note_ephemeral?: string;
 };
 
 function isValidClusterPayload(data: unknown): data is Cluster {
@@ -71,9 +131,21 @@ function isValidClusterPayload(data: unknown): data is Cluster {
   );
 }
 
-type MonEndpointsOk = { cluster: boolean; pods: boolean; services: boolean; config: boolean };
+type MonEndpointsOk = { cluster: boolean; pods: boolean; services: boolean; config: boolean; infrastructure: boolean };
 
-type PodRow = { name: string; status: string; cpu: string; memory: string };
+type PodRow = {
+  name: string;
+  node?: string;
+  status: string;
+  cpu: string;
+  memory: string;
+  usage_cpu_millicores?: number | null;
+  usage_memory_bytes?: number | null;
+  requests_cpu_millicores?: number;
+  requests_memory_bytes?: number;
+  limits_cpu_millicores?: number;
+  limits_memory_bytes?: number;
+};
 type SvcRow = {
   name: string;
   status: string;
@@ -84,6 +156,7 @@ type SvcRow = {
 
 export function AdminDashboard() {
   const [cluster, setCluster] = useState<Cluster | null>(null);
+  const [infra, setInfra] = useState<InfraPayload | null>(null);
   const [pods, setPods] = useState<PodRow[]>([]);
   const [services, setServices] = useState<SvcRow[]>([]);
   const [config, setConfig] = useState<{ environment_label?: string; namespace?: string } | null>(null);
@@ -97,6 +170,7 @@ export function AdminDashboard() {
     pods: false,
     services: false,
     config: false,
+    infrastructure: false,
   });
   const [adminTokenDraft, setAdminTokenDraft] = useState("");
 
@@ -108,14 +182,21 @@ export function AdminDashboard() {
     setLoading(true);
     setMsg(null);
     try {
-      const [c, p, s, cfg] = await Promise.all([
+      const [c, p, s, cfg, inf] = await Promise.all([
         monFetch("cluster"),
         monFetch("pods"),
         monFetch("services"),
         monFetch("config"),
+        monFetch("infrastructure"),
       ]);
       const errs: string[] = [];
-      const nextOk: MonEndpointsOk = { cluster: false, pods: false, services: false, config: false };
+      const nextOk: MonEndpointsOk = {
+        cluster: false,
+        pods: false,
+        services: false,
+        config: false,
+        infrastructure: false,
+      };
 
       if (c.ok) {
         try {
@@ -179,6 +260,25 @@ export function AdminDashboard() {
         errs.push(`config HTTP ${cfg.status}`);
       }
 
+      if (inf.ok) {
+        try {
+          const raw = (await inf.json()) as InfraPayload;
+          if (raw && Array.isArray(raw.nodes) && raw.summary) {
+            setInfra(raw);
+            nextOk.infrastructure = true;
+          } else {
+            setInfra(null);
+            errs.push("infrastructure: invalid JSON shape");
+          }
+        } catch {
+          setInfra(null);
+          errs.push("infrastructure: response was not JSON");
+        }
+      } else {
+        setInfra(null);
+        errs.push(`infrastructure HTTP ${inf.status}`);
+      }
+
       setMonOk(nextOk);
 
       if (errs.length) {
@@ -193,7 +293,7 @@ export function AdminDashboard() {
         setMsg(`${errs.join(". ")}.${hint401}${hintUpstream}`);
       }
     } catch (e) {
-      setMonOk({ cluster: false, pods: false, services: false, config: false });
+      setMonOk({ cluster: false, pods: false, services: false, config: false, infrastructure: false });
       setMsg(e instanceof Error ? e.message : "Refresh failed");
     } finally {
       setLoading(false);
@@ -211,6 +311,25 @@ export function AdminDashboard() {
     withCpu.length > 0 ? withCpu.reduce((a, n) => a + (n.cpu_percent ?? 0), 0) / withCpu.length : null;
   const avgMem =
     withMem.length > 0 ? withMem.reduce((a, n) => a + (n.memory_percent ?? 0), 0) / withMem.length : null;
+
+  const sum = infra?.summary;
+  const clusterCpuPct =
+    sum && sum.allocatable_cpu_millicores_total > 0 && sum.used_cpu_millicores_total != null
+      ? Math.min(100, (100 * sum.used_cpu_millicores_total) / sum.allocatable_cpu_millicores_total)
+      : null;
+  const clusterMemPct =
+    sum && sum.allocatable_memory_bytes_total > 0 && sum.used_memory_bytes_total != null
+      ? Math.min(100, (100 * sum.used_memory_bytes_total) / sum.allocatable_memory_bytes_total)
+      : null;
+  const ns = cluster;
+  const nsReqCpuPct =
+    sum && ns?.namespace_requests_cpu_millicores != null && sum.allocatable_cpu_millicores_total > 0
+      ? Math.min(100, (100 * ns.namespace_requests_cpu_millicores) / sum.allocatable_cpu_millicores_total)
+      : null;
+  const nsReqMemPct =
+    sum && ns?.namespace_requests_memory_bytes != null && sum.allocatable_memory_bytes_total > 0
+      ? Math.min(100, (100 * ns.namespace_requests_memory_bytes) / sum.allocatable_memory_bytes_total)
+      : null;
 
   const hasValidCluster = cluster != null && isValidClusterPayload(cluster);
   /** Do not show Healthy unless the live pod list loaded; avoids false green when only placeholders render. */
@@ -250,7 +369,8 @@ export function AdminDashboard() {
     }
   }
 
-  const highlighted = ["api-service", "frontend", "mongo", "ollama", "whisper-service"];
+  /** Placeholder row order when /api/services has not loaded (k8s uses `web` + `stt-service`, not compose-only `whisper-service`). */
+  const highlighted = ["api-service", "web", "mongo", "ollama", "stt-service"];
   const displayServices =
     services.length > 0
       ? [...services].sort((a, b) => {
@@ -431,6 +551,183 @@ export function AdminDashboard() {
             )}
           </section>
 
+          {monOk.infrastructure && sum && (
+            <section>
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Server className="h-4 w-4" />
+                Infrastructure capacity
+              </h2>
+              <p className="mb-4 max-w-3xl text-xs text-muted-foreground">
+                <strong className="font-normal text-foreground">Used vs remaining</strong> for CPU and RAM comes from
+                the Kubernetes metrics API (same as <span className="font-mono text-[11px]">kubectl top nodes</span>).
+                Ephemeral storage shows kube-reported <strong className="font-normal">capacity / allocatable</strong>{" "}
+                only — live disk fill level is not in metrics-server.
+              </p>
+              <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Card className="shadow-md">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Cluster CPU</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm">
+                    <p>
+                      <span className="text-muted-foreground">Used</span>{" "}
+                      <span className="font-medium">{formatCpuMillis(sum.used_cpu_millicores_total ?? undefined)}</span>
+                      <span className="text-muted-foreground"> · Remaining </span>
+                      <span className="font-medium">
+                        {formatCpuMillis(sum.remaining_cpu_millicores_total ?? undefined)}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Allocatable {formatCpuMillis(sum.allocatable_cpu_millicores_total)}
+                    </p>
+                    <UsageBar pct={clusterCpuPct} />
+                  </CardContent>
+                </Card>
+                <Card className="shadow-md">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Cluster memory</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm">
+                    <p>
+                      <span className="text-muted-foreground">Used</span>{" "}
+                      <span className="font-medium">{formatBytes(sum.used_memory_bytes_total ?? undefined)}</span>
+                      <span className="text-muted-foreground"> · Free </span>
+                      <span className="font-medium">{formatBytes(sum.remaining_memory_bytes_total ?? undefined)}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Allocatable {formatBytes(sum.allocatable_memory_bytes_total)}
+                    </p>
+                    <UsageBar pct={clusterMemPct} />
+                  </CardContent>
+                </Card>
+                <Card className="shadow-md">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Ephemeral (nodes)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm">
+                    <p>
+                      <span className="text-muted-foreground">Capacity</span>{" "}
+                      <span className="font-medium">{formatBytes(sum.capacity_ephemeral_bytes_total)}</span>
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Allocatable</span>{" "}
+                      <span className="font-medium">{formatBytes(sum.allocatable_ephemeral_bytes_total)}</span>
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="shadow-md">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Nodes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm">
+                    <p className="text-2xl font-bold">
+                      {sum.nodes_ready}/{sum.nodes_total}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Ready / total</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {hasValidCluster && ns?.namespace_requests_cpu_millicores != null && (
+                <Card className="mb-6 shadow-md">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">
+                      Namespace <span className="font-mono text-sm">{config?.namespace ?? "—"}</span> — scheduling
+                    </CardTitle>
+                    <CardDescription>
+                      Sum of container <strong className="font-normal">requests</strong> in this namespace vs cluster
+                      allocatable (not the same as live usage).
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-sm">
+                        CPU requests {formatCpuMillis(ns.namespace_requests_cpu_millicores)} of cluster{" "}
+                        {formatCpuMillis(sum.allocatable_cpu_millicores_total)}
+                      </p>
+                      <UsageBar pct={nsReqCpuPct} />
+                    </div>
+                    <div>
+                      <p className="text-sm">
+                        Memory requests {formatBytes(ns.namespace_requests_memory_bytes)} of cluster{" "}
+                        {formatBytes(sum.allocatable_memory_bytes_total)}
+                      </p>
+                      <UsageBar pct={nsReqMemPct} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Per node</h3>
+              <Card className="shadow-md">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Node</TableHead>
+                          <TableHead>Ready</TableHead>
+                          <TableHead>CPU</TableHead>
+                          <TableHead>Memory</TableHead>
+                          <TableHead>Ephemeral alloc.</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(infra?.nodes ?? []).map((n) => (
+                          <TableRow key={n.name}>
+                            <TableCell>
+                              <div className="font-mono text-xs">{n.name}</div>
+                              {n.instance_type ? (
+                                <div className="text-[11px] text-muted-foreground">{n.instance_type}</div>
+                              ) : null}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={n.ready ? "success" : "destructive"}>{n.ready ? "Yes" : "No"}</Badge>
+                            </TableCell>
+                            <TableCell className="min-w-[10rem] text-xs">
+                              {n.cpu_percent != null ? (
+                                <>
+                                  <div>{n.cpu_percent}% used</div>
+                                  <UsageBar pct={n.cpu_percent} />
+                                  <div className="mt-1 text-muted-foreground">
+                                    {formatCpuMillis(n.used_cpu_millicores ?? undefined)} /{" "}
+                                    {formatCpuMillis(n.allocatable_cpu_millicores)} · left{" "}
+                                    {formatCpuMillis(n.remaining_cpu_millicores ?? undefined)}
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="min-w-[10rem] text-xs">
+                              {n.memory_percent != null ? (
+                                <>
+                                  <div>{n.memory_percent}% used</div>
+                                  <UsageBar pct={n.memory_percent} />
+                                  <div className="mt-1 text-muted-foreground">
+                                    {formatBytes(n.used_memory_bytes ?? undefined)} /{" "}
+                                    {formatBytes(n.allocatable_memory_bytes)} · free{" "}
+                                    {formatBytes(n.remaining_memory_bytes ?? undefined)}
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs">{formatBytes(n.allocatable_ephemeral_bytes)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+              {infra?.note_ephemeral ? (
+                <p className="mt-2 text-xs text-muted-foreground">{infra.note_ephemeral}</p>
+              ) : null}
+            </section>
+          )}
+
           <Separator />
 
           <section>
@@ -472,40 +769,77 @@ export function AdminDashboard() {
           </section>
 
           <section>
-            <h2 className="mb-4 text-sm font-medium text-muted-foreground">Pods</h2>
+            <h2 className="mb-2 text-sm font-medium text-muted-foreground">Pods</h2>
+            <p className="mb-4 max-w-3xl text-xs text-muted-foreground">
+              <strong className="font-normal text-foreground">Usage</strong> columns need metrics-server.{" "}
+              <strong className="font-normal text-foreground">Requests / limits</strong> come from each pod spec
+              (what scheduling reserves).
+            </p>
             <Card className="shadow-md">
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Pod name</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>CPU</TableHead>
-                      <TableHead>Memory</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pods.length === 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground">
-                          No pod data — fix errors above (401 → align monitoring-admin / MONITORING_ADMIN_TOKEN; 5xx →
-                          MONITORING_URL / monitoring-service pod).
-                        </TableCell>
+                        <TableHead>Pod</TableHead>
+                        <TableHead>Node</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Usage CPU</TableHead>
+                        <TableHead>Usage RAM</TableHead>
+                        <TableHead>Requests CPU</TableHead>
+                        <TableHead>Requests RAM</TableHead>
+                        <TableHead>Limits CPU</TableHead>
+                        <TableHead>Limits RAM</TableHead>
                       </TableRow>
-                    ) : (
-                      pods.map((pod) => (
-                        <TableRow key={pod.name}>
-                          <TableCell className="font-mono text-xs">{pod.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{pod.status}</Badge>
+                    </TableHeader>
+                    <TableBody>
+                      {pods.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center text-muted-foreground">
+                            No pod data — fix errors above (401 → align monitoring-admin / MONITORING_ADMIN_TOKEN; 5xx →
+                            MONITORING_URL / monitoring-service pod).
                           </TableCell>
-                          <TableCell>{pod.cpu || "—"}</TableCell>
-                          <TableCell>{pod.memory || "—"}</TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      ) : (
+                        pods.map((pod) => (
+                          <TableRow key={pod.name}>
+                            <TableCell className="min-w-[10rem] font-mono text-xs">{pod.name}</TableCell>
+                            <TableCell className="max-w-[8rem] truncate font-mono text-[11px] text-muted-foreground">
+                              {pod.node || "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{pod.status}</Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              {pod.usage_cpu_millicores != null
+                                ? formatCpuMillis(pod.usage_cpu_millicores)
+                                : pod.cpu || "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              {pod.usage_memory_bytes != null
+                                ? formatBytes(pod.usage_memory_bytes)
+                                : pod.memory || "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              {formatCpuMillis(pod.requests_cpu_millicores)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              {formatBytes(pod.requests_memory_bytes)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              {(pod.limits_cpu_millicores ?? 0) > 0
+                                ? formatCpuMillis(pod.limits_cpu_millicores)
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              {(pod.limits_memory_bytes ?? 0) > 0 ? formatBytes(pod.limits_memory_bytes) : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           </section>
