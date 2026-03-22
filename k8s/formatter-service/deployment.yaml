@@ -23,7 +23,7 @@ spec:
       containers:
         - name: formatter-service
           image: interview-ai/formatter-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           resources:

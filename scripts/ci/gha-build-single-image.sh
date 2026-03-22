@@ -5,12 +5,12 @@
 # Required env: IMAGE_SLUG — api-service | audio-service | stt-service | question-service |
 #                          llm-service | formatter-service | monitoring-service | web
 # Required env: DH_USER, IMAGE_TAG (e.g. sha-abc123def456)
-# Optional: PLATFORMS (CI sets this; default matches workflow: linux/arm64 for M1 + Ampere)
+# Optional: PLATFORMS (CI sets this; default matches workflow: multi-arch)
 # Optional web build-args: WEB_PUBLIC_APP_URL, WEB_ADMIN_SITE_URL, WEB_ADMIN_HOSTS, WEB_MAIN_APP_HOSTS
 set -euo pipefail
 
 SLUG="${IMAGE_SLUG:?IMAGE_SLUG is required}"
-PLATFORMS="${PLATFORMS:-linux/arm64}"
+PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 ENABLE_REGISTRY_CACHE="${ENABLE_REGISTRY_CACHE:-true}"
 
 case "${SLUG}" in
@@ -52,7 +52,6 @@ if [[ "${SLUG}" == "web" ]]; then
     --push \
     "${cache_args[@]}" \
     -t "${DH_USER}/interview-ai-${SLUG}:${IMAGE_TAG}" \
-    -t "${DH_USER}/interview-ai-${SLUG}:latest" \
     --build-arg "NEXT_PUBLIC_PUBLIC_APP_URL=${PUB}" \
     --build-arg "NEXT_PUBLIC_ADMIN_SITE_URL=${ADM_SITE}" \
     --build-arg "NEXT_PUBLIC_ADMIN_HOSTS=${ADM_HOSTS}" \
@@ -65,8 +64,7 @@ else
     --push \
     "${cache_args[@]}" \
     -t "${DH_USER}/interview-ai-${SLUG}:${IMAGE_TAG}" \
-    -t "${DH_USER}/interview-ai-${SLUG}:latest" \
     "${CONTEXT_DIR}"
 fi
 
-echo "=== Done interview-ai-${SLUG} (tag ${IMAGE_TAG} + latest) ==="
+echo "=== Done interview-ai-${SLUG} (tag ${IMAGE_TAG}) ==="

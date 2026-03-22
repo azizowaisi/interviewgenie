@@ -16,14 +16,11 @@ Push to `main` triggers **build → push images → deploy** to your Kubernetes 
 
 Manifests include **readiness probes**, **rolling update** strategies, and **HorizontalPodAutoscalers** for stateless app Deployments. See **`docs/K8S-SCALING-AND-ROLLING.md`** for single-node limits, PVC constraints, and tuning `maxReplicas`.
 
-### CPU architecture (default: **linux/arm64**)
+### CPU architecture
 
-The workflow defaults to **`linux/arm64`** so **Apple Silicon (M1) dev** and **Oracle Ampere (aarch64) production** use the same Hub tags without extra variables.
+**Build and Deploy** uses a **fixed `linux/amd64,linux/arm64`** platform list in the workflow so **Ampere** and **amd64** nodes both work without repository variables.
 
-- **amd64-only** clusters (x86_64 VMs): set **`DOCKER_BUILD_PLATFORMS=linux/amd64`** for faster CI on GitHub’s amd64 runners.
-- **Both** in one tag: **`DOCKER_BUILD_PLATFORMS=linux/amd64,linux/arm64`**.
-
-If you see **`no match for platform in manifest`**, the Hub image **architecture** does not match the node — fix **`DOCKER_BUILD_PLATFORMS`** and rebuild, or use a VM shape that matches the images you push.
+**Deploy** passes **`DOCKERHUB_TOKEN`** into **`k8s-apply.sh`**, which creates a namespace **pull secret** and patches service accounts so **mongo** and app images pull with **authenticated** Docker Hub limits.
 
 Full diagram and checklist: **`docs/ORACLE-ARCHITECTURE.md`**.
 
@@ -68,7 +65,7 @@ All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rs
 
 1. **`kubectl apply -f k8s/traefik/helmchartconfig.yaml`** (kube-system — Let’s Encrypt / Traefik)
 2. **`kubectl apply -k k8s/`** (namespace `interview-ai`: apps, ingress, mongo, ollama, HPA, …)
-3. If **`DOCKERHUB_USERNAME`** is set: **`kubectl set image`** always runs — **`sha-<commit>`** for services built this run when images were pushed; otherwise **`:latest`** on **all** app workloads (fixes raw manifest names like `interview-ai/web` → `youruser/interview-ai-web`). If **`DOCKERHUB_USERNAME`** is unset, only `kubectl apply` runs.
+3. If **`DOCKERHUB_USERNAME`** is set and this run **pushed** images: **`kubectl set image`** pins **`sha-<full-commit>`** for services that were built (path filters). If **no** images were pushed (e.g. docs-only), **`kubectl set image` is skipped** so the cluster keeps current tags—no **`:latest`** rollout. If **`DOCKERHUB_USERNAME`** is unset, only `kubectl apply` runs.
 4. **`kubectl rollout status`** on the **same deployments** as `kubectl set image` (all eight app services by default, or a partial list from CI) **in parallel** — wall time ≈ one `K8S_ROLLOUT_TIMEOUT` (default `180s`), not eight serial waits.
 5. **`kubectl get pods`** and a best-effort **`ollama pull qwen2.5:0.5b`**
 
@@ -192,7 +189,7 @@ newgrp docker
 
 1. **test** – Backend unit tests.
 2. **build** – Builds images for: `api-service`, `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`, `monitoring-service`.
-3. **push** – If `DOCKERHUB_TOKEN` is set: logs in to Docker Hub and pushes `$DOCKERHUB_USERNAME/interview-ai-<service>:latest`.
+3. **push** – If `DOCKERHUB_TOKEN` is set: pushes `$DOCKERHUB_USERNAME/interview-ai-<service>:sha-<commit>` (immutable tag only).
 4. **deploy_self_hosted** – If **`DEPLOY_MODE=self_hosted`**:
    - Uses local k3s kubeconfig from `/etc/rancher/k3s/k3s.yaml`.
    - Applies `kubectl apply -k k8s/`.

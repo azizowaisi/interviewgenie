@@ -4,14 +4,13 @@
 # Caching: GHA cache (per service scope) + optional Docker registry cache (persists across runners).
 #
 # Env: DH_USER, IMAGE_TAG (e.g. sha-abc123def456)
-# Env: PLATFORMS — default linux/arm64 (match CI; override linux/amd64 or multi-arch if needed)
+# Env: PLATFORMS — default multi-arch (match CI)
 # Env: ENABLE_REGISTRY_CACHE — true/false (default true when DH_USER set); uses :cache tag per image repo
 # Flags: BUILD_API_SERVICE, BUILD_AUDIO_SERVICE, ... BUILD_WEB (true/false)
 # Optional: WEB_PUBLIC_APP_URL, WEB_ADMIN_SITE_URL, WEB_ADMIN_HOSTS, WEB_MAIN_APP_HOSTS
 set -euo pipefail
 
-# Default arm64: M1 dev + Oracle Ampere. CI runners are amd64 — buildx still uses QEMU for linux/arm64.
-PLATFORMS="${PLATFORMS:-linux/arm64}"
+PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 ENABLE_REGISTRY_CACHE="${ENABLE_REGISTRY_CACHE:-true}"
 
 need() {
@@ -39,7 +38,6 @@ build_one() {
     --push \
     "${cache_args[@]}" \
     -t "${DH_USER}/interview-ai-${image_slug}:${IMAGE_TAG}" \
-    -t "${DH_USER}/interview-ai-${image_slug}:latest" \
     "$@" \
     "${context_dir}"
 }
@@ -65,4 +63,4 @@ if need BUILD_WEB; then
     --build-arg "NEXT_PUBLIC_MAIN_APP_HOSTS=${MAIN_HOSTS}"
 fi
 
-echo "=== Done build-push (tag ${IMAGE_TAG} + latest) ==="
+echo "=== Done build-push (tag ${IMAGE_TAG}) ==="

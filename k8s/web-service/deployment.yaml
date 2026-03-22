@@ -18,7 +18,7 @@ spec:
       containers:
         - name: web
           image: interview-ai/web:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 3002
           env:
