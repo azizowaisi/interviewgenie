@@ -53,7 +53,7 @@ You should see **both** **`arm64`** and **`amd64`** entries in the index for **`
 ## 3. Kubernetes stack in this repo (what runs on the VM)
 
 - **Ingress:** Traefik (k3s) → `web`, `api-service`, `audio-service`, etc.
-- **Stateful:** Mongo (`mongo:8.0`) with PVC via StorageClass **`interview-mongo`** (Retain) + StatefulSet PVC retention; Ollama (PVC). See **`docs/DEPLOY-ORACLE-CLOUD.md`** for migration and OCI Block Volume CSI.
+- **Stateful:** Mongo (`mongo:8.0`) with PVC (default class in git for apply compatibility) + **`interview-mongo`** StorageClass (Retain) optional; StatefulSet **PVC retention**. Ollama (PVC). See **`docs/DEPLOY-ORACLE-CLOUD.md`**.
 - **App images:** eight workloads from CI (`api-service`, `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`, `monitoring-service`, `web`).
 - **Whisper:** not a separate Deployment in `k8s/`; **Docker Compose** builds `whisper-service` **native arm64** by default (same as M1 / Ampere).
 
