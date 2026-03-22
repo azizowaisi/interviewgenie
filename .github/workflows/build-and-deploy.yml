@@ -2,6 +2,9 @@
 # PR validation: ci.yml
 #
 # Deploy modes — read from repository VARIABLE `DEPLOY_MODE` first; if empty, from secret `DEPLOY_MODE` (same names).
+# Other settings: optional same-named repository Variables when the secret is empty — `secrets.* || vars.*`
+#   (SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, LETSENCRYPT_EMAIL, DOCKERHUB_USERNAME). DOCKERHUB_TOKEN: secret only.
+# Modes:
 #   (unset / empty) — remote kubectl if KUBE_CONFIG is set; else SSH deploy if SSH_* secrets are set
 #   remote          — same as unset (needs KUBE_CONFIG for GitHub-hosted kubectl)
 #   self_hosted     — Runner on the k3s node
@@ -179,7 +182,6 @@ jobs:
       platforms: ${{ steps.plat.outputs.platforms }}
       need_qemu: ${{ steps.plat.outputs.need_qemu }}
       dh_skip: ${{ steps.dh.outputs.skip }}
-      dh_user: ${{ steps.dh.outputs.dh_user }}
     steps:
       - uses: actions/checkout@v6
 
@@ -213,12 +215,6 @@ jobs:
             exit 1
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          _d="dhuser_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
-          {
-            echo "dh_user<<${_d}"
-            printf '%s\n' "${DH_USER}"
-            echo "${_d}"
-          } >> "$GITHUB_OUTPUT"
 
   # One image per matrix leg (parallel runners). GHA + registry cache per slug (same as serial script).
   build-images:
@@ -288,12 +284,15 @@ jobs:
       - name: Log in to Docker Hub
         if: steps.gate.outputs.build == 'true'
         env:
-          DH_USER: ${{ needs.build-prep.outputs.dh_user }}
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
           DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          DH_USER="$(printf '%s' "${DH_USER}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
           if [ -z "${DH_USER}" ]; then
-            echo "::error::build-prep did not pass dh_user — check DOCKERHUB_USERNAME secret or variable."
+            echo "::error::DOCKERHUB_USERNAME empty — set Actions secret or variable (matrix jobs do not inherit build-prep username output reliably)."
             exit 1
           fi
           if [ -z "${DH_TOKEN}" ]; then
@@ -307,8 +306,17 @@ jobs:
         if: steps.gate.outputs.build == 'true'
         env:
           IMAGE_SLUG: ${{ matrix.slug }}
-          DH_USER: ${{ needs.build-prep.outputs.dh_user }}
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
         run: |
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
+          export DH_USER
+          if [ -z "${DH_USER}" ]; then
+            echo "::error::DOCKERHUB_USERNAME empty — set Actions secret or variable."
+            exit 1
+          fi
           chmod +x scripts/ci/gha-build-single-image.sh
           scripts/ci/gha-build-single-image.sh
 
@@ -412,9 +420,9 @@ jobs:
       - id: check
         env:
           KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY || vars.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
         run: |
           if [ -n "${KUBE_CONFIG_B64}" ]; then echo "has_kube_config=true" >> "$GITHUB_OUTPUT"
           else echo "has_kube_config=false" >> "$GITHUB_OUTPUT"; fi
@@ -595,19 +603,22 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y openssh-client rsync
 
       - name: Configure SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY || vars.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
         run: |
           mkdir -p "$HOME/.ssh"
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > "$HOME/.ssh/id_rsa"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_rsa"
           chmod 600 "$HOME/.ssh/id_rsa"
-          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> "$HOME/.ssh/known_hosts"
+          ssh-keyscan -H "$SSH_HOST" >> "$HOME/.ssh/known_hosts"
 
       - name: Sync manifests + apply on server
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL || vars.LETSENCRYPT_EMAIL }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
           # Same as deploy_remote: sha-<commit> when images pushed; else skip set image (no :latest rollout).
