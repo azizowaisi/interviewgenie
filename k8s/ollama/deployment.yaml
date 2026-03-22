@@ -20,6 +20,20 @@ spec:
       labels:
         app: ollama
     spec:
+      # Ensure models dir exists on the PVC (avoids "mkdir .../models: no such file or directory" on some storage).
+      initContainers:
+        - name: ensure-ollama-dirs
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              mkdir -p /root/.ollama/models
+              chmod 755 /root/.ollama /root/.ollama/models
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
       containers:
         - name: ollama
           image: ollama/ollama:latest
