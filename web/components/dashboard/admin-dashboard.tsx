@@ -20,13 +20,15 @@ const RESTART_DEPLOYMENTS = [
   "question-service",
   "llm-service",
   "formatter-service",
+  "monitoring-service",
+  "web",
   "ollama",
-  "whisper-service",
 ] as const;
 
 const SERVICE_LABELS: Record<string, string> = {
   "api-service": "Backend",
   "audio-service": "Audio pipeline",
+  web: "Web",
   "frontend": "Frontend",
   "mongo": "MongoDB",
   "mongodb": "MongoDB",
@@ -250,7 +252,8 @@ export function AdminDashboard() {
     }
   }
 
-  const highlighted = ["api-service", "frontend", "mongo", "ollama", "whisper-service"];
+  /** Placeholder row order when /api/services has not loaded (k8s uses `web` + `stt-service`, not compose-only `whisper-service`). */
+  const highlighted = ["api-service", "web", "mongo", "ollama", "stt-service"];
   const displayServices =
     services.length > 0
       ? [...services].sort((a, b) => {
