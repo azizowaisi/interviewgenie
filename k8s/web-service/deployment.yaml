@@ -28,12 +28,13 @@ spec:
               value: "http://audio-service:8000"
             - name: MONITORING_URL
               value: "http://monitoring-service:3001"
-            # Optional: if monitoring API uses ADMIN_TOKEN
-            # - name: MONITORING_ADMIN_TOKEN
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: monitoring-admin
-            #       key: token
+            # Must match monitoring-service ADMIN_TOKEN when Secret monitoring-admin is used.
+            - name: MONITORING_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: monitoring-admin
+                  key: ADMIN_TOKEN
+                  optional: true
             # NEXT_PUBLIC_* for host routing + outbound links are set at docker build (see web/Dockerfile).
           resources:
             requests:
