@@ -138,9 +138,24 @@ for pid in "${pids[@]}"; do
 done
 
 echo "=== Pods ($NS) ==="
-kubectl get pods -n "$NS" -o wide
+kubectl get pods -n "$NS" -o wide || true
+if kubectl get pods -n "$NS" --no-headers 2>/dev/null | grep -E 'ImagePullBackOff|ErrImagePull' >/dev/null; then
+  echo "WARN: Some pods cannot pull images. If CI only updated part of the stack, other deployments may still reference a Hub tag that was never pushed for this commit." >&2
+  echo "WARN: Fix: push the missing images, or kubectl rollout undo deployment/<name> -n ${NS}. Diagnose: ./scripts/k8s-diagnose-interview-ai.sh" >&2
+fi
 
 echo "=== Ollama model (non-fatal) ==="
-kubectl exec -n "$NS" deploy/ollama -- ollama pull qwen2.5:0.5b || true
+# Isolate from set -e / pipefail edge cases; never fail the deploy for optional model pull.
+set +e
+if kubectl get deploy/ollama -n "$NS" &>/dev/null; then
+  kubectl exec -n "$NS" deploy/ollama -- ollama pull qwen2.5:0.5b
+  pull_rc=$?
+  if [[ "$pull_rc" -ne 0 ]]; then
+    echo "WARN: ollama pull exited ${pull_rc} (ignored). Pull manually: kubectl exec -n ${NS} deploy/ollama -- ollama pull qwen2.5:0.5b" >&2
+  fi
+else
+  echo "WARN: no deploy/ollama in ${NS} — skipping model pull" >&2
+fi
+set -e
 
 echo "=== Done ==="
