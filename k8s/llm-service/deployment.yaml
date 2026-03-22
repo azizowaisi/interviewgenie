@@ -23,7 +23,7 @@ spec:
       containers:
         - name: llm-service
           image: interview-ai/llm-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:

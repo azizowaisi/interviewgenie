@@ -24,7 +24,7 @@ spec:
       containers:
         - name: api-service
           image: interview-ai/api-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 8001
           volumeMounts:

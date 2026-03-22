@@ -11,7 +11,7 @@
 # Env:
 #   DOCKERHUB_USERNAME or DH_USER — image prefix (default: interview-ai-local for offline tags)
 #   IMAGE_TAG — tag (default: latest)
-#   PLATFORMS — default linux/arm64 when PUSH=1 (M1 + Ampere); override linux/amd64 or multi-arch if needed
+#   PLATFORMS — default multi-arch when PUSH=1 (matches CI)
 #   PUSH=1 — buildx --push instead of --load
 #   WEB_* — same NEXT_PUBLIC_* overrides as CI (see gha-build-single-image.sh)
 set -euo pipefail
@@ -25,7 +25,7 @@ PUSH="${PUSH:-0}"
 
 # Single-platform for --load; multi-arch only with --push
 if [[ "${PUSH}" == "1" ]]; then
-  PLATFORMS="${PLATFORMS:-linux/arm64}"
+  PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
   OUTPUT=(--push)
 else
   if [[ -z "${PLATFORMS:-}" ]]; then
