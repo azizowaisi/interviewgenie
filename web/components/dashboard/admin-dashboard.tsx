@@ -86,18 +86,40 @@ export function AdminDashboard() {
         monFetch("services"),
         monFetch("config"),
       ]);
+      const errs: string[] = [];
       if (c.ok) setCluster(await c.json());
+      else {
+        setCluster(null);
+        errs.push(`cluster HTTP ${c.status}`);
+      }
       if (p.ok) {
         const j = (await p.json()) as { pods?: PodRow[] };
         const list = j.pods || [];
         setPods(list);
         setLogPod((prev) => prev || list[0]?.name || "");
+      } else {
+        setPods([]);
+        errs.push(`pods HTTP ${p.status}`);
       }
       if (s.ok) {
         const j = (await s.json()) as { services?: SvcRow[] };
         setServices(j.services || []);
+      } else {
+        setServices([]);
+        errs.push(`services HTTP ${s.status}`);
       }
       if (cfg.ok) setConfig(await cfg.json());
+      else {
+        setConfig(null);
+        errs.push(`config HTTP ${cfg.status}`);
+      }
+      if (errs.length) {
+        const hint =
+          errs.some((e) => e.includes("401")) || c.status === 401 || cfg.status === 401
+            ? " If the monitoring API uses a token, set Secret monitoring-admin and ensure the web pod has MONITORING_ADMIN_TOKEN (see k8s/web-service/deployment.yaml)."
+            : "";
+        setMsg(`${errs.join(". ")}.${hint}`);
+      }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Refresh failed");
     } finally {
@@ -117,7 +139,9 @@ export function AdminDashboard() {
   const avgMem =
     withMem.length > 0 ? withMem.reduce((a, n) => a + (n.memory_percent ?? 0), 0) / withMem.length : null;
 
-  const systemOk = (cluster?.pods_failed ?? 0) === 0;
+  const clusterReachable = cluster != null;
+  const systemOk = clusterReachable && (cluster.pods_failed ?? 0) === 0;
+  const systemUnknown = !loading && !clusterReachable;
 
   async function loadLogs() {
     if (!logPod) return;
@@ -255,10 +279,22 @@ export function AdminDashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Badge variant={systemOk ? "success" : "destructive"} className="text-sm">
-                    {systemOk ? "Healthy" : "Check failures"}
-                  </Badge>
-                  <p className="mt-2 text-xs text-muted-foreground">Failed pods: {cluster?.pods_failed ?? "—"}</p>
+                  {loading ? (
+                    <Badge variant="outline" className="text-sm">
+                      Loading…
+                    </Badge>
+                  ) : systemUnknown ? (
+                    <Badge variant="warning" className="text-sm">
+                      Unavailable
+                    </Badge>
+                  ) : (
+                    <Badge variant={systemOk ? "success" : "destructive"} className="text-sm">
+                      {systemOk ? "Healthy" : "Check failures"}
+                    </Badge>
+                  )}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Failed pods: {clusterReachable ? cluster.pods_failed : "—"}
+                  </p>
                 </CardContent>
               </Card>
             </div>
