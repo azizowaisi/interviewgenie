@@ -195,7 +195,8 @@ jobs:
       - name: Check Docker Hub credentials
         id: dh
         env:
-          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
           DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           if [ -z "${DH_TOKEN}" ]; then
@@ -203,13 +204,21 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          DH_USER="$(printf '%s' "${DH_USER}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-          DH_TOKEN="$(printf '%s' "${DH_TOKEN}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
+          DH_TOKEN="$(trim "${DH_TOKEN}")"
           if [ -z "${DH_USER}" ]; then
-            echo "DOCKERHUB_USERNAME empty"; exit 1
+            echo "::error::DOCKERHUB_USERNAME is empty. Set repository **Actions secret** DOCKERHUB_USERNAME or **variable** DOCKERHUB_USERNAME (Docker Hub user / org name)."
+            exit 1
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "dh_user=${DH_USER}" >> "$GITHUB_OUTPUT"
+          _d="dhuser_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          {
+            echo "dh_user<<${_d}"
+            printf '%s\n' "${DH_USER}"
+            echo "${_d}"
+          } >> "$GITHUB_OUTPUT"
 
   # One image per matrix leg (parallel runners). GHA + registry cache per slug (same as serial script).
   build-images:
@@ -282,6 +291,15 @@ jobs:
           DH_USER: ${{ needs.build-prep.outputs.dh_user }}
           DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
+          DH_USER="$(printf '%s' "${DH_USER}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          if [ -z "${DH_USER}" ]; then
+            echo "::error::build-prep did not pass dh_user — check DOCKERHUB_USERNAME secret or variable."
+            exit 1
+          fi
+          if [ -z "${DH_TOKEN}" ]; then
+            echo "::error::DOCKERHUB_TOKEN missing for docker login."
+            exit 1
+          fi
           printf '%s' "${DH_TOKEN}" | docker login -u "${DH_USER}" --password-stdin
 
       - name: Build & push image (single service; see docs/DEPLOY-SPEED.md)
@@ -430,7 +448,7 @@ jobs:
 
       - name: Deploy to cluster (k3s-compatible)
         env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           chmod +x scripts/ci/k8s-apply.sh
@@ -497,7 +515,7 @@ jobs:
 
       - name: Deploy to cluster
         env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           chmod +x scripts/ci/k8s-apply.sh
@@ -587,7 +605,7 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
           GITHUB_SHA: ${{ github.sha }}
