@@ -179,7 +179,6 @@ jobs:
       platforms: ${{ steps.plat.outputs.platforms }}
       need_qemu: ${{ steps.plat.outputs.need_qemu }}
       dh_skip: ${{ steps.dh.outputs.skip }}
-      dh_user: ${{ steps.dh.outputs.dh_user }}
     steps:
       - uses: actions/checkout@v6
 
@@ -213,12 +212,6 @@ jobs:
             exit 1
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          _d="dhuser_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
-          {
-            echo "dh_user<<${_d}"
-            printf '%s\n' "${DH_USER}"
-            echo "${_d}"
-          } >> "$GITHUB_OUTPUT"
 
   # One image per matrix leg (parallel runners). GHA + registry cache per slug (same as serial script).
   build-images:
@@ -288,12 +281,15 @@ jobs:
       - name: Log in to Docker Hub
         if: steps.gate.outputs.build == 'true'
         env:
-          DH_USER: ${{ needs.build-prep.outputs.dh_user }}
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
           DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          DH_USER="$(printf '%s' "${DH_USER}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
           if [ -z "${DH_USER}" ]; then
-            echo "::error::build-prep did not pass dh_user — check DOCKERHUB_USERNAME secret or variable."
+            echo "::error::DOCKERHUB_USERNAME empty — set Actions secret or variable (matrix jobs do not inherit build-prep username output reliably)."
             exit 1
           fi
           if [ -z "${DH_TOKEN}" ]; then
@@ -307,8 +303,17 @@ jobs:
         if: steps.gate.outputs.build == 'true'
         env:
           IMAGE_SLUG: ${{ matrix.slug }}
-          DH_USER: ${{ needs.build-prep.outputs.dh_user }}
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
         run: |
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
+          export DH_USER
+          if [ -z "${DH_USER}" ]; then
+            echo "::error::DOCKERHUB_USERNAME empty — set Actions secret or variable."
+            exit 1
+          fi
           chmod +x scripts/ci/gha-build-single-image.sh
           scripts/ci/gha-build-single-image.sh
 
