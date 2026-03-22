@@ -9,6 +9,7 @@
     "local:logs": "docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama logs -f --tail=80",
     "local:web": "docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama logs -f web --tail=100",
     "web:dev": "cd web && npm run dev",
-    "web:install": "cd web && npm install"
+    "web:install": "cd web && npm install",
+    "docker:build:k8s": "bash scripts/build-all-images-local.sh"
   }
 }

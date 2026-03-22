@@ -7,12 +7,15 @@
 # Optional: K8S_SKIP_SET_IMAGE=1 — only apply manifests (used when DOCKERHUB_USERNAME is unset in CI).
 # Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
 #   If unset/empty, all app deployments get `kubectl set image` (CI uses this when pinning :latest).
-# Rollout checks for api-service, audio-service, web, monitoring-service run in parallel (same timeout each).
+# Rollout: same deployments as set image (all app workloads in parallel; one timeout window wall time).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 NS="${K8S_NAMESPACE:-interview-ai}"
 ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-180s}"
+# App Deployments that receive Hub images (must match set_image loop below).
+ALL_APP_DEPLOYMENTS="api-service audio-service stt-service question-service llm-service formatter-service monitoring-service web"
+ROLLOUT_TARGETS="${ALL_APP_DEPLOYMENTS}"
 
 echo "ROOT=$ROOT"
 echo "=== Apply Traefik HelmChartConfig (kube-system) ==="
@@ -37,8 +40,9 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]];
   if [[ -n "${K8S_UPDATE_DEPLOYMENTS:-}" ]]; then
     TARGETS="${K8S_UPDATE_DEPLOYMENTS}"
   else
-    TARGETS="api-service audio-service stt-service question-service llm-service formatter-service monitoring-service web"
+    TARGETS="${ALL_APP_DEPLOYMENTS}"
   fi
+  ROLLOUT_TARGETS="${TARGETS}"
   echo "=== kubectl set image -> ${DH}/interview-ai-*:${TAG} (deployments: ${TARGETS}) ==="
   for d in ${TARGETS}; do
     case "$d" in
@@ -55,12 +59,16 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]];
   done
 elif [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
   echo "=== Skipping kubectl set image (K8S_SKIP_SET_IMAGE=1) — cluster keeps current images ==="
+  echo "WARN: Manifests use placeholder names (e.g. interview-ai/web:latest). If the node cannot pull them,"
+  echo "WARN: pods stay ImagePullBackOff and Traefik returns 502. Set DOCKERHUB_USERNAME in CI or run:"
+  echo "WARN:   DOCKERHUB_USERNAME=you ./scripts/deploy-k3s.sh"
+  echo "WARN: Diagnose: ./scripts/k8s-diagnose-interview-ai.sh"
 fi
 
 # Rollouts in parallel so wall time ≈ one timeout, not N × timeout (set -e: wait || true).
-echo "=== Rollout status (parallel, timeout ${ROLLOUT_TIMEOUT} each) ==="
+echo "=== Rollout status (parallel, ${ROLLOUT_TARGETS}, timeout ${ROLLOUT_TIMEOUT} each) ==="
 pids=()
-for d in api-service audio-service web monitoring-service; do
+for d in ${ROLLOUT_TARGETS}; do
   (
     if kubectl rollout status "deployment/${d}" -n "$NS" --timeout="${ROLLOUT_TIMEOUT}"; then
       echo "OK: rollout ${d}"
