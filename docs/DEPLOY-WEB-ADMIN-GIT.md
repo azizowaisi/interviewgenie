@@ -106,7 +106,11 @@ Manifests: `k8s/ingress/ingressroute.yaml`, `k8s/ingress/admin-ingressroute.yaml
 
 ## 5. Optional: lock monitoring API (`ADMIN_TOKEN`)
 
-1. Create secret:
+If you **do not** create this secret, **monitoring-service** accepts `/api/*` without a token on the cluster network (still only reachable from **web** via `/api/mon`).
+
+If you **do** create the secret, **monitoring-service** requires **`X-Admin-Token`**. The **web** deployment must send the same value: **`k8s/web-service/deployment.yaml`** sets **`MONITORING_ADMIN_TOKEN`** from **`monitoring-admin`** / **`ADMIN_TOKEN`** (`optional: true` so missing secret still works).
+
+1. Create or rotate:
 
 ```bash
 kubectl create secret generic monitoring-admin \
@@ -114,9 +118,9 @@ kubectl create secret generic monitoring-admin \
   --from-literal=ADMIN_TOKEN='your-long-random-token'
 ```
 
-2. In **`k8s/web-service/deployment.yaml`**, uncomment **`MONITORING_ADMIN_TOKEN`** and point it at the same value (or a second secret key). Redeploy **web**.
+2. Restart **web** and **monitoring-service** so they pick up the secret (or redeploy via CI).
 
-Admin UI: users enter the token in **Settings** (stored in browser); BFF sends it to monitoring.
+Without **`MONITORING_ADMIN_TOKEN`** on **web** while the secret exists on **monitoring-service**, **https://admin.…** shows empty metrics and **HTTP 401** on `/api/mon/*` — the admin dashboard now surfaces that as **Unavailable** instead of a false **Healthy**.
 
 ---
 
