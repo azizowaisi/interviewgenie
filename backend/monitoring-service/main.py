@@ -52,7 +52,7 @@ RESTARTABLE = frozenset(
     for d in os.environ.get(
         "RESTARTABLE_DEPLOYMENTS",
         "api-service,audio-service,stt-service,question-service,llm-service,"
-        "formatter-service,ollama,whisper-service",
+        "formatter-service,monitoring-service,web,ollama",
     ).split(",")
     if d.strip()
 )
