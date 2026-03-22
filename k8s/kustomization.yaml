@@ -8,7 +8,8 @@ resources:
   - ingress/admin-ingressroute.yaml
   # Traefik HelmChartConfig lives in kube-system — apply separately:
   #   kubectl apply -f k8s/traefik/helmchartconfig.yaml
-  # MongoDB (persistent); deploy before api-service
+  # MongoDB (persistent); StorageClass before StatefulSet
+  - mongo/storageclass.yaml
   - mongo/statefulset.yaml
   - mongo/service.yaml
   # API: CV upload, history, sessions (mounts cv-uploads PVC)

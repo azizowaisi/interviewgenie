@@ -1,0 +1,10 @@
+# Dedicated MongoDB volumes: Retain PVs when PVCs are deleted so data survives operator mistakes.
+# Still node-local (rancher.io/local-path) unless you switch to OCI Block Volume CSI — see storageclass-oci.example.yaml.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: interview-mongo
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+allowVolumeExpansion: false
