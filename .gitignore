@@ -37,5 +37,11 @@ clients/flutter-app/build/
 clients/electron-app/out/
 clients/electron-app/dist/
 
+# Desktop installers copied for Next.js /desktop/* (run: clients/electron-app npm run dist:publish-web)
+web/public/desktop/*.dmg
+web/public/desktop/*.exe
+web/public/desktop/*.AppImage
+web/public/desktop/*.appimage
+
 # Kubernetes
 *.kubeconfig

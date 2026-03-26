@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Mic, BarChart3, Users, Sparkles, Zap, LineChart, MessageSquare, Target, Shield } from "lucide-react";
+import { Mic, BarChart3, Users, Sparkles, Zap, LineChart, MessageSquare, Target, Shield, Download } from "lucide-react";
+import { DesktopDownloadSection } from "@/components/layout/desktop-download-section";
 
 const features = [
   "Real-time interview simulation",
@@ -40,10 +41,20 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-wrap gap-4">
             <Button size="lg" asChild>
-              <Link href="/interview">Start Interview</Link>
+              <Link href="/interview" prefetch={false}>
+                Start Interview
+              </Link>
             </Button>
             <Button size="lg" variant="secondary" asChild>
-              <Link href="/upload">Analyze CV</Link>
+              <Link href="/upload" prefetch={false}>
+                Analyze CV
+              </Link>
+            </Button>
+            <Button size="lg" variant="outline" asChild>
+              <Link href="#desktop-app" prefetch={false}>
+                <Download className="mr-2 h-4 w-4" />
+                Desktop app
+              </Link>
             </Button>
           </div>
         </div>
@@ -53,7 +64,9 @@ export default function LandingPage() {
               <Sparkles className="h-4 w-4 text-primary" />
               Ready when you are
             </CardTitle>
-            <CardDescription>Browser-based — no install. Optimized for fast load.</CardDescription>
+            <CardDescription>
+              Same product in the browser or as a desktop app — one account everywhere.
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl bg-background/50 p-4 shadow-md">
@@ -124,6 +137,10 @@ export default function LandingPage() {
           ))}
         </ol>
       </section>
+
+      <Separator />
+
+      <DesktopDownloadSection />
     </div>
   );
 }

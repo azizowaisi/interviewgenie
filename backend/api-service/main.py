@@ -107,6 +107,7 @@ class HistoryFeedbackUpdate(BaseModel):
 
 class TopicCreate(BaseModel):
     topic: str
+    company_name: Optional[str] = None
     job_description: Optional[str] = None
     interview_type: Optional[str] = None  # "technical" | "hr"; default "technical"
     duration_minutes: Optional[int] = None  # default 30
@@ -130,6 +131,12 @@ class AttemptQuestionAdd(BaseModel):
     question: str
     answer: Optional[str] = None
     order_index: Optional[int] = None
+
+
+class AttemptQuestionUpdate(BaseModel):
+    answer: Optional[str] = None
+    ai_suggestion: Optional[str] = None
+    improved_answer: Optional[str] = None
 
 
 class AtsAnalyzeRequest(BaseModel):
@@ -459,6 +466,7 @@ async def topic_create(
     doc = {
         "user_id": user_id,
         "topic": topic_name,
+        "company_name": (body.company_name or "").strip() or None,
         "job_description": (body.job_description or "").strip() or None,
         "cv_id": None,
         "interview_type": interview_type,
@@ -469,6 +477,7 @@ async def topic_create(
     return JSONResponse({
         "id": str(result.inserted_id),
         "topic": doc["topic"],
+        "company_name": doc.get("company_name"),
         "job_description": doc["job_description"],
         "cv_id": None,
         "cv_filename": None,
@@ -482,6 +491,7 @@ def _topic_to_response(d: dict, cvs_collection) -> dict:
     out = {
         "id": str(d["_id"]),
         "topic": d.get("topic", ""),
+        "company_name": d.get("company_name"),
         "job_description": d.get("job_description"),
         "created_at": d["created_at"].isoformat(),
         "cv_id": None,
@@ -664,6 +674,8 @@ async def attempt_get(
             "answer": q.get("answer"),
             "order_index": q.get("order_index", 0),
             "timestamp": q["timestamp"].isoformat(),
+            "ai_suggestion": q.get("ai_suggestion"),
+            "improved_answer": q.get("improved_answer"),
         })
     return JSONResponse({
         "id": str(attempt_doc["_id"]),
@@ -706,6 +718,8 @@ async def attempt_question_add(
         "answer": (body.answer or "").strip() or None,
         "order_index": order_index,
         "timestamp": now,
+        "ai_suggestion": None,
+        "improved_answer": None,
     }
     result = questions_coll.insert_one(doc)
     return JSONResponse({
@@ -721,7 +735,7 @@ async def attempt_question_add(
 async def attempt_question_update_answer(
     attempt_id: str,
     question_id: str,
-    body: AttemptQuestionAdd,
+    body: AttemptQuestionUpdate,
     user_id: Optional[str] = Depends(get_user_id),
 ):
     if not user_id:
@@ -735,9 +749,18 @@ async def attempt_question_update_answer(
         attempt_doc = None
     if not attempt_doc or attempt_doc.get("end_time"):
         raise HTTPException(404, "Attempt not found or already completed")
+    patch: dict = {}
+    if body.answer is not None:
+        patch["answer"] = (body.answer or "").strip() or None
+    if body.ai_suggestion is not None:
+        patch["ai_suggestion"] = (body.ai_suggestion or "").strip() or None
+    if body.improved_answer is not None:
+        patch["improved_answer"] = (body.improved_answer or "").strip() or None
+    if not patch:
+        return JSONResponse({"ok": True})
     updated = questions_coll.update_one(
         {"_id": ObjectId(question_id), "attempt_id": ObjectId(attempt_id)},
-        {"$set": {"answer": (body.answer or "").strip() or None}},
+        {"$set": patch},
     )
     if updated.matched_count == 0:
         raise HTTPException(404, "Question not found")

@@ -3,6 +3,7 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const tls = require('tls');
+const crypto = require('crypto');
 const WebSocket = require('ws');
 
 /**
@@ -132,15 +133,319 @@ function requestOptionsFromUrl(fullUrlString, extra = {}) {
   return base;
 }
 
-const { app, BrowserWindow, session, ipcMain } = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell } = require('electron');
+
+const APP_VERSION = require('./package.json').version;
 
 const APP_DIR = __dirname;
 const PORT_MIN = 9080;
 const PORT_MAX = 9095;
 const SEGMENT_TIMEOUT_MS = 300000; // 5 min (STT + LLM + formatter; first Ollama/Whisper load can be very slow)
+const LOCAL_AUTH_CALLBACK_DEFAULT = 'http://127.0.0.1:9090/auth/callback';
 
 let server = null;
 let serverPort = null;
+let authState = { user: null, tokens: null };
+
+function envOrEmpty(name) {
+  const v = process.env[name];
+  return v ? String(v).trim() : '';
+}
+
+function semverCore(versionStr) {
+  const s = String(versionStr || '')
+    .replace(/^v/i, '')
+    .split('-')[0]
+    .split('+')[0];
+  return s.split('.').map((p) => parseInt(p, 10) || 0);
+}
+
+/** @returns {-1|0|1} */
+function compareSemver(a, b) {
+  const pa = semverCore(a);
+  const pb = semverCore(b);
+  const n = Math.max(pa.length, pb.length);
+  for (let i = 0; i < n; i += 1) {
+    const da = pa[i] || 0;
+    const db = pb[i] || 0;
+    if (da < db) return -1;
+    if (da > db) return 1;
+  }
+  return 0;
+}
+
+function desktopUpdateManifestUrl() {
+  const explicit = envOrEmpty('INTERVIEWGENIE_UPDATE_MANIFEST_URL');
+  if (explicit) return explicit;
+  const apiBase = process.env.INTERVIEWGENIE_API_BASE || PRODUCTION_API_BASE;
+  try {
+    const u = new URL(apiBase);
+    return `${u.protocol}//${u.host}/desktop-latest.json`;
+  } catch (_) {
+    return '';
+  }
+}
+
+function fetchGetJson(urlString, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const opts = requestOptionsFromUrl(urlString, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    const client = httpModuleForUrlString(urlString);
+    const req = client.request(opts, (res) => {
+      let chunks = '';
+      res.on('data', (c) => {
+        chunks += c;
+      });
+      res.on('end', () => {
+        try {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(`HTTP ${res.statusCode}`));
+            return;
+          }
+          resolve(JSON.parse(chunks || '{}'));
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error('Update check timeout'));
+    });
+    req.end();
+  });
+}
+
+function readDismissedDesktopUpdate() {
+  try {
+    const p = path.join(app.getPath('userData'), 'dismissed-desktop-update.json');
+    if (!fs.existsSync(p)) return '';
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return j && j.version ? String(j.version) : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function writeDismissedDesktopUpdate(version) {
+  try {
+    const p = path.join(app.getPath('userData'), 'dismissed-desktop-update.json');
+    fs.writeFileSync(p, JSON.stringify({ version }), 'utf8');
+  } catch (_) {}
+}
+
+async function checkForDesktopUpdate(win) {
+  if (!win || win.isDestroyed()) return;
+  const url = desktopUpdateManifestUrl();
+  if (!url) return;
+  let manifest;
+  try {
+    manifest = await fetchGetJson(url);
+  } catch (_) {
+    return;
+  }
+  if (!manifest || typeof manifest.version !== 'string') return;
+  const latest = manifest.version.trim();
+  if (!latest) return;
+  if (compareSemver(APP_VERSION, latest) >= 0) return;
+
+  const minV = typeof manifest.minVersion === 'string' ? manifest.minVersion.trim() : '';
+  const mandatory = Boolean(minV && compareSemver(APP_VERSION, minV) < 0);
+  if (!mandatory && readDismissedDesktopUpdate() === latest) return;
+
+  const payload = {
+    currentVersion: APP_VERSION,
+    latestVersion: latest,
+    downloadPage: typeof manifest.downloadPage === 'string' ? manifest.downloadPage : '',
+    message: typeof manifest.message === 'string' ? manifest.message : '',
+    mandatory,
+  };
+  try {
+    if (win.webContents && !win.isDestroyed()) {
+      win.webContents.send('desktop-update-available', payload);
+    }
+  } catch (_) {}
+}
+
+function scheduleDesktopUpdateCheck(win) {
+  setTimeout(() => {
+    checkForDesktopUpdate(win).catch(() => {});
+  }, 2500);
+}
+
+function auth0IssuerBase() {
+  const explicit = envOrEmpty('INTERVIEWGENIE_AUTH0_ISSUER_BASE_URL') || envOrEmpty('AUTH0_ISSUER_BASE_URL');
+  if (explicit) return explicit.replace(/\/$/, '');
+  const d = envOrEmpty('INTERVIEWGENIE_AUTH0_DOMAIN') || envOrEmpty('AUTH0_DOMAIN');
+  if (!d) return '';
+  const domain = d.startsWith('http://') || d.startsWith('https://') ? d : `https://${d}`;
+  return domain.replace(/\/$/, '');
+}
+
+function auth0ClientId() {
+  return envOrEmpty('INTERVIEWGENIE_AUTH0_CLIENT_ID') || envOrEmpty('AUTH0_CLIENT_ID');
+}
+
+function auth0Audience() {
+  return envOrEmpty('INTERVIEWGENIE_AUTH0_AUDIENCE') || envOrEmpty('AUTH0_AUDIENCE');
+}
+
+function auth0CallbackUrl() {
+  const explicit = envOrEmpty('INTERVIEWGENIE_AUTH0_CALLBACK_URL');
+  if (explicit) return explicit;
+  if (String(process.env.NODE_ENV || '').toLowerCase() === 'production') return '';
+  return LOCAL_AUTH_CALLBACK_DEFAULT;
+}
+
+function authStatePath() {
+  return path.join(app.getPath('userData'), 'auth-session.json');
+}
+
+function loadAuthState() {
+  try {
+    const p = authStatePath();
+    if (!fs.existsSync(p)) return;
+    const raw = fs.readFileSync(p, 'utf8');
+    const parsed = JSON.parse(raw);
+    authState = {
+      user: parsed && parsed.user ? parsed.user : null,
+      tokens: parsed && parsed.tokens ? parsed.tokens : null,
+    };
+  } catch (_) {}
+}
+
+function persistAuthState() {
+  try {
+    fs.writeFileSync(authStatePath(), JSON.stringify(authState), 'utf8');
+  } catch (_) {}
+}
+
+function clearAuthState() {
+  authState = { user: null, tokens: null };
+  try {
+    const p = authStatePath();
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  } catch (_) {}
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+    return JSON.parse(Buffer.from(b64 + pad, 'base64').toString('utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function currentUserId() {
+  return (authState.user && authState.user.sub) || envOrEmpty('INTERVIEWGENIE_USER_ID') || 'default';
+}
+
+function authHeaders(extra = {}) {
+  const h = { ...extra, 'X-User-Id': currentUserId() };
+  if (authState.tokens && authState.tokens.access_token) {
+    h.Authorization = `Bearer ${authState.tokens.access_token}`;
+  }
+  return h;
+}
+
+function pkceVerifier() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function pkceChallenge(verifier) {
+  return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
+
+function waitForAuthCode(redirectUrl, timeoutMs = 180000) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    let callbackServer;
+    try {
+      const u = new URL(redirectUrl);
+      if (u.protocol !== 'http:' || (u.hostname !== '127.0.0.1' && u.hostname !== 'localhost')) {
+        reject(new Error('Auth callback URL must be local http://127.0.0.1 or http://localhost'));
+        return;
+      }
+      callbackServer = http.createServer((req, res) => {
+        try {
+          const reqUrl = new URL(req.url, `${u.protocol}//${u.host}`);
+          if (reqUrl.pathname !== u.pathname) {
+            res.writeHead(404);
+            res.end('Not found');
+            return;
+          }
+          const code = reqUrl.searchParams.get('code');
+          const state = reqUrl.searchParams.get('state');
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<html><body style="font-family:sans-serif;padding:24px;">Login complete. You can close this tab.</body></html>');
+          clearTimeout(timer);
+          callbackServer.close(() => resolve({ code, state }));
+        } catch (err) {
+          clearTimeout(timer);
+          try { callbackServer.close(() => reject(err)); } catch (_) { reject(err); }
+        }
+      });
+      callbackServer.listen(Number(u.port || 80), u.hostname);
+      timer = setTimeout(() => {
+        try { callbackServer.close(); } catch (_) {}
+        reject(new Error('Timed out waiting for Auth0 callback.'));
+      }, timeoutMs);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function exchangeAuthCode({ issuer, clientId, code, verifier, redirectUri }) {
+  const tokenUrl = `${issuer}/oauth/token`;
+  const body = JSON.stringify({
+    grant_type: 'authorization_code',
+    client_id: clientId,
+    code,
+    code_verifier: verifier,
+    redirect_uri: redirectUri,
+  });
+  return await new Promise((resolve, reject) => {
+    const opts = requestOptionsFromUrl(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    });
+    const client = httpModuleForUrlString(tokenUrl);
+    const req = client.request(opts, (res) => {
+      let chunks = '';
+      res.on('data', (c) => { chunks += c; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(chunks || '{}');
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(parsed.error_description || parsed.error || `Token exchange failed (${res.statusCode})`));
+            return;
+          }
+          resolve(parsed);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => {
+      req.destroy();
+      reject(new Error('Token exchange timeout'));
+    });
+    req.write(body);
+    req.end();
+  });
+}
 
 // Real-time session: one WebSocket, multiple question rounds
 let audioSession = null;
@@ -157,6 +462,9 @@ function createWindow(port) {
     },
   });
   win.loadURL(`http://127.0.0.1:${port}`);
+  win.webContents.on('did-finish-load', () => {
+    scheduleDesktopUpdateCheck(win);
+  });
 }
 
 function startServer() {
@@ -285,7 +593,7 @@ ipcMain.handle('start-audio-session', async (event, url, cvId, topicId) => {
 
     ws.on('open', () => {
       opened = true;
-      const msg = { user_id: 'default' };
+      const msg = { user_id: currentUserId() };
       if (cvId && String(cvId).trim()) msg.cv_id = String(cvId).trim();
       if (topicId && String(topicId).trim()) msg.topic_id = String(topicId).trim();
       try { ws.send(JSON.stringify(msg)); } catch (_) {}
@@ -428,7 +736,7 @@ ipcMain.handle('send-text-question', async (event, url, text, cvId, topicId) => 
     }
 
     ws.on('open', () => {
-      const sessionMsg = { user_id: 'default' };
+      const sessionMsg = { user_id: currentUserId() };
       if (cvId && String(cvId).trim()) sessionMsg.cv_id = String(cvId).trim();
       if (topicId && String(topicId).trim()) sessionMsg.topic_id = String(topicId).trim();
       ws.send(JSON.stringify(sessionMsg));
@@ -490,7 +798,7 @@ ipcMain.handle('get-history', async (_event, apiBase, limit, topicId) => {
   return new Promise((resolve) => {
     const opts = requestOptionsFromUrl(url, {
       method: 'GET',
-      headers: { 'X-User-Id': 'default' },
+      headers: authHeaders(),
     });
     const client = httpModuleForUrlString(url);
     const req = client.request(opts, (res) => {
@@ -520,7 +828,7 @@ ipcMain.handle('get-cv-list', async (_event, apiBase) => {
   return new Promise((resolve) => {
     const opts = requestOptionsFromUrl(url, {
       method: 'GET',
-      headers: { 'X-User-Id': 'default' },
+      headers: authHeaders(),
     });
     const client = httpModuleForUrlString(url);
     const req = client.request(opts, (res) => {
@@ -556,7 +864,7 @@ function httpPostJson(apiBase, path, body, headers = {}, timeoutMs = 15000) {
     const opts = requestOptionsFromUrl(fullUrl, {
       method: 'POST',
       headers: {
-        'X-User-Id': 'default',
+        ...authHeaders(),
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
         ...headers,
@@ -589,7 +897,7 @@ function httpPatchJson(apiBase, path, body) {
     const opts = requestOptionsFromUrl(fullUrl, {
       method: 'PATCH',
       headers: {
-        'X-User-Id': 'default',
+        ...authHeaders(),
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
       },
@@ -620,7 +928,7 @@ ipcMain.handle('get-topics', async (_event, apiBase) => {
   return new Promise((resolve) => {
     const opts = requestOptionsFromUrl(url, {
       method: 'GET',
-      headers: { 'X-User-Id': 'default' },
+      headers: authHeaders(),
     });
     const client = httpModuleForUrlString(url);
     const req = client.request(opts, (res) => {
@@ -653,7 +961,7 @@ ipcMain.handle('create-topic', async (_event, apiBase, topic, jobDescription) =>
     const opts = requestOptionsFromUrl(requestUrl, {
       method: 'POST',
       headers: {
-        'X-User-Id': 'default',
+        ...authHeaders(),
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
       },
@@ -694,7 +1002,7 @@ ipcMain.handle('get-ats', async (_event, apiBase, topicId) => {
     const url = base + path;
     const opts = requestOptionsFromUrl(url, {
       method: 'GET',
-      headers: { 'X-User-Id': 'default' },
+      headers: authHeaders(),
     });
     const client = httpModuleForUrlString(url);
     const req = client.request(opts, (res) => {
@@ -734,7 +1042,7 @@ ipcMain.handle('upload-cv', async (_event, apiBase, filename, fileBuffer) => {
     const opts = requestOptionsFromUrl(fullUrl, {
       method: 'POST',
       headers: {
-        'X-User-Id': 'default',
+        ...authHeaders(),
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
         'Content-Length': body.length,
       },
@@ -778,7 +1086,7 @@ ipcMain.handle('upload-topic-cv', async (_event, apiBase, topicId, filename, fil
     const opts = requestOptionsFromUrl(fullUrl, {
       method: 'POST',
       headers: {
-        'X-User-Id': 'default',
+        ...authHeaders(),
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
         'Content-Length': body.length,
       },
@@ -811,7 +1119,7 @@ function httpGetJson(apiBase, path, timeoutMs = 15000) {
     const fullUrl = apiBase + path;
     const opts = requestOptionsFromUrl(fullUrl, {
       method: 'GET',
-      headers: { 'X-User-Id': 'default' },
+      headers: authHeaders(),
     });
     const client = httpModuleForUrlString(fullUrl);
     const req = client.request(opts, (res) => {
@@ -909,7 +1217,84 @@ ipcMain.handle('compare-attempts', async (_event, audioBase, attempt1Data, attem
   }, {}, 120000);
 });
 
+ipcMain.handle('auth-session', async () => {
+  return {
+    loggedIn: !!(authState.user && authState.user.sub),
+    user: authState.user,
+  };
+});
+
+ipcMain.handle('auth-logout', async () => {
+  clearAuthState();
+  return { ok: true };
+});
+
+ipcMain.handle('auth-login', async () => {
+  const issuer = auth0IssuerBase();
+  const clientId = auth0ClientId();
+  const redirectUri = auth0CallbackUrl();
+  if (!issuer || !clientId || !redirectUri) {
+    return { error: 'Missing Auth0 config. Set INTERVIEWGENIE_AUTH0_ISSUER_BASE_URL, INTERVIEWGENIE_AUTH0_CLIENT_ID, INTERVIEWGENIE_AUTH0_CALLBACK_URL.' };
+  }
+
+  const verifier = pkceVerifier();
+  const challenge = pkceChallenge(verifier);
+  const state = crypto.randomBytes(16).toString('hex');
+
+  const authUrl = new URL(`${issuer}/authorize`);
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('scope', 'openid profile email');
+  authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('code_challenge', challenge);
+  authUrl.searchParams.set('code_challenge_method', 'S256');
+  const audience = auth0Audience();
+  if (audience) authUrl.searchParams.set('audience', audience);
+
+  try {
+    const waitForCode = waitForAuthCode(redirectUri);
+    await shell.openExternal(authUrl.toString());
+    const cb = await waitForCode;
+    if (!cb || !cb.code) return { error: 'No authorization code received.' };
+    if (cb.state !== state) return { error: 'State mismatch from Auth0 callback.' };
+    const tokens = await exchangeAuthCode({
+      issuer,
+      clientId,
+      code: cb.code,
+      verifier,
+      redirectUri,
+    });
+    const payload = decodeJwtPayload(tokens.id_token || '');
+    const sub = payload && payload.sub ? String(payload.sub) : '';
+    if (!sub) return { error: 'Auth0 id_token missing `sub`.' };
+    authState = {
+      user: { sub, email: payload.email || null, name: payload.name || null },
+      tokens,
+    };
+    persistAuthState();
+    return { ok: true, user: authState.user };
+  } catch (e) {
+    return { error: e && e.message ? e.message : 'Auth login failed' };
+  }
+});
+
+ipcMain.handle('dismiss-desktop-update', (_event, latestVersion) => {
+  if (latestVersion) writeDismissedDesktopUpdate(String(latestVersion));
+  return { ok: true };
+});
+
+ipcMain.handle('open-external-url', (_event, url) => {
+  const s = url ? String(url) : '';
+  if (s && /^https?:\/\//i.test(s)) {
+    shell.openExternal(s);
+    return { ok: true };
+  }
+  return { ok: false };
+});
+
 app.whenReady().then(async () => {
+  loadAuthState();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     if (permission === 'media') callback(true);
     else callback(false);

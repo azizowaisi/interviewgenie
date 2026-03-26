@@ -8,6 +8,7 @@
     "local:ps": "docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama ps",
     "local:logs": "docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama logs -f --tail=80",
     "local:web": "docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama logs -f web --tail=100",
+    "desktop:publish-web": "npm run dist:publish-web --prefix clients/electron-app",
     "web:dev": "cd web && npm run dev",
     "web:install": "cd web && npm install",
     "docker:build:k8s": "bash scripts/build-all-images-local.sh"

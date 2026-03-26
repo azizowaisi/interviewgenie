@@ -1,15 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { appFetch } from "@/lib/api-fetch";
 import { ScoreBars } from "@/components/charts/score-bars";
 
+type Topic = {
+  id: string;
+  topic: string;
+  company_name?: string | null;
+};
+
 type AtsResult = {
+  id?: string;
+  topic_id?: string | null;
+  created_at?: string;
   overall_score?: number;
   skill_match?: number;
   missing_skills?: string[];
@@ -19,38 +26,55 @@ type AtsResult = {
 };
 
 export function UploadAnalyze() {
-  const [file, setFile] = useState<File | null>(null);
-  const [jd, setJd] = useState("");
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [topicId, setTopicId] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingTopics, setLoadingTopics] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<AtsResult | null>(null);
+  const [results, setResults] = useState<AtsResult[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const tr = await appFetch("/topics");
+        if (!tr.ok) throw new Error(await tr.text());
+        const list = (await tr.json()) as Topic[];
+        setTopics(list);
+        if (list.length) {
+          setTopicId(list[0].id);
+          const ar = await appFetch(`/ats?topic_id=${encodeURIComponent(list[0].id)}&limit=10`);
+          if (ar.ok) setResults((await ar.json()) as AtsResult[]);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load jobs.");
+      } finally {
+        setLoadingTopics(false);
+      }
+    })();
+  }, []);
+
+  async function loadResultsForTopic(nextTopicId: string) {
+    if (!nextTopicId) return;
+    const r = await appFetch(`/ats?topic_id=${encodeURIComponent(nextTopicId)}&limit=10`);
+    if (!r.ok) throw new Error(await r.text());
+    setResults((await r.json()) as AtsResult[]);
+  }
 
   async function onAnalyze() {
     setError(null);
-    setResult(null);
-    if (!file) {
-      setError("Choose a CV file.");
-      return;
-    }
-    if (!jd.trim()) {
-      setError("Paste a job description.");
+    if (!topicId) {
+      setError("Select a job title first.");
       return;
     }
     setLoading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const up = await appFetch("/cv/upload", { method: "POST", body: fd });
-      if (!up.ok) throw new Error(await up.text());
-      const { id: cv_id } = (await up.json()) as { id: string };
-
       const ar = await appFetch("/ats/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cv_id, job_description: jd.trim() }),
+        body: JSON.stringify({ topic_id: topicId }),
       });
       if (!ar.ok) throw new Error(await ar.text());
-      setResult((await ar.json()) as AtsResult);
+      await loadResultsForTopic(topicId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Analysis failed");
     } finally {
@@ -58,6 +82,7 @@ export function UploadAnalyze() {
     }
   }
 
+  const result = results[0] ?? null;
   const overall = result?.overall_score ?? 0;
   const skill = result?.skill_match ?? 0;
 
@@ -65,21 +90,39 @@ export function UploadAnalyze() {
     <div className="mx-auto grid max-w-4xl gap-6">
       <Card className="shadow-md">
         <CardHeader>
-          <CardTitle>CV &amp; job description</CardTitle>
-          <CardDescription>Upload a CV and paste the JD to compute ATS-style match scores.</CardDescription>
+          <CardTitle>ATS by job title</CardTitle>
+          <CardDescription>Select a saved job and generate ATS result using the CV from Start page.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-2">
-            <Label htmlFor="cv">CV (PDF / DOCX)</Label>
-            <Input id="cv" type="file" accept=".pdf,.doc,.docx,.txt,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="jd">Job description</Label>
-            <Textarea id="jd" className="min-h-[160px]" value={jd} onChange={(e) => setJd(e.target.value)} placeholder="Paste the full job description…" />
+            <Label htmlFor="topic">Job title</Label>
+            <select
+              id="topic"
+              value={topicId}
+              disabled={loadingTopics || !topics.length}
+              onChange={async (e) => {
+                const next = e.target.value;
+                setTopicId(next);
+                setError(null);
+                try {
+                  await loadResultsForTopic(next);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Failed to load ATS results.");
+                }
+              }}
+              className="flex h-10 w-full rounded-xl border border-input bg-secondary/50 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {topics.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.topic}
+                  {t.company_name ? ` - ${t.company_name}` : ""}
+                </option>
+              ))}
+            </select>
           </div>
           {error && <p className="text-sm text-red-400">{error}</p>}
           <Button onClick={onAnalyze} disabled={loading} className="w-fit">
-            {loading ? "Analyzing…" : "Analyze"}
+            {loading ? "Analyzing..." : "Generate ATS"}
           </Button>
         </CardContent>
       </Card>
@@ -118,6 +161,22 @@ export function UploadAnalyze() {
                 ))}
               </ul>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!!results.length && (
+        <Card className="shadow-md">
+          <CardHeader>
+            <CardTitle>Previous ATS results</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {results.map((r) => (
+              <div key={r.id || `${r.created_at}-${r.overall_score}`} className="rounded-lg border border-border px-3 py-2">
+                <span className="font-medium">Score:</span> {(r.overall_score ?? 0).toFixed(1)}{" "}
+                <span className="text-muted-foreground">({r.created_at ? new Date(r.created_at).toLocaleString() : "no date"})</span>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

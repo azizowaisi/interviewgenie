@@ -178,7 +178,12 @@ jobs:
         run: |
           if [ "${{ matrix.image }}" = "web" ]; then
             echo "==== docker build web ===="
-            docker build -t interview-ai/web:latest ./web
+            docker build \
+              --build-arg "NEXT_PUBLIC_PUBLIC_APP_URL=${NEXT_PUBLIC_PUBLIC_APP_URL:-http://localhost:3002}" \
+              --build-arg "NEXT_PUBLIC_ADMIN_HOSTS=${NEXT_PUBLIC_ADMIN_HOSTS:-}" \
+              --build-arg "NEXT_PUBLIC_ADMIN_SITE_URL=${NEXT_PUBLIC_ADMIN_SITE_URL:-}" \
+              --build-arg "NEXT_PUBLIC_MAIN_APP_HOSTS=${NEXT_PUBLIC_MAIN_APP_HOSTS:-}" \
+              -t interview-ai/web:latest ./web
           else
             echo "==== docker build backend/${{ matrix.image }} ===="
             docker build -t "interview-ai/${{ matrix.image }}:latest" "./backend/${{ matrix.image }}"

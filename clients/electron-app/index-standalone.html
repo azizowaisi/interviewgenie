@@ -7,8 +7,9 @@
   <title>Interview Genie</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #0f0f12; color: #e8e8ed; min-height: 100vh; padding: 2rem; }
-    .app { max-width: 720px; margin: 0 auto; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #0f0f12; color: #e8e8ed; min-height: 100vh; padding: 1rem; }
+    @media (min-width: 640px) { body { padding: 2rem; } }
+    .app { max-width: 72rem; margin: 0 auto; }
     h1 { font-size: 1.75rem; margin: 0; }
     .subtitle { color: #888; margin: 0.25rem 0 2rem 0; }
     label { display: block; font-size: 0.875rem; color: #888; margin-bottom: 0.25rem; }
@@ -79,7 +80,7 @@
     .ats-missing ul { margin: 0.25rem 0 0 1rem; color: #e8e8ed; font-size: 0.9rem; }
     #atsResult, #topicError2, #atsError { font-size: 0.9rem; margin-top: 0.5rem; }
     #topicError2, #atsError { color: #ef4444; }
-    .menu-nav { display: flex; gap: 0.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid #2a2a30; padding-bottom: 0; }
+    .menu-nav { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid #2a2a30; padding-bottom: 0; }
     .menu-nav button { padding: 0.65rem 1.25rem; font-size: 0.95rem; font-weight: 500; background: transparent; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; color: #888; cursor: pointer; border-radius: 6px 6px 0 0; }
     .menu-nav button:hover { color: #e8e8ed; }
     .menu-nav button.active { color: #6366f1; border-bottom-color: #6366f1; }
@@ -136,13 +137,29 @@
     .history-tabs button.active { color: #6366f1; border-bottom-color: #6366f1; }
     .history-tab-panel { display: none; padding-top: 0.5rem; }
     .history-tab-panel.active { display: block; }
+    .desktop-update-banner {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem;
+      padding: 0.75rem 1rem; margin-bottom: 1rem; border-radius: 10px;
+      background: rgba(99, 102, 241, 0.15); border: 1px solid #6366f1; color: #e8e8ed;
+      font-size: 0.9rem; line-height: 1.45;
+    }
+    .desktop-update-banner[hidden] { display: none !important; }
+    .desktop-update-banner .desktop-update-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-left: auto; }
+    .desktop-update-banner .desktop-update-actions .btn { padding: 0.35rem 0.85rem; font-size: 0.82rem; }
   </style>
 </head>
 <body>
   <div class="app">
+    <div id="desktopUpdateBanner" class="desktop-update-banner" role="alert" hidden>
+      <span id="desktopUpdateBannerText"></span>
+      <div class="desktop-update-actions">
+        <button type="button" id="desktopUpdateDownloadBtn" class="btn primary">Get update</button>
+        <button type="button" id="desktopUpdateLaterBtn" class="btn secondary">Later</button>
+      </div>
+    </div>
     <header>
       <div class="header-row">
-        <h1>Interview Genie</h1>
+        <h1>Interview<span style="color:#6366f1">Genie</span></h1>
         <div class="info-wrap">
           <button type="button" id="infoBtn" class="info-btn" aria-label="How it works" title="How it works">i</button>
           <div id="infoPopover" class="info-popover" role="tooltip">
@@ -151,12 +168,19 @@
         </div>
       </div>
       <p class="subtitle">Get STAR-format answers to interview questions</p>
+      <div class="header-row" style="justify-content:space-between; margin:-0.75rem 0 1rem 0;">
+        <div id="authUserLabel" style="font-size:0.82rem; color:#a5b4fc;">Not signed in</div>
+        <div style="display:flex; gap:0.5rem;">
+          <button type="button" id="authSignInBtn" class="btn secondary" style="padding:0.35rem 0.7rem; font-size:0.82rem;">Sign in</button>
+          <button type="button" id="authSignOutBtn" class="btn secondary" style="padding:0.35rem 0.7rem; font-size:0.82rem;">Sign out</button>
+        </div>
+      </div>
       <nav class="menu-nav" aria-label="Main menu">
-        <button type="button" id="menuPrepare" class="active">1. Prepare</button>
-        <button type="button" id="menuAts">2. ATS</button>
-        <button type="button" id="menuMock">3. Mock interview</button>
-        <button type="button" id="menuInterview">4. Live interview</button>
-        <button type="button" id="menuHistory">5. History</button>
+        <button type="button" id="menuPrepare" class="active">Start</button>
+        <button type="button" id="menuAts">ATS</button>
+        <button type="button" id="menuMock">Mock</button>
+        <button type="button" id="menuInterview">Live</button>
+        <button type="button" id="menuHistory">History</button>
       </nav>
     </header>
     <main>
@@ -387,6 +411,9 @@
   var startBtn = document.getElementById('startBtn');
   var stopBtn = document.getElementById('stopBtn');
   var statusEl = document.getElementById('status');
+  var authUserLabel = document.getElementById('authUserLabel');
+  var authSignInBtn = document.getElementById('authSignInBtn');
+  var authSignOutBtn = document.getElementById('authSignOutBtn');
   var answerSection = document.getElementById('answerSection');
   var errorSection = document.getElementById('errorSection');
   var errorText = document.getElementById('errorText');
@@ -413,6 +440,41 @@
       }
     });
   }
+
+  (function setupDesktopUpdateBanner() {
+    var banner = document.getElementById('desktopUpdateBanner');
+    var textEl = document.getElementById('desktopUpdateBannerText');
+    var laterBtn = document.getElementById('desktopUpdateLaterBtn');
+    var dlBtn = document.getElementById('desktopUpdateDownloadBtn');
+    if (!window.electronAPI || !window.electronAPI.onDesktopUpdateAvailable || !banner) return;
+    var pending = null;
+    window.electronAPI.onDesktopUpdateAvailable(function (p) {
+      pending = p;
+      var msg = p.message || 'A newer version of Interview Genie is available.';
+      if (textEl) {
+        textEl.textContent = msg + ' (This app: v' + p.currentVersion + ' — Latest: v' + p.latestVersion + ').';
+      }
+      banner.hidden = false;
+      if (laterBtn) laterBtn.style.display = p.mandatory ? 'none' : '';
+    });
+    if (laterBtn) {
+      laterBtn.addEventListener('click', function () {
+        if (pending && window.electronAPI.dismissDesktopUpdate) {
+          window.electronAPI.dismissDesktopUpdate(pending.latestVersion);
+        }
+        banner.hidden = true;
+      });
+    }
+    if (dlBtn) {
+      dlBtn.addEventListener('click', function () {
+        var url = pending && pending.downloadPage;
+        if (url && window.electronAPI.openExternalUrl) {
+          window.electronAPI.openExternalUrl(url);
+        }
+      });
+    }
+  })();
+
   var chunkInterval = null;
   var lastChunkSendSamples = 0;
   var levelStream = null;
@@ -1684,6 +1746,23 @@
   }
 
   function setStatus(msg) { statusEl.textContent = msg; }
+  function setAuthUserLabel(session) {
+    if (!authUserLabel) return;
+    if (session && session.loggedIn && session.user && session.user.sub) {
+      var email = session.user.email || '';
+      authUserLabel.textContent = email ? ('Signed in: ' + email) : ('Signed in: ' + session.user.sub);
+    } else {
+      authUserLabel.textContent = 'Not signed in';
+    }
+  }
+  function refreshAuthSessionUI() {
+    if (!(window.electronAPI && window.electronAPI.authSession)) return;
+    window.electronAPI.authSession().then(function (s) {
+      setAuthUserLabel(s || {});
+    }).catch(function () {
+      setAuthUserLabel({});
+    });
+  }
   function showError(msg) {
     errorSection.hidden = false;
     if (msg && msg.indexOf('No speech detected') !== -1) {
@@ -1882,6 +1961,34 @@
     typedQuestionInput.addEventListener('focus', function() { hideError(); });
     typedQuestionInput.addEventListener('input', function() { hideError(); });
   }
+  if (authSignInBtn && window.electronAPI && window.electronAPI.authLogin) {
+    authSignInBtn.addEventListener('click', function () {
+      setStatus('Opening Auth0 login…');
+      window.electronAPI.authLogin().then(function (res) {
+        if (res && res.error) {
+          setStatus('');
+          showError(res.error);
+          return;
+        }
+        refreshAuthSessionUI();
+        setStatus('Signed in.');
+      }).catch(function (e) {
+        setStatus('');
+        showError(e && e.message ? e.message : 'Auth login failed.');
+      });
+    });
+  }
+  if (authSignOutBtn && window.electronAPI && window.electronAPI.authLogout) {
+    authSignOutBtn.addEventListener('click', function () {
+      window.electronAPI.authLogout().then(function () {
+        refreshAuthSessionUI();
+        setStatus('Signed out.');
+      }).catch(function () {
+        refreshAuthSessionUI();
+      });
+    });
+  }
+  refreshAuthSessionUI();
 })();
   </script>
 </body>

@@ -36,6 +36,13 @@ export type ResultSession = {
   strengths: string[];
   weaknesses: string[];
   feedback: string;
+  qaReview?: Array<{
+    orderIndex: number;
+    question: string;
+    answer: string;
+    aiSuggestion: string;
+    improvedAnswer?: string;
+  }>;
   topicId: string;
   attemptId: string;
 };
