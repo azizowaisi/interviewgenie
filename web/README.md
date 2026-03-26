@@ -34,6 +34,10 @@ App runs on **http://localhost:3002** (avoids clashing with other services on 30
 - **`MONITORING_URL`** — monitoring FastAPI (default `http://127.0.0.1:3001`) via **`/api/mon/*`**.
 - **`MONITORING_ADMIN_TOKEN`** — sent server-side as `X-Admin-Token` when the monitoring API requires it.
 
+Auth0 (login / signup)
+- Auth0 config is optional (`AUTH0_*`). When configured, the website requires login for the interview flows.
+- Environment variables live in `web/.env.example`.
+
 ### Spec-style endpoints (same origin)
 
 - `POST /api/start-interview` — creates topic + attempt (CV still via `POST /api/app/topics/{id}/cv`).

@@ -28,11 +28,24 @@ function subscores(overall10: number) {
   };
 }
 
+function splitStarSuggestions(raw: string) {
+  const lines = raw
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const starLines = lines
+    .map((l) => l.replace(/^STAR:\s*/i, ""))
+    .filter((l) => /^(Situation|Task|Action|Result)\s*:/i.test(l));
+  const rest = lines.filter((l) => !/^STAR:\s*/i.test(l) && !/^(Situation|Task|Action|Result)\s*:/i.test(l));
+  return { starLines, rest };
+}
+
 export function ResultView() {
   const searchParams = useSearchParams();
-  const attemptId = searchParams.get("attempt");
+  const attemptId = searchParams?.get("attempt") ?? null;
   const [data, setData] = useState<ResultSession | null>(null);
   const [loading, setLoading] = useState(!!attemptId);
+  const [qaReview, setQaReview] = useState<ResultSession["qaReview"]>(undefined);
 
   useEffect(() => {
     if (!attemptId) {
@@ -49,11 +62,29 @@ export function ResultView() {
           topic_id: string;
           score: number | null;
           evaluation_summary?: string | null;
+          questions?: Array<{
+            id: string;
+            question: string;
+            answer: string | null;
+            order_index: number;
+            ai_suggestion?: string | null;
+            improved_answer?: string | null;
+          }>;
         };
         if (cancelled) return;
         const score = typeof j.score === "number" ? j.score : 0;
         const summary = (j.evaluation_summary || "").trim();
         const { strengths, weaknesses } = splitFeedback(summary || "No detailed feedback stored.");
+        const review = (j.questions || [])
+          .filter((q) => (q.ai_suggestion || "").trim().length > 0)
+          .map((q) => ({
+            orderIndex: q.order_index ?? 0,
+            question: q.question || "",
+            answer: q.answer || "",
+            aiSuggestion: (q.ai_suggestion || "").trim(),
+            improvedAnswer: (q.improved_answer || "").trim() || undefined,
+          }));
+        setQaReview(review.length ? review : undefined);
         setData({
           ...subscores(score),
           strengths,
@@ -141,6 +172,53 @@ export function ResultView() {
             <p className="mb-2 text-sm font-medium">AI feedback</p>
             <p className="rounded-xl bg-secondary/30 p-4 text-sm leading-relaxed text-muted-foreground">{data.feedback}</p>
           </div>
+          {(qaReview?.length || data.qaReview?.length) ? (
+            <div className="grid gap-3">
+              <p className="text-sm font-medium">Question-by-question improvements</p>
+              {(qaReview ?? data.qaReview ?? []).map((q) => {
+                const { starLines, rest } = splitStarSuggestions(q.aiSuggestion || "");
+                return (
+                  <details
+                    key={`${q.orderIndex}-${q.question.slice(0, 24)}`}
+                    className="group rounded-xl border border-border bg-secondary/10 p-4"
+                  >
+                    <summary className="cursor-pointer select-none text-sm font-medium">
+                      Q{q.orderIndex + 1}. {q.question || "—"}
+                    </summary>
+                    <div className="mt-4 grid gap-3">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">Your answer</p>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{q.answer || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">AI improvement (STAR)</p>
+                        {starLines.length ? (
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {starLines.map((line) => (
+                              <div key={line} className="rounded-xl border border-border bg-background/40 p-3 text-sm">
+                                {line}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1 whitespace-pre-wrap text-sm">{q.aiSuggestion || "—"}</p>
+                        )}
+                        {rest.length ? (
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{rest.join("\n")}</p>
+                        ) : null}
+                      </div>
+                      {q.improvedAnswer ? (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground">Example improved answer</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{q.improvedAnswer}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          ) : null}
           <Button asChild className="w-fit">
             <Link href="/interview">Retake Interview</Link>
           </Button>

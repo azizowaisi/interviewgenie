@@ -2,19 +2,31 @@
   "name": "interview-genie-desktop",
   "version": "0.1.0",
   "description": "AI Real-Time Interview Assistant - Desktop",
+  "author": "Interview Genie",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "electron-builder --publish never",
+    "dist:publish-web": "electron-builder --publish never && node scripts/sync-web-downloads.mjs"
   },
   "build": {
     "appId": "com.interviewgenie.desktop",
     "productName": "Interview Genie",
     "directories": { "output": "dist" },
-    "linux": { "target": ["appimage"] },
-    "mac": { "target": ["dmg"], "category": "public.app-category.productivity" },
-    "win": { "target": ["nsis"] }
+    "linux": {
+      "target": ["appimage"],
+      "artifactName": "InterviewGenie-linux.${ext}"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.productivity",
+      "artifactName": "InterviewGenie-macos.${ext}"
+    },
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "InterviewGenie-windows.${ext}"
+    }
   },
   "dependencies": {
     "ws": "^8.20.0"

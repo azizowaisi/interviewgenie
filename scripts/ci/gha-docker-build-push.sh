@@ -51,10 +51,11 @@ if need BUILD_FORMATTER_SERVICE; then build_one ./backend/formatter-service form
 if need BUILD_MONITORING_SERVICE; then build_one ./backend/monitoring-service monitoring-service monitoring-service; fi
 
 if need BUILD_WEB; then
-  PUB="${WEB_PUBLIC_APP_URL:-https://interviewgenie.teckiz.com}"
-  ADM_SITE="${WEB_ADMIN_SITE_URL:-https://admin.interviewgenie.teckiz.com}"
-  ADM_HOSTS="${WEB_ADMIN_HOSTS:-admin.interviewgenie.teckiz.com}"
-  MAIN_HOSTS="${WEB_MAIN_APP_HOSTS:-interviewgenie.teckiz.com,www.interviewgenie.teckiz.com}"
+  PUB="${WEB_PUBLIC_APP_URL:-}"
+  PUB="${PUB:-http://localhost:3002}"
+  ADM_SITE="${WEB_ADMIN_SITE_URL:-}"
+  ADM_HOSTS="${WEB_ADMIN_HOSTS:-}"
+  MAIN_HOSTS="${WEB_MAIN_APP_HOSTS:-}"
   echo "Web NEXT_PUBLIC_* PUB=$PUB ADM_SITE=$ADM_SITE"
   build_one ./web web web \
     --build-arg "NEXT_PUBLIC_PUBLIC_APP_URL=${PUB}" \
