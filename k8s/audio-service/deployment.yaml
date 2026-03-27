@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: audio-service
-          image: interview-ai/audio-service:latest
+          image: azizowaisi/interview-ai-audio-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

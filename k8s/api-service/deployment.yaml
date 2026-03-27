@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: api-service
-          image: interview-ai/api-service:latest
+          image: azizowaisi/interview-ai-api-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8001
