@@ -117,6 +117,13 @@ sudo k3s kubectl get nodes
 sudo cat /etc/rancher/k3s/k3s.yaml
 ```
 
+### Mongo disk size (fresh cluster only)
+
+Mongo’s PVC size is defined in the `StatefulSet` `volumeClaimTemplates`, which is **immutable once created**.
+
+- Existing clusters: **do not change** `k8s/mongo/statefulset.yaml` storage size; it will break `kubectl apply -k`.
+- Fresh clusters: if you want **5Gi**, use `k8s/mongo/statefulset-5gi.example.yaml` (apply it once *before* the first `kubectl apply -k k8s/`), or edit the storage request before the initial deploy.
+
 Make the kubeconfig usable from your machine (or from GitHub Actions):
 
 - Replace `127.0.0.1` with your VM’s **public IP** (or a hostname that resolves to it), so the Actions runner can reach the API server.
