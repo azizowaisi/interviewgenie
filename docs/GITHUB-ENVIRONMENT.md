@@ -22,10 +22,12 @@ Set as **repository Variables** (recommended) unless you treat hostnames as sens
 
 Used by: `build-and-deploy.yml`, `ci.yml` (matrix web build), `gha-build-single-image.sh`, `gha-docker-build-push.sh`.
 
-**Auth0** (`AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`, `AUTH0_BASE_URL`) are **not** passed from GitHub in the current workflows. Add them either:
+**Auth0/app server env** are passed by CI when set in GitHub:
+`AUTH0_DOMAIN`, `AUTH0_ISSUER_BASE_URL`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`,
+`AUTH0_SECRET`, `AUTH0_BASE_URL`, `APP_BASE_URL`.
 
-- as **extra Docker build-args** in the workflow / `gha-build-single-image.sh`, or  
-- as **Kubernetes env** from a Secret on the `web` Deployment (runtime).
+You can also provide runtime fallback through Kubernetes secret `web-auth0-env`
+(`k8s/web-service/deployment.yaml` uses optional `envFrom.secretRef`).
 
 Do **not** commit real Auth0 secrets to the repo.
 
@@ -48,6 +50,19 @@ Do **not** commit real Auth0 secrets to the repo.
 | `DEPLOY_MODE` | Variable *or* Secret | See header comment in `build-and-deploy.yml` (`remote`, `self_hosted`, `ssh`, `none`, …). |
 | `KUBE_CONFIG` | **Secret** | Base64 kubeconfig (some jobs expect `KUBE_CONFIG_B64` style usage — follow your workflow). |
 | `K8S_AUTO_RECOVER_IMAGE_PULL` | Variable | Optional; `true` to run recovery script on ImagePullBackOff. |
+
+### Web Auth0 runtime (recommended for k8s)
+
+Create secret `web-auth0-env` in namespace `interview-ai` with:
+
+- `AUTH0_DOMAIN`
+- `AUTH0_ISSUER_BASE_URL`
+- `AUTH0_CLIENT_ID`
+- `AUTH0_CLIENT_SECRET`
+- `AUTH0_SECRET`
+- `AUTH0_BASE_URL`
+- `APP_BASE_URL`
+- `NEXT_PUBLIC_PUBLIC_APP_URL` (optional; usually already baked at build)
 
 ---
 

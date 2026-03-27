@@ -7,6 +7,8 @@
 # Required env: DH_USER, IMAGE_TAG (e.g. sha-abc123def456)
 # Optional: PLATFORMS (CI sets this; default matches workflow: multi-arch)
 # Optional web build-args: WEB_PUBLIC_APP_URL, WEB_ADMIN_SITE_URL, WEB_ADMIN_HOSTS, WEB_MAIN_APP_HOSTS
+# Optional Auth0/app build-args for web: AUTH0_DOMAIN, AUTH0_ISSUER_BASE_URL, AUTH0_CLIENT_ID,
+#   AUTH0_CLIENT_SECRET, AUTH0_SECRET, AUTH0_BASE_URL, APP_BASE_URL
 set -euo pipefail
 
 SLUG="${IMAGE_SLUG:?IMAGE_SLUG is required}"
@@ -46,6 +48,13 @@ if [[ "${SLUG}" == "web" ]]; then
   ADM_SITE="${WEB_ADMIN_SITE_URL:-}"
   ADM_HOSTS="${WEB_ADMIN_HOSTS:-}"
   MAIN_HOSTS="${WEB_MAIN_APP_HOSTS:-}"
+  AUTH0_DOMAIN_VAL="${AUTH0_DOMAIN:-}"
+  AUTH0_ISSUER_BASE_URL_VAL="${AUTH0_ISSUER_BASE_URL:-}"
+  AUTH0_CLIENT_ID_VAL="${AUTH0_CLIENT_ID:-}"
+  AUTH0_CLIENT_SECRET_VAL="${AUTH0_CLIENT_SECRET:-}"
+  AUTH0_SECRET_VAL="${AUTH0_SECRET:-}"
+  AUTH0_BASE_URL_VAL="${AUTH0_BASE_URL:-$PUB}"
+  APP_BASE_URL_VAL="${APP_BASE_URL:-$PUB}"
   echo "Web NEXT_PUBLIC_* PUB=$PUB ADM_SITE=$ADM_SITE"
   docker buildx build \
     --platform "${PLATFORMS}" \
@@ -57,6 +66,13 @@ if [[ "${SLUG}" == "web" ]]; then
     --build-arg "NEXT_PUBLIC_ADMIN_SITE_URL=${ADM_SITE}" \
     --build-arg "NEXT_PUBLIC_ADMIN_HOSTS=${ADM_HOSTS}" \
     --build-arg "NEXT_PUBLIC_MAIN_APP_HOSTS=${MAIN_HOSTS}" \
+    --build-arg "AUTH0_DOMAIN=${AUTH0_DOMAIN_VAL}" \
+    --build-arg "AUTH0_ISSUER_BASE_URL=${AUTH0_ISSUER_BASE_URL_VAL}" \
+    --build-arg "AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID_VAL}" \
+    --build-arg "AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET_VAL}" \
+    --build-arg "AUTH0_SECRET=${AUTH0_SECRET_VAL}" \
+    --build-arg "AUTH0_BASE_URL=${AUTH0_BASE_URL_VAL}" \
+    --build-arg "APP_BASE_URL=${APP_BASE_URL_VAL}" \
     "${CONTEXT_DIR}"
 else
   docker buildx build \
