@@ -22,7 +22,6 @@ spec:
     spec:
       containers:
         - name: mongo
-          # Use 8.0.x line to upgrade from FCV 7.0 on-disk; `mongo:8` may track 8.2+ which rejects FCV 7.0 without prior upgrade.
           image: mongo:8.0
           imagePullPolicy: IfNotPresent
           ports:
@@ -31,24 +30,13 @@ spec:
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
-              memory: "1Gi"
-              cpu: "1000m"
-          livenessProbe:
-            exec:
-              command: ["mongosh", "--eval", "db.adminCommand('ping')"]
-            initialDelaySeconds: 30
-            periodSeconds: 10
+  # Fresh cluster only: create PVC at 5Gi.
+  # This cannot be applied to an existing StatefulSet (volumeClaimTemplates are immutable).
   volumeClaimTemplates:
     - metadata:
         name: mongo-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        # volumeClaimTemplates are immutable after create; keep this stable for existing clusters.
         resources:
           requests:
-            storage: 10Gi
+            storage: 5Gi
