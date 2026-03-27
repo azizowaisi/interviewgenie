@@ -25,7 +25,7 @@ spec:
       serviceAccountName: monitoring-service
       containers:
         - name: monitoring-service
-          image: interview-ai/monitoring-service:latest
+          image: azizowaisi/interview-ai-monitoring-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3001
