@@ -6,7 +6,7 @@
 # When both Hub env vars are set: creates pull secret + patches SAs so cluster pulls (mongo, app images) use authenticated Hub (higher rate limits).
 # Optional: K8S_IMAGE_TAG — CI uses sha-<full github sha>; local default latest if unset when set_image runs.
 # Optional: K8S_SKIP_SET_IMAGE=1 — no new tag this run (CI skips set image). We snapshot live images before
-#   `kubectl apply -k` and restore them after, so manifest placeholders (interview-ai/*:latest) do not clobber Hub tags.
+#   `kubectl apply -k` and restore them after, so apply does not clobber currently pinned sha-* tags.
 # Optional: K8S_AUTO_RECOVER_IMAGE_PULL — if 1/true/yes and pods show ImagePullBackOff/ErrImagePull after apply,
 #   run scripts/k8s-recover-stuck-rollouts.sh --apply (GitHub: set repository Variable of the same name).
 # Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
@@ -138,8 +138,8 @@ elif [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
   if [[ "$restored" -gt 0 ]]; then
     echo "Restored ${restored} deployment image ref(s) from pre-apply snapshot."
   else
-    echo "WARN: Manifests use placeholder names (e.g. interview-ai/web:latest). No snapshot to restore —"
-    echo "WARN: if the node cannot pull them, pods stay ImagePullBackOff and Traefik returns 502."
+    echo "WARN: No snapshot to restore deployment image refs after apply —"
+    echo "WARN: if this run changed images to a tag that was not pushed, pods can stay ImagePullBackOff and Traefik returns 502."
     echo "WARN: Run a workflow that builds/pushes images, or: DOCKERHUB_USERNAME=you ./scripts/deploy-k3s.sh"
     echo "WARN: Diagnose: ./scripts/k8s-diagnose-interview-ai.sh"
   fi
