@@ -8,7 +8,7 @@ export default function HistoryPage() {
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold md:text-3xl">Interview history</h1>
         <Button variant="outline" asChild>
-          <Link href="/interview">New interview</Link>
+          <Link href="/interview">Start page</Link>
         </Button>
       </div>
       <HistoryTable />

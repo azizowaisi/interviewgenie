@@ -45,7 +45,7 @@ spec:
                   name: monitoring-admin
                   key: ADMIN_TOKEN
                   optional: true
-            # NEXT_PUBLIC_* for host routing + outbound links are set at docker build (see web/Dockerfile).
+            # NEXT_PUBLIC_* for host routing + outbound links are baked at docker build — pass build-args in CI for production URLs.
           resources:
             requests:
               memory: "128Mi"

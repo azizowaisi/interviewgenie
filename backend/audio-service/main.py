@@ -8,7 +8,7 @@ import io
 import json
 import os
 import time
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import httpx
@@ -52,16 +52,29 @@ async def mock_analyze(body: MockAnalyzeRequest) -> JSONResponse:
     """Get LLM feedback and suggestions on a mock interview answer."""
     if not (body.question.strip() and body.answer.strip()):
         return JSONResponse({"error": "question and answer are required"}, status_code=400)
-    prompt = f"""You are an interview coach. Review this interview Q&A and give concise feedback.
+    prompt = f"""You are an interview coach. Review this interview Q&A and produce improvements.
 
 Question: {body.question.strip()}
 
 Candidate's answer: {body.answer.strip()}
 
-Provide:
-1) Brief feedback (2-3 sentences) on clarity, relevance, and impact.
-2) 2-3 specific suggestions to strengthen the answer (e.g. add a metric, use STAR more clearly).
-Keep the total response under 150 words. Be constructive and specific."""
+Return ONLY valid JSON with these fields:
+{{
+  "feedback": "2-3 sentences on clarity/relevance/impact",
+  "suggestions": [
+    "STAR: Situation: ...",
+    "STAR: Task: ...",
+    "STAR: Action: ...",
+    "STAR: Result: ..."
+  ],
+  "improved_answer": "A rewritten improved answer in STAR format (max 140 words) in first person, with explicit labels Situation/Task/Action/Result"
+}}
+
+Rules:
+- Keep it realistic and based on the user's answer (don't invent achievements).
+- If the answer lacks metrics, use placeholders like \"reduced latency by X%\" or \"saved ~X hours/week\" (do not fabricate).
+- The suggestions MUST be STAR items (Situation/Task/Action/Result). If something is unknown, write a placeholder the user can fill.
+- No markdown, no extra keys, no prose outside JSON."""
     try:
         async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
             r = await client.post(
@@ -70,7 +83,18 @@ Keep the total response under 150 words. Be constructive and specific."""
             )
             r.raise_for_status()
             raw = (r.json().get("raw_answer") or "").strip()
-            return JSONResponse({"feedback": raw})
+            # Best-effort parse; fallback to a minimal structure.
+            try:
+                j = json.loads(raw)
+                feedback = (j.get("feedback") or "").strip()
+                suggestions = j.get("suggestions") or []
+                if not isinstance(suggestions, list):
+                    suggestions = []
+                suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:5]
+                improved = (j.get("improved_answer") or "").strip()
+                return JSONResponse({"feedback": feedback, "suggestions": suggestions, "improved_answer": improved})
+            except Exception:
+                return JSONResponse({"feedback": raw, "suggestions": [], "improved_answer": ""})
     except Exception as e:
         return JSONResponse({"error": (str(e) or "LLM unavailable")[:200]}, status_code=500)
 
@@ -192,6 +216,48 @@ class AttemptForCompare(BaseModel):
 class CompareAttemptsRequest(BaseModel):
     attempt_1: AttemptForCompare
     attempt_2: AttemptForCompare
+
+
+class LiveAnswerRequest(BaseModel):
+    question: str = ""
+    cv_context: str | None = None
+    job_description: str | None = None
+
+
+@app.post("/live/answer")
+async def live_answer(body: LiveAnswerRequest) -> JSONResponse:
+    """Generate a STAR-style answer for a live interview question."""
+    question = (body.question or "").strip()
+    if not question:
+        return JSONResponse({"error": "question is required"}, status_code=400)
+    try:
+        result = await run_pipeline_from_text(
+            question,
+            cv_context=(body.cv_context or None),
+            job_description=(body.job_description or None),
+        )
+        if not result:
+            return JSONResponse({"error": "pipeline_returned_nothing"}, status_code=500)
+        if "error" in result:
+            return JSONResponse(result, status_code=500)
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse({"error": f"live_answer_failed: {str(e)[:120]}"}, status_code=500)
+
+
+@app.post("/live/transcribe")
+async def live_transcribe(file: UploadFile = File(...)) -> JSONResponse:
+    """Transcribe a short WAV clip (e.g. from browser tab/system audio capture)."""
+    data = await file.read()
+    if not data:
+        return JSONResponse({"error": "empty audio"}, status_code=400)
+    try:
+        tr = await run_transcribe_only(data)
+        if tr.get("error"):
+            return JSONResponse({"text": (tr.get("text") or "").strip(), "error": tr["error"]})
+        return JSONResponse({"text": (tr.get("text") or "").strip()})
+    except Exception as e:
+        return JSONResponse({"error": f"live_transcribe_failed: {str(e)[:120]}"}, status_code=500)
 
 
 def _parse_metric(line: str, prefix: str) -> float | None:
