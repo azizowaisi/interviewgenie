@@ -2,11 +2,13 @@ import Link from "next/link";
 import { auth0 } from "@/lib/auth0";
 import { Button } from "@/components/ui/button";
 import { getPublicAppOriginForRequest } from "@/lib/public-app-origin";
+import { getPublicAppOriginFromEnv } from "@/lib/site-url";
 
 export async function SiteHeader() {
   const session = await auth0.getSession();
   const loggedIn = !!session?.user?.sub;
-  const appBaseUrl = await getPublicAppOriginForRequest();
+  // Prefer explicit env in production to avoid proxy header quirks.
+  const appBaseUrl = getPublicAppOriginFromEnv() || (await getPublicAppOriginForRequest());
   const logoutReturnTo = appBaseUrl ? `${appBaseUrl}/` : "";
   const logoutHref = logoutReturnTo
     ? `/auth/logout?returnTo=${encodeURIComponent(logoutReturnTo)}`
