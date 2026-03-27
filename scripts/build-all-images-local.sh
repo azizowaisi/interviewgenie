@@ -43,10 +43,11 @@ else
   OUTPUT=(--load)
 fi
 
-PUB="${WEB_PUBLIC_APP_URL:-https://interviewgenie.teckiz.com}"
-ADM_SITE="${WEB_ADMIN_SITE_URL:-https://admin.interviewgenie.teckiz.com}"
-ADM_HOSTS="${WEB_ADMIN_HOSTS:-admin.interviewgenie.teckiz.com}"
-MAIN_HOSTS="${WEB_MAIN_APP_HOSTS:-interviewgenie.teckiz.com,www.interviewgenie.teckiz.com}"
+PUB="${WEB_PUBLIC_APP_URL:-}"
+PUB="${PUB:-http://localhost:3002}"
+ADM_SITE="${WEB_ADMIN_SITE_URL:-}"
+ADM_HOSTS="${WEB_ADMIN_HOSTS:-}"
+MAIN_HOSTS="${WEB_MAIN_APP_HOSTS:-}"
 
 need_docker() {
   command -v docker >/dev/null 2>&1 || {

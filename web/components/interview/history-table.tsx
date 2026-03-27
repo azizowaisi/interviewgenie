@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type Topic = { id: string; topic: string; created_at: string };
+type Topic = { id: string; topic: string; company_name?: string | null; created_at: string };
 type Attempt = {
   id: string;
   attempt_number: number;
@@ -98,7 +98,7 @@ export function HistoryTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Interview topic</TableHead>
+              <TableHead>Job title</TableHead>
               <TableHead>Attempts</TableHead>
               <TableHead>Score</TableHead>
               <TableHead>Date</TableHead>
@@ -108,7 +108,12 @@ export function HistoryTable() {
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.topic.id}>
-                <TableCell className="font-medium">{r.topic.topic}</TableCell>
+                <TableCell className="font-medium">
+                  {r.topic.topic}
+                  {r.topic.company_name ? (
+                    <p className="text-xs font-normal text-muted-foreground">{r.topic.company_name}</p>
+                  ) : null}
+                </TableCell>
                 <TableCell>{r.attempts}</TableCell>
                 <TableCell>
                   {r.bestScore != null ? (
@@ -128,7 +133,7 @@ export function HistoryTable() {
                       </Link>
                     </Button>
                     <Button size="sm" asChild>
-                      <Link href="/interview">Retake</Link>
+                      <Link href="/mock">Retake</Link>
                     </Button>
                   </div>
                 </TableCell>

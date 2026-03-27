@@ -1,4 +1,5 @@
 # Push to main + manual dispatch — tests (when relevant), conditional image build/push, deploy.
+# Desktop installers are built separately — see `.github/workflows/desktop-installers.yml`.
 # PR validation: ci.yml (multi-arch Docker Hub push for changed paths: tag pr-<#>-<headSha>).
 # Merge still builds sha-<mergeCommit> — deploy pins that immutable tag; it differs from PR head SHA.
 #

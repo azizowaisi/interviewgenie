@@ -30,6 +30,33 @@ Backend: `docker compose --profile ollama up -d` from the repo root.
 
 The main process uses Node’s `https` module for `https://` URLs automatically.
 
+## Auth0 desktop login (same identity as website)
+
+Desktop supports Auth0 login and uses the same user identity (`sub`) for all API/WS calls.
+
+Required env vars:
+
+| Variable | Description |
+|----------|-------------|
+| `INTERVIEWGENIE_AUTH0_ISSUER_BASE_URL` | Auth0 issuer URL (e.g. `https://your-tenant.us.auth0.com`) |
+| `INTERVIEWGENIE_AUTH0_CLIENT_ID` | Auth0 application client id |
+| `INTERVIEWGENIE_AUTH0_CALLBACK_URL` | Callback URL registered in Auth0 app |
+
+Optional:
+
+| Variable | Description |
+|----------|-------------|
+| `INTERVIEWGENIE_AUTH0_AUDIENCE` | Audience if your tenant uses API audience |
+| `INTERVIEWGENIE_USER_ID` | Fallback user id when not logged in (default: `default`) |
+
+For local testing, callback can be:
+
+```bash
+INTERVIEWGENIE_AUTH0_CALLBACK_URL=http://127.0.0.1:9090/auth/callback
+```
+
+For production, set `INTERVIEWGENIE_AUTH0_CALLBACK_URL` to your production callback URL (do not use localhost).
+
 ### TLS errors (`unable to verify the first certificate`)
 
 Your server may still be on **Traefik’s default self-signed** cert until **Let’s Encrypt** succeeds (see repo `k8s/ingress/ingressroute.yaml` + real ACME email in `k8s/traefik/helmchartconfig.yaml`, port **80** open).
@@ -77,4 +104,22 @@ Some setups see `require('electron')` return the binary path instead of the Elec
 
 - `npm start` – Run the app (Electron + local backend URL).
 - `npm run pack` – Build without installer.
-- `npm run dist` – Build installers (DMG on macOS, etc.).
+- `npm run dist` – Build installers **for the OS you run the command on** (DMG on macOS, NSIS `.exe` on Windows, AppImage on Linux). You do not get all three from one machine.
+- `npm run dist:publish-web` – After `dist`, copy built file(s) into `../../web/public/desktop/` (still only the current OS).
+
+## Windows and Linux installers (all platforms)
+
+To produce **macOS, Windows, and Linux** artifacts together, use GitHub Actions:
+
+1. Repo workflow **Desktop installers** (`.github/workflows/desktop-installers.yml`).
+2. Push to `main` (with changes under `clients/electron-app/` or `web/`) or run it manually (**Actions → Desktop installers → Run workflow**).
+
+It builds in parallel on `macos-latest`, `windows-latest`, and `ubuntu-24.04`, then merges:
+
+| OS | Artifact (in `dist/` or download volume) |
+|----|--------------------------------------------|
+| macOS | `InterviewGenie-macos.dmg` |
+| Windows | `InterviewGenie-windows.exe` (NSIS installer) |
+| Linux | `InterviewGenie-linux.AppImage` |
+
+Point the website download buttons at your hosted URLs (or use `NEXT_PUBLIC_DESKTOP_DOWNLOAD_*` / JSON). See repo root workflow comments for rsync to a static volume.

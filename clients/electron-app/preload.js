@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  authSession: () => ipcRenderer.invoke('auth-session'),
+  authLogin: () => ipcRenderer.invoke('auth-login'),
+  authLogout: () => ipcRenderer.invoke('auth-logout'),
   sendAudio: (url, audioBytes) => ipcRenderer.invoke('send-audio', url, audioBytes),
   startAudioSession: (url, cvId, topicId) => ipcRenderer.invoke('start-audio-session', url, cvId, topicId),
   sendAudioSegment: (audioBytes) => ipcRenderer.invoke('send-audio-segment', audioBytes),
@@ -39,4 +42,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   generateQuestions: (audioBase, jobDescription, cvText, previousQuestions, interviewType, numQuestions) => ipcRenderer.invoke('generate-questions', audioBase, jobDescription, cvText, previousQuestions, interviewType, numQuestions),
   evaluateAttempt: (audioBase, questionsAndAnswers) => ipcRenderer.invoke('evaluate-attempt', audioBase, questionsAndAnswers),
   compareAttempts: (audioBase, attempt1Data, attempt2Data) => ipcRenderer.invoke('compare-attempts', audioBase, attempt1Data, attempt2Data),
+  onDesktopUpdateAvailable: (cb) => {
+    ipcRenderer.on('desktop-update-available', (_e, payload) => cb(payload));
+  },
+  dismissDesktopUpdate: (latestVersion) => ipcRenderer.invoke('dismiss-desktop-update', latestVersion),
+  openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url),
 });
