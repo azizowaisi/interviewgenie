@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: question-service
-          image: interview-ai/question-service:latest
+          image: azizowaisi/interview-ai-question-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
