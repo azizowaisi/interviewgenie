@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth0 } from "@/lib/auth0";
 import { apiBase } from "@/lib/config";
 
 type Ctx = { params: Promise<{ path: string[] }> };
@@ -11,6 +12,16 @@ async function forward(req: NextRequest, segments: string[]) {
   const headers = new Headers();
   const uid = req.headers.get("x-user-id");
   if (uid) headers.set("X-User-Id", uid);
+  const auth = req.headers.get("authorization");
+  if (auth) headers.set("Authorization", auth);
+
+  // Prefer Auth0 identity when available so data is stable across logout/login.
+  try {
+    const token = await auth0.getAccessToken();
+    if (token?.token) headers.set("Authorization", `Bearer ${token.token}`);
+  } catch {
+    // Ignore — anonymous/dev flows still use X-User-Id.
+  }
 
   const init: RequestInit = {
     method: req.method,
