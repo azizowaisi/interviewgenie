@@ -34,12 +34,21 @@ export function HistoryTable() {
     (async () => {
       try {
         const tr = await appFetch("/topics");
-        if (!tr.ok) throw new Error(await tr.text());
+        if (!tr.ok) {
+          // If the backend is running in Auth0 mode and the browser has no session yet,
+          // treat history as empty rather than showing a scary error.
+          if (tr.status === 401 || tr.status === 403) {
+            if (!cancelled) setRows([]);
+            return;
+          }
+          throw new Error(await tr.text());
+        }
         const topics = (await tr.json()) as Topic[];
         const enriched = await Promise.all(
           topics.map(async (topic) => {
             const ar = await appFetch(`/topics/${topic.id}/attempts`);
-            const attempts: Attempt[] = ar.ok ? await ar.json() : [];
+            const attempts: Attempt[] =
+              ar.ok ? await ar.json() : ar.status === 401 || ar.status === 403 ? [] : [];
             const scores = attempts.map((a) => a.score).filter((s): s is number => typeof s === "number");
             const bestScore = scores.length ? Math.max(...scores) : null;
             const last =

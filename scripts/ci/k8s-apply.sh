@@ -52,6 +52,23 @@ fi
 echo "=== kubectl apply -k ($NS) ==="
 kubectl apply -k "$ROOT/k8s/"
 
+# Ensure production Mongo data is never garbage-collected when PVC/StatefulSet changes.
+# local-path defaults to PV reclaimPolicy=Delete on many k3s installs.
+echo "=== Enforce Mongo PV reclaimPolicy=Retain (safe guard) ==="
+mongo_pvc="mongo-data-mongo-0"
+if kubectl get pvc "$mongo_pvc" -n "$NS" &>/dev/null; then
+  mongo_pv="$(kubectl get pvc "$mongo_pvc" -n "$NS" -o jsonpath='{.spec.volumeName}' 2>/dev/null || true)"
+  if [[ -n "${mongo_pv:-}" ]]; then
+    kubectl patch pv "$mongo_pv" --type=merge \
+      -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}' >/dev/null || true
+    echo "Mongo PV ${mongo_pv}: reclaimPolicy set to Retain"
+  else
+    echo "WARN: Mongo PVC found but PV name empty; skipping reclaim policy patch." >&2
+  fi
+else
+  echo "WARN: Mongo PVC ${mongo_pvc} not found in namespace ${NS}; skipping reclaim policy patch." >&2
+fi
+
 if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ -n "${DOCKERHUB_TOKEN:-}" ]]; then
   echo "=== Docker Hub pull secret ($NS) ==="
   kubectl create secret docker-registry interview-ai-dockerhub \
