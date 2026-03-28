@@ -124,6 +124,10 @@ Mongo’s PVC size is defined in the `StatefulSet` `volumeClaimTemplates`, which
 - Existing clusters: **do not change** `k8s/mongo/statefulset.yaml` storage size; it will break `kubectl apply -k`.
 - Fresh clusters: if you want **5Gi**, use `k8s/mongo/statefulset-5gi.example.yaml` (apply it once *before* the first `kubectl apply -k k8s/`), or edit the storage request before the initial deploy.
 
+### Docker Hub rate limits (`429 Too Many Requests`)
+
+App Deployments use **`imagePullPolicy: IfNotPresent`** so the node can reuse images already in containerd and is not forced to contact Docker Hub on every sync. If you still hit **429**, ensure **`interview-ai-dockerhub`** pull Secret exists and is attached to the **`default`** ServiceAccount in **`interview-ai`**, upgrade Docker Hub, or pre-pull on the node: `sudo crictl pull docker.io/azizowaisi/interview-ai-<service>:sha-<commit>`.
+
 Make the kubeconfig usable from your machine (or from GitHub Actions):
 
 - Replace `127.0.0.1` with your VM’s **public IP** (or a hostname that resolves to it), so the Actions runner can reach the API server.

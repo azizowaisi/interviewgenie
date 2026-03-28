@@ -24,7 +24,8 @@ spec:
       containers:
         - name: api-service
           image: azizowaisi/interview-ai-api-service:latest
-          imagePullPolicy: Always
+          # IfNotPresent avoids Docker Hub rate limits on single-node k3s when :latest is re-resolved every sync.
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8001
           volumeMounts:
