@@ -36,6 +36,7 @@ clients/flutter-app/build/
 # Electron
 clients/electron-app/out/
 clients/electron-app/dist/
+clients/electron-app/.electron-cache/
 
 # Desktop installers copied for Next.js /desktop/* (run: clients/electron-app npm run dist:publish-web)
 web/public/desktop/*.dmg
