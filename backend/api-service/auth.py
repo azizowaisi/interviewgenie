@@ -25,15 +25,15 @@ async def verify_token(credentials: Optional[HTTPAuthorizationCredentials]) -> O
     """Verify JWT and return payload (sub, email, name). Return None if auth disabled or no token."""
     if not AUTH0_DOMAIN:
         return None
-    if not AUTH0_AUDIENCE:
-        if credentials:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="AUTH0_AUDIENCE is required when AUTH0_DOMAIN is set",
-            )
-        return None
     if not credentials:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization")
+        return None
+    # BFF often forwards an ID token (aud = client_id). API access tokens use AUTH0_AUDIENCE.
+    # Production had api-service with CLIENT_ID set but AUDIENCE missing from the secret → 503 on every authenticated call.
+    if not AUTH0_AUDIENCE and not AUTH0_CLIENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Set AUTH0_CLIENT_ID (and ideally AUTH0_AUDIENCE) when AUTH0_DOMAIN is set",
+        )
     try:
         import httpx
         async with httpx.AsyncClient() as client:
