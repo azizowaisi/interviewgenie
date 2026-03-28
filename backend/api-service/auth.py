@@ -9,7 +9,11 @@ from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "").rstrip("/")
-AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "")
+AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "").strip()
+# Same as the Auth0 Application "Client ID" (public). When set, we accept ID tokens
+# (aud = client_id) as well as API access tokens (aud = AUTH0_AUDIENCE) — needed if
+# the SPA session has no separate API access token yet.
+AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID", "").strip()
 security = HTTPBearer(auto_error=False)
 
 
@@ -28,19 +32,21 @@ async def verify_token(credentials: Optional[HTTPAuthorizationCredentials]) -> O
         async with httpx.AsyncClient() as client:
             r = await client.get(get_jwks_uri())
             r.raise_for_status()
-            jwks = r.json()
         from jwt import PyJWKClient
         jwk_client = PyJWKClient(get_jwks_uri())
         signing_key = jwk_client.get_signing_key_from_jwt(credentials.credentials)
+        audiences = [a for a in (AUTH0_AUDIENCE, AUTH0_CLIENT_ID) if a]
+        if not audiences:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         payload = jwt.decode(
             credentials.credentials,
             signing_key.key,
             algorithms=["RS256"],
-            audience=AUTH0_AUDIENCE,
+            audience=audiences if len(audiences) > 1 else audiences[0],
             options={"verify_exp": True},
         )
         return payload
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
