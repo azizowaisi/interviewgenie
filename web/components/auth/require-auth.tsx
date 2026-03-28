@@ -74,7 +74,18 @@ export function RequireAuth({ children }: { readonly children: ReactNode }) {
     };
   }, [router, shouldSkip, pathname]);
 
-  if (status !== "ready") return null;
+  if (status === "checking" || status === "redirecting") {
+    return (
+      <div
+        className="text-muted-foreground flex min-h-[40vh] flex-col items-center justify-center gap-2 px-4 text-sm"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <span className="border-primary h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" />
+        <span>{status === "redirecting" ? "Redirecting to sign in…" : "Checking session…"}</span>
+      </div>
+    );
+  }
   return <>{children}</>;
 }
 

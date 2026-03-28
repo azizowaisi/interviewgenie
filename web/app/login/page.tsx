@@ -7,10 +7,15 @@ type Search = {
   readonly error_description?: string;
 };
 
-export default function LoginPage({ searchParams }: { readonly searchParams: Search }) {
-  const returnTo = searchParams.returnTo || "/interview";
+export default async function LoginPage({
+  searchParams,
+}: {
+  readonly searchParams: Promise<Search>;
+}) {
+  const sp = await searchParams;
+  const returnTo = sp.returnTo || "/interview";
 
-  if (searchParams.error_description?.trim()) {
+  if (sp.error_description?.trim()) {
     return (
       <div className="mx-auto flex min-h-[60vh] max-w-lg flex-col justify-center gap-6 px-4 py-12">
         <h1 className="text-2xl font-semibold tracking-tight">Sign-in did not complete</h1>
@@ -36,6 +41,6 @@ export default function LoginPage({ searchParams }: { readonly searchParams: Sea
   }
 
   const query = new URLSearchParams({ returnTo });
-  if (searchParams.screen_hint) query.set("screen_hint", searchParams.screen_hint);
+  if (sp.screen_hint) query.set("screen_hint", sp.screen_hint);
   redirect(`/auth/login?${query.toString()}`);
 }
