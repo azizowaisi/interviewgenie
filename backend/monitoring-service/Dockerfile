@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.6
 # Build Vue admin shell, then monitoring API.
-FROM node:22-alpine AS web
+# Mirror of docker.io/library/node — avoids Docker Hub rate limits in CI.
+FROM public.ecr.aws/docker/library/node:22-alpine AS web
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
