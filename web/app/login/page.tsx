@@ -20,13 +20,13 @@ export default async function LoginPage({
       <div className="mx-auto flex min-h-[60vh] max-w-lg flex-col justify-center gap-6 px-4 py-12">
         <h1 className="text-2xl font-semibold tracking-tight">Sign-in did not complete</h1>
         <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">
-          {searchParams.error_description}
+          {sp.error_description}
         </p>
         <div className="flex flex-wrap gap-3">
           <Link
             href={`/auth/login?${new URLSearchParams({
               returnTo,
-              ...(searchParams.screen_hint ? { screen_hint: searchParams.screen_hint } : {}),
+              ...(sp.screen_hint ? { screen_hint: sp.screen_hint } : {}),
             })}`}
             className="bg-primary text-primary-foreground inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-medium"
           >
