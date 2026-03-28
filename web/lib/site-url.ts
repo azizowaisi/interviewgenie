@@ -3,11 +3,15 @@ import type { NextRequest } from "next/server";
 /**
  * Canonical public origin of the Next.js app (links, Auth0 base URL, middleware redirects).
  *
- * Resolution order (set any one; prefer the same value everywhere in a given environment):
- * 1. NEXT_PUBLIC_PUBLIC_APP_URL — primary
- * 2. NEXT_PUBLIC_SITE_URL — alias
- * 3. AUTH0_BASE_URL — server/edge only (not inlined in client bundles)
- * 4. APP_BASE_URL — same as Auth0 “application URL” in many setups
+ * Server / RSC / middleware resolution order:
+ * 1. AUTH0_BASE_URL — runtime in k8s/Docker; must match Auth0 “Application Login URI” / callbacks.
+ * 2. APP_BASE_URL — same intent, often set with Auth0.
+ * 3. NEXT_PUBLIC_PUBLIC_APP_URL — baked at build time; can stay localhost if CI build-args were wrong.
+ * 4. NEXT_PUBLIC_SITE_URL — alias for (3).
+ *
+ * Prefer (1–2) over (3–4) so production logout/redirects use the live app URL from secrets/env, not a stale baked NEXT_PUBLIC_* value.
+ *
+ * Client-only links: use {@link getPublicAppOriginClient} (NEXT_PUBLIC_* only).
  */
 
 export function stripTrailingSlash(url: string): string {
@@ -17,10 +21,10 @@ export function stripTrailingSlash(url: string): string {
 /** Server / middleware / RSC — can use AUTH0_BASE_URL / APP_BASE_URL. */
 export function getPublicAppOriginFromEnv(): string {
   const fromEnv =
-    process.env.NEXT_PUBLIC_PUBLIC_APP_URL?.trim() ||
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
     process.env.AUTH0_BASE_URL?.trim() ||
-    process.env.APP_BASE_URL?.trim();
+    process.env.APP_BASE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_PUBLIC_APP_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SITE_URL?.trim();
   return fromEnv ? stripTrailingSlash(fromEnv) : "";
 }
 
