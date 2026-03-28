@@ -20,10 +20,17 @@ function mergeSetCookieHeaders(from: Headers, to: Headers) {
 async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidecar: NextResponse) {
   try {
     const aud = process.env.AUTH0_AUDIENCE?.trim();
-    const token = aud
-      ? await auth0.getAccessToken(req, tokenSidecar, { audience: aud })
-      : await auth0.getAccessToken(req, tokenSidecar);
-    if (token?.token) headers.set("Authorization", `Bearer ${token.token}`);
+    if (aud) {
+      const at = await auth0.getAccessToken(req, tokenSidecar, { audience: aud });
+      // Only use this token if the SDK says it is for our API. Otherwise we often get the
+      // default access token (wrong aud or opaque) and skip id_token — api-service returns 401.
+      if (at?.token && at.audience?.trim() === aud) {
+        headers.set("Authorization", `Bearer ${at.token}`);
+      }
+    } else {
+      const at = await auth0.getAccessToken(req, tokenSidecar);
+      if (at?.token) headers.set("Authorization", `Bearer ${at.token}`);
+    }
   } catch {
     // getAccessToken may fail if no API access token in session — fall through to session tokens.
   }
