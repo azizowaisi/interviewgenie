@@ -7,6 +7,7 @@
 # Optional: K8S_IMAGE_TAG — CI uses sha-<full github sha>; local default latest if unset when set_image runs.
 # Optional: K8S_SKIP_SET_IMAGE=1 — no new tag this run (CI skips set image). We snapshot live images before
 #   `kubectl apply -k` and restore them after, so apply does not clobber currently pinned sha-* tags.
+# Optional: K8S_SKIP_OLLAMA_PULL — if 1/true/yes, skip `ollama pull` at end (faster deploys when model is already on disk).
 # Optional: K8S_AUTO_RECOVER_IMAGE_PULL — if 1/true/yes and pods show ImagePullBackOff/ErrImagePull after apply,
 #   run scripts/k8s-recover-stuck-rollouts.sh --apply (GitHub: set repository Variable of the same name).
 # Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
@@ -186,16 +187,23 @@ done
     esac
   fi
 
-  echo "=== Ollama model (non-fatal) ==="
-  if kubectl get deploy/ollama -n "$NS" &>/dev/null; then
-    kubectl exec -n "$NS" deploy/ollama -- ollama pull qwen2.5:0.5b
-    pull_rc=$?
-    if [[ "$pull_rc" -ne 0 ]]; then
-      echo "WARN: ollama pull exited ${pull_rc} (ignored). Pull manually: kubectl exec -n ${NS} deploy/ollama -- ollama pull qwen2.5:0.5b" >&2
-    fi
-  else
-    echo "WARN: no deploy/ollama in ${NS} — skipping model pull" >&2
-  fi
+  case "${K8S_SKIP_OLLAMA_PULL:-}" in
+    1 | true | TRUE | yes | YES)
+      echo "=== Ollama model (skipped — K8S_SKIP_OLLAMA_PULL set) ==="
+      ;;
+    *)
+      echo "=== Ollama model (non-fatal) ==="
+      if kubectl get deploy/ollama -n "$NS" &>/dev/null; then
+        kubectl exec -n "$NS" deploy/ollama -- ollama pull qwen2.5:0.5b
+        pull_rc=$?
+        if [[ "$pull_rc" -ne 0 ]]; then
+          echo "WARN: ollama pull exited ${pull_rc} (ignored). Pull manually: kubectl exec -n ${NS} deploy/ollama -- ollama pull qwen2.5:0.5b" >&2
+        fi
+      else
+        echo "WARN: no deploy/ollama in ${NS} — skipping model pull" >&2
+      fi
+      ;;
+  esac
 ) || true
 
 echo "=== Done ==="

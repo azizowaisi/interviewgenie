@@ -22,8 +22,9 @@
 #
 # See docs/DEPLOY-GIT-K8S.md, docs/GITHUB-ACTIONS-K8S-OIDC.md
 #
-# Optional repository Variable: K8S_AUTO_RECOVER_IMAGE_PULL = true
-#   After deploy, if any pod is ImagePullBackOff/ErrImagePull, run scripts/k8s-recover-stuck-rollouts.sh --apply.
+# Optional repository Variables:
+#   K8S_SKIP_OLLAMA_PULL = true — skip ollama model pull after apply (faster when model already present).
+#   K8S_AUTO_RECOVER_IMAGE_PULL = true — after deploy, if ImagePullBackOff/ErrImagePull, run k8s-recover-stuck-rollouts.sh --apply.
 
 name: Build and Deploy
 
@@ -480,6 +481,7 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
+          K8S_SKIP_OLLAMA_PULL: ${{ vars.K8S_SKIP_OLLAMA_PULL }}
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -548,6 +550,7 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
+          K8S_SKIP_OLLAMA_PULL: ${{ vars.K8S_SKIP_OLLAMA_PULL }}
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -583,11 +586,6 @@ jobs:
         if: failure()
         run: |
           echo "::error::Deploy failed. To roll back one revision: kubectl rollout undo deployment/<name> -n interview-ai"
-
-      - name: Pull Ollama model (non-fatal)
-        run: |
-          export KUBECONFIG="$HOME/.kube/config"
-          kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b || true
 
   # Explicit DEPLOY_MODE=ssh, OR default/remote with no KUBE_CONFIG but SSH secrets (typical k3s VM).
   deploy_ssh_bootstrap:
@@ -644,6 +642,7 @@ jobs:
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL || vars.LETSENCRYPT_EMAIL }}
           GITHUB_SHA: ${{ github.sha }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
+          K8S_SKIP_OLLAMA_PULL: ${{ vars.K8S_SKIP_OLLAMA_PULL }}
         run: |
           # Same as deploy_remote: sha-<commit> when images pushed; else skip set image (no :latest rollout).
           K8S_UPDATE_DEPLOYMENTS=""
@@ -677,6 +676,7 @@ jobs:
             export K8S_IMAGE_TAG=\"${K8S_IMAGE_TAG}\"
             export K8S_UPDATE_DEPLOYMENTS=\"${K8S_UPDATE_DEPLOYMENTS}\"
             export K8S_AUTO_RECOVER_IMAGE_PULL=\"${K8S_AUTO_RECOVER_IMAGE_PULL}\"
+            export K8S_SKIP_OLLAMA_PULL=\"${K8S_SKIP_OLLAMA_PULL}\"
             LE_MAIL=\"${LETSENCRYPT_EMAIL}\"
 
             if ! command -v curl >/dev/null 2>&1; then
