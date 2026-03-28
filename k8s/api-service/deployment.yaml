@@ -44,12 +44,15 @@ spec:
             # Enable per-user persistence via Auth0 JWTs (fallback: X-User-Id when missing).
             - name: AUTH0_DOMAIN
               value: "dev-q34hgwqzbjiwzodu.us.auth0.com"
-            # Set this to your Auth0 API identifier (Dashboard → APIs → Identifier).
-            # Example: https://api.interviewgenie.teckiz.com
+            # Must match web BFF and Auth0 API identifier — read from same secret as web.
             - name: AUTH0_AUDIENCE
-              value: "https://api.interviewgenie.teckiz.com"
-            # Same Client ID as the web app (public). Optional secret ref so JWT verify accepts
-            # ID tokens when no API-scoped access token exists yet.
+              valueFrom:
+                secretKeyRef:
+                  name: web-auth0-env
+                  key: AUTH0_AUDIENCE
+                  optional: true
+            # Same Client ID as the web Auth0 application (required for ID-token fallback when
+            # the session has no API access token yet; Save job / BFF).
             - name: AUTH0_CLIENT_ID
               valueFrom:
                 secretKeyRef:

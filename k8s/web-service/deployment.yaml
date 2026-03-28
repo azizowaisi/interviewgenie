@@ -45,15 +45,11 @@ spec:
                   name: monitoring-admin
                   key: ADMIN_TOKEN
                   optional: true
-            # Must match api-service AUTH0_AUDIENCE and Auth0 API identifier (BFF Bearer for /topics).
-            # Overrides web-auth0-env if the secret omits this key.
-            - name: AUTH0_AUDIENCE
-              value: "https://api.interviewgenie.teckiz.com"
           envFrom:
-            # Runtime fallback for Auth0/app URL settings.
-            # Create secret with keys: AUTH0_DOMAIN, AUTH0_ISSUER_BASE_URL, AUTH0_CLIENT_ID,
-            # AUTH0_CLIENT_SECRET, AUTH0_SECRET, AUTH0_BASE_URL, APP_BASE_URL,
-            # AUTH0_AUDIENCE (same as api-service — required for Save job / BFF Bearer token),
+            # Runtime Auth0 + BFF. Include AUTH0_AUDIENCE (Auth0 API identifier) — do not set the same
+            # var in `env` above; explicit env wins over envFrom and would ignore secret updates (401 on Save).
+            # Keys: AUTH0_DOMAIN, AUTH0_ISSUER_BASE_URL, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET,
+            # AUTH0_SECRET, AUTH0_BASE_URL, APP_BASE_URL, AUTH0_AUDIENCE (required for Save job / BFF),
             # NEXT_PUBLIC_PUBLIC_APP_URL (optional if baked in image).
             - secretRef:
                 name: web-auth0-env

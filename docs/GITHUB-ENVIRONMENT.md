@@ -67,8 +67,10 @@ Create secret `web-auth0-env` in namespace `interview-ai` with:
 - `AUTH0_SECRET`
 - `AUTH0_BASE_URL`
 - `APP_BASE_URL`
-- `AUTH0_AUDIENCE` (same value as api-service; required for API calls from the BFF)
+- **`AUTH0_AUDIENCE`** — **required** in the cluster: must equal Auth0 **APIs → Identifier**; the **web** pod reads it via `envFrom` (do not rely only on the Deployment literal — it used to override the secret). **api-service** reads the same key from this secret so web and API always match.
 - `NEXT_PUBLIC_PUBLIC_APP_URL` (optional; usually already baked at build)
+
+If you see **“Not authorized to save”**: confirm `AUTH0_AUDIENCE` is in `web-auth0-env`, matches Auth0 and `k8s/api-service` expectations, **`AUTH0_CLIENT_ID`** is present (ID-token fallback), then restart web + api pods after `kubectl apply`.
 
 ---
 
