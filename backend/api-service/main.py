@@ -153,22 +153,33 @@ async def get_user_id(
     if AUTH0_DOMAIN:
         from auth import verify_token
         from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+        from pymongo.errors import DuplicateKeyError
+
         bearer = HTTPBearer(auto_error=False)
         creds = await bearer(request)
         if not creds:
             raise HTTPException(401, "Missing authorization")
         payload = await verify_token(creds)
         auth0_id = payload.get("sub") or payload.get("auth0_id")
+        if not auth0_id:
+            raise HTTPException(401, "Token missing subject (sub)")
         users = get_users_collection()
         user = users.find_one({"auth0_id": auth0_id})
         if not user:
-            user = {
+            doc = {
                 "auth0_id": auth0_id,
                 "email": payload.get("email"),
                 "name": payload.get("name"),
                 "created_at": datetime.now(timezone.utc),
             }
-            users.insert_one(user)
+            try:
+                ins = users.insert_one(doc)
+                return str(ins.inserted_id)
+            except DuplicateKeyError:
+                user = users.find_one({"auth0_id": auth0_id})
+                if not user:
+                    raise HTTPException(503, "Could not create or load user record")
+                return str(user["_id"])
         return str(user["_id"])
     if x_user_id:
         users = get_users_collection()

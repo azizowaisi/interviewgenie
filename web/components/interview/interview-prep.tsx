@@ -40,13 +40,25 @@ export function InterviewPrep() {
         }),
       });
       if (!tRes.ok) {
-        const body = await tRes.text();
+        const raw = await tRes.text();
         if (tRes.status === 401 || tRes.status === 403) {
           throw new Error(
             "Not authorized to save. Log out and log in again. If this persists: AUTH0_AUDIENCE on web must match api-service and your Auth0 API; api-service needs AUTH0_CLIENT_ID from the same Auth0 app; use a current web deploy (BFF forwards session tokens)."
           );
         }
-        throw new Error(body || `Save failed (${tRes.status})`);
+        let msg = raw || `Save failed (${tRes.status})`;
+        try {
+          const j = JSON.parse(raw) as { detail?: string; error?: string; message?: string };
+          if (typeof j.detail === "string") msg = j.detail;
+          else if (typeof j.message === "string") msg = j.message;
+          else if (typeof j.error === "string" && j.error.startsWith("bff_")) {
+            const d = typeof j.detail === "string" ? j.detail : "";
+            msg = d ? `${j.error}: ${d}` : j.error;
+          }
+        } catch {
+          /* use raw */
+        }
+        throw new Error(msg);
       }
       const topicJson = (await tRes.json()) as { id: string };
 
@@ -57,13 +69,21 @@ export function InterviewPrep() {
         body: fd,
       });
       if (!cvRes.ok) {
-        const body = await cvRes.text();
+        const raw = await cvRes.text();
         if (cvRes.status === 401 || cvRes.status === 403) {
           throw new Error(
             "Not authorized to upload CV. Log out and log in again after AUTH0_AUDIENCE is configured."
           );
         }
-        throw new Error(body || `Upload failed (${cvRes.status})`);
+        let msg = raw || `Upload failed (${cvRes.status})`;
+        try {
+          const j = JSON.parse(raw) as { detail?: string; message?: string };
+          if (typeof j.detail === "string") msg = j.detail;
+          else if (typeof j.message === "string") msg = j.message;
+        } catch {
+          /* use raw */
+        }
+        throw new Error(msg);
       }
       setSuccess("Job and CV saved. Continue to ATS, Mock, or Live pages.");
       setJobTitle("");

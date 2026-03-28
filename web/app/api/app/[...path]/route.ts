@@ -58,7 +58,15 @@ async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidec
 
 async function forward(req: NextRequest, segments: string[]) {
   const path = segments.join("/");
-  const target = new URL(`${apiBase.replace(/\/$/, "")}/${path}`);
+  let target: URL;
+  try {
+    target = new URL(`${apiBase.replace(/\/$/, "")}/${path}`);
+  } catch {
+    return NextResponse.json(
+      { error: "bff_bad_api_base", detail: "API_URL / apiBase is not a valid URL" },
+      { status: 500 },
+    );
+  }
   target.search = req.nextUrl.search;
 
   const headers = new Headers();
@@ -70,7 +78,18 @@ async function forward(req: NextRequest, segments: string[]) {
   // Pass NextResponse so getAccessToken can persist refreshed tokens (Set-Cookie).
   // Without (req, res), App Router route handlers may not save rotation — Save Job then gets 401.
   const tokenSidecar = new NextResponse();
-  await attachBearerForApi(req, headers, tokenSidecar);
+  try {
+    await attachBearerForApi(req, headers, tokenSidecar);
+  } catch (e) {
+    console.error("[api/app] attachBearerForApi", e);
+    return NextResponse.json(
+      {
+        error: "bff_auth_attach_failed",
+        detail: e instanceof Error ? e.message : "unknown",
+      },
+      { status: 500 },
+    );
+  }
 
   const init: RequestInit = {
     method: req.method,
@@ -85,7 +104,20 @@ async function forward(req: NextRequest, segments: string[]) {
     if (ct) headers.set("Content-Type", ct);
   }
 
-  const res = await fetch(target, init);
+  let res: Response;
+  try {
+    res = await fetch(target, init);
+  } catch (e) {
+    console.error("[api/app] upstream fetch failed", target.href, e);
+    return NextResponse.json(
+      {
+        error: "bff_upstream_unreachable",
+        detail: e instanceof Error ? e.message : "fetch failed",
+        target: target.origin + target.pathname,
+      },
+      { status: 502 },
+    );
+  }
   const outHeaders = new Headers(res.headers);
   outHeaders.delete("content-encoding");
   outHeaders.delete("transfer-encoding");
@@ -97,27 +129,35 @@ async function forward(req: NextRequest, segments: string[]) {
   return out;
 }
 
+async function handle(req: NextRequest, ctx: Ctx) {
+  try {
+    const { path } = await ctx.params;
+    return await forward(req, path);
+  } catch (e) {
+    console.error("[api/app] unhandled", e);
+    return NextResponse.json(
+      { error: "bff_internal", detail: e instanceof Error ? e.message : "unknown" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function GET(req: NextRequest, ctx: Ctx) {
-  const { path } = await ctx.params;
-  return forward(req, path);
+  return handle(req, ctx);
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const { path } = await ctx.params;
-  return forward(req, path);
+  return handle(req, ctx);
 }
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
-  const { path } = await ctx.params;
-  return forward(req, path);
+  return handle(req, ctx);
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  const { path } = await ctx.params;
-  return forward(req, path);
+  return handle(req, ctx);
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  const { path } = await ctx.params;
-  return forward(req, path);
+  return handle(req, ctx);
 }
