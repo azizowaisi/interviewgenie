@@ -1,10 +1,9 @@
 # Pull requests to main — tests, frontend builds, amd64 docker-verify, and (same-repo only)
-# multi-arch Docker Hub push for changed services: tag pr-<number>-<headSha> (see build-images-pr).
+# optional multi-arch Docker Hub push: tag pr-<number>-<headSha> (see build-images-pr).
 #
-# After merge, build-and-deploy.yml still builds/pushes sha-<merge commit> — that tag is what
-# kubectl set image uses; the merge commit SHA differs from the PR head SHA, so a second push is
-# required unless you change deploy to promote/retag (not implemented here). PR pushes warm
-# registry + GHA BuildKit cache so main builds are usually much faster.
+# Policy: production images must come from main — build-and-deploy.yml pushes sha-<merge commit>,
+# which is what kubectl set image uses. Do not deploy pr-* tags to production; merge commit SHA
+# ≠ PR head SHA. PR pushes here only validate/cache; the authoritative images are built on main.
 #
 # Branch protection: require **CI / ci-gate** (aggregates backend + frontend + Docker + optional PR image push).
 name: CI
