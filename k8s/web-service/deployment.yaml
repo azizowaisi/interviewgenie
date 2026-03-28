@@ -45,6 +45,10 @@ spec:
                   name: monitoring-admin
                   key: ADMIN_TOKEN
                   optional: true
+            # Must match api-service AUTH0_AUDIENCE and Auth0 API identifier (BFF Bearer for /topics).
+            # Overrides web-auth0-env if the secret omits this key.
+            - name: AUTH0_AUDIENCE
+              value: "https://api.interviewgenie.teckiz.com"
           envFrom:
             # Runtime fallback for Auth0/app URL settings.
             # Create secret with keys: AUTH0_DOMAIN, AUTH0_ISSUER_BASE_URL, AUTH0_CLIENT_ID,
