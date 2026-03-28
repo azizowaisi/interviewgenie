@@ -17,6 +17,30 @@ function mergeSetCookieHeaders(from: Headers, to: Headers) {
   if (single) to.append("Set-Cookie", single);
 }
 
+async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidecar: NextResponse) {
+  try {
+    const aud = process.env.AUTH0_AUDIENCE?.trim();
+    const token = aud
+      ? await auth0.getAccessToken(req, tokenSidecar, { audience: aud })
+      : await auth0.getAccessToken(req, tokenSidecar);
+    if (token?.token) headers.set("Authorization", `Bearer ${token.token}`);
+  } catch {
+    // getAccessToken may fail if no API access token in session — fall through to session tokens.
+  }
+  if (headers.has("Authorization")) return;
+  try {
+    const session = await auth0.getSession(req);
+    if (!session) return;
+    const aud = process.env.AUTH0_AUDIENCE?.trim();
+    const scoped = aud ? session.accessTokens?.find((t) => t.audience === aud) : undefined;
+    const bearer =
+      scoped?.accessToken || session.tokenSet?.accessToken || session.tokenSet?.idToken;
+    if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
+  } catch {
+    // Ignore — anonymous/dev flows still use X-User-Id.
+  }
+}
+
 async function forward(req: NextRequest, segments: string[]) {
   const path = segments.join("/");
   const target = new URL(`${apiBase.replace(/\/$/, "")}/${path}`);
@@ -31,15 +55,7 @@ async function forward(req: NextRequest, segments: string[]) {
   // Pass NextResponse so getAccessToken can persist refreshed tokens (Set-Cookie).
   // Without (req, res), App Router route handlers may not save rotation — Save Job then gets 401.
   const tokenSidecar = new NextResponse();
-  try {
-    const aud = process.env.AUTH0_AUDIENCE?.trim();
-    const token = aud
-      ? await auth0.getAccessToken(req, tokenSidecar, { audience: aud })
-      : await auth0.getAccessToken(req, tokenSidecar);
-    if (token?.token) headers.set("Authorization", `Bearer ${token.token}`);
-  } catch {
-    // Ignore — anonymous/dev flows still use X-User-Id.
-  }
+  await attachBearerForApi(req, headers, tokenSidecar);
 
   const init: RequestInit = {
     method: req.method,
