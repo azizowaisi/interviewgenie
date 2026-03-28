@@ -142,10 +142,11 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.dir }}/package-lock.json
 
-      - name: npm ci & build
+      - name: npm ci, lint (web), build
         run: |
           cd "${{ matrix.dir }}"
           npm ci
+          if [ "${{ matrix.app }}" = "web" ]; then npm run lint; fi
           npm run build
 
   # One image per runner (parallel with frontend-verify and across matrix legs).

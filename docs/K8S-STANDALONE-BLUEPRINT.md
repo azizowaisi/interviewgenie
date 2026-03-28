@@ -1,4 +1,4 @@
-# Cursor AI – Kubernetes Standalone Blueprint (No Login)
+# Interview Genie – Kubernetes Standalone Blueprint (No Login)
 
 Real-time interview assistant: live voice transcription, LLM answers, CV analysis, MongoDB history. **No Auth0/login**; all data stored in Kubernetes with persistent volumes.
 
@@ -284,4 +284,4 @@ kubectl port-forward -n interview-ai svc/api-service 8001:8001
 2. **Ask questions** → WebSocket to audio-service; send `user_id`, optional `session_id`, optional `cv_id`; speak or type → live transcription and streamed LLM answer; Q&A saved via api-service.
 3. **History** → GET history/sessions/CVs from api-service with `X-User-Id: default`.
 
-This gives a **ready-to-implement Kubernetes blueprint** with persistent storage for the standalone, no-login Cursor AI.
+This gives a **ready-to-implement Kubernetes blueprint** with persistent storage for the standalone, no-login Interview Genie deployment.

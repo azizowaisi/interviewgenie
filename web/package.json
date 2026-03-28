@@ -9,7 +9,7 @@
     "dev": "next dev -p 3002",
     "build": "next build",
     "start": "next start -p 3002",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.16.0",
@@ -30,7 +30,7 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "eslint": "^10.1.0",
+    "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.1",
     "postcss": "^8.5.8",
     "tailwindcss": "3.4.19",

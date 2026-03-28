@@ -43,7 +43,7 @@ export function InterviewPrep() {
         const body = await tRes.text();
         if (tRes.status === 401 || tRes.status === 403) {
           throw new Error(
-            "Not authorized to save (API token missing). Log out and log in again. If this persists, set AUTH0_AUDIENCE on the web app to your Auth0 API identifier (same as api-service)."
+            "Not authorized to save. Log out and log in again. If this persists: AUTH0_AUDIENCE on web must match api-service and your Auth0 API; api-service needs AUTH0_CLIENT_ID from the same Auth0 app; use a current web deploy (BFF forwards session tokens)."
           );
         }
         throw new Error(body || `Save failed (${tRes.status})`);

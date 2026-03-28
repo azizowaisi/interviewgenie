@@ -5,8 +5,17 @@
 #
 # Then open: http://localhost:3002
 # APIs: 8001 (api-service), 8000 (audio), 3001 (monitoring stub), 27017 (mongo)
+#
+# Auth0 (optional): set AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLIENT_ID (+ secrets) in repo-root `.env`.
+# Same CLIENT_ID on web and api-service so ID-token fallback matches api-service JWT verification.
 
 services:
+  api-service:
+    environment:
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
+
   monitoring-local:
     build:
       context: ./backend/monitoring-local-stub
@@ -51,6 +60,7 @@ services:
       AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET:-}
       AUTH0_SECRET: ${AUTH0_SECRET:-}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
       AUTH0_BASE_URL: ${AUTH0_BASE_URL:-http://localhost:3002}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3002}
       NEXT_PUBLIC_PUBLIC_APP_URL: ${NEXT_PUBLIC_PUBLIC_APP_URL:-http://localhost:3002}

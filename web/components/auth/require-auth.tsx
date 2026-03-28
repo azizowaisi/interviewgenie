@@ -72,7 +72,7 @@ export function RequireAuth({ children }: { readonly children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [router, shouldSkip]);
+  }, [router, shouldSkip, pathname]);
 
   if (status !== "ready") return null;
   return <>{children}</>;
