@@ -79,17 +79,48 @@ jobs:
             desktop-file-utils \
             libfuse2t64
 
+      # electron-builder downloads https://github.com/electron/electron/releases/... — runners sometimes
+      # hit transient "network is unreachable" / 429. Cache + retries avoid most flakes.
+      - name: Cache Electron download (@electron/get)
+        uses: actions/cache@v4
+        with:
+          path: clients/electron-app/.electron-cache
+          key: electron-cache-${{ matrix.target }}-${{ hashFiles('clients/electron-app/package-lock.json') }}
+          restore-keys: |
+            electron-cache-${{ matrix.target }}-
+
       - name: Build desktop installer (${{ matrix.target }})
+        env:
+          ELECTRON_CACHE: ${{ github.workspace }}/clients/electron-app/.electron-cache
         run: |
           set -euo pipefail
           cd clients/electron-app
+          mkdir -p .electron-cache
           npm ci
+
+          retry_builder() {
+            local attempt=1 max=3 delay=25
+            while [ "$attempt" -le "$max" ]; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -eq "$max" ]; then
+                return 1
+              fi
+              echo "electron-builder failed (attempt ${attempt}/${max}); retrying in ${delay}s..."
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay + 20))
+            done
+          }
+
           case "${{ matrix.target }}" in
-            mac) npx electron-builder --publish never --mac ;;
-            win) npx electron-builder --publish never --win ;;
-            linux) npx electron-builder --publish never --linux ;;
+            mac) retry_builder npx electron-builder --publish never --mac ;;
+            win) retry_builder npx electron-builder --publish never --win ;;
+            linux) retry_builder npx electron-builder --publish never --linux ;;
             *) echo "Unknown target"; exit 1 ;;
           esac
+
           if [ ! -f "dist/${{ matrix.asset }}" ]; then
             echo "::error::Expected dist/${{ matrix.asset }} missing. Contents of dist/:"
             ls -la dist/ || true
