@@ -29,7 +29,9 @@ Used by: `build-and-deploy.yml`, `ci.yml` (matrix web build), `gha-build-single-
 **`AUTH0_AUDIENCE`** (Auth0 API identifier) must be set on the **web** runtime (e.g. `web-auth0-env` in k8s) and match **`api-service` `AUTH0_AUDIENCE`**, so login requests an access token and Save job works. Not read automatically by Auth0 SDK v4 — the app configures it via `Auth0Client` + `getAccessToken({ audience })`.
 
 You can also provide runtime fallback through Kubernetes secret `web-auth0-env`
-(`k8s/web-service/deployment.yaml` uses optional `envFrom.secretRef`).
+(`k8s/web-service/deployment.yaml` uses optional `envFrom.secretRef`). The same secret’s
+`AUTH0_CLIENT_ID` is mounted into **api-service** (optional ref) so the API can validate **ID tokens**
+when a browser session has no API-scoped access token yet.
 
 Do **not** commit real Auth0 secrets to the repo.
 

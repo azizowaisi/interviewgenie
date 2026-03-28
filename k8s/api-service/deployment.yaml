@@ -48,6 +48,14 @@ spec:
             # Example: https://api.interviewgenie.teckiz.com
             - name: AUTH0_AUDIENCE
               value: "https://api.interviewgenie.teckiz.com"
+            # Same Client ID as the web app (public). Optional secret ref so JWT verify accepts
+            # ID tokens when no API-scoped access token exists yet.
+            - name: AUTH0_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: web-auth0-env
+                  key: AUTH0_CLIENT_ID
+                  optional: true
           resources:
             requests:
               memory: "256Mi"
