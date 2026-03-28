@@ -82,7 +82,7 @@ jobs:
       # electron-builder downloads https://github.com/electron/electron/releases/... — runners sometimes
       # hit transient "network is unreachable" / 429. Cache + retries avoid most flakes.
       - name: Cache Electron download (@electron/get)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: clients/electron-app/.electron-cache
           key: electron-cache-${{ matrix.target }}-${{ hashFiles('clients/electron-app/package-lock.json') }}
@@ -128,7 +128,7 @@ jobs:
           fi
 
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-installer-${{ matrix.target }}
           path: clients/electron-app/dist/${{ matrix.asset }}
@@ -142,7 +142,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Download merged installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: desktop-installer-*
           path: "${{ github.workspace }}/_desktop_out"
@@ -171,7 +171,7 @@ jobs:
         run: bash scripts/ci/gha-publish-desktop-installers-rsync.sh
 
       - name: Workflow artifact (retention)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-installers-bundle-${{ github.sha }}
           path: ${{ github.workspace }}/_desktop_out/
