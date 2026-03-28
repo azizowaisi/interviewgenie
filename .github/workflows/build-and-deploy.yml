@@ -1,7 +1,7 @@
 # Push to main + manual dispatch — tests (when relevant), conditional image build/push, deploy.
 # Desktop installers are built separately — see `.github/workflows/desktop-installers.yml`.
-# PR validation: ci.yml (multi-arch Docker Hub push for changed paths: tag pr-<#>-<headSha>).
-# Merge still builds sha-<mergeCommit> — deploy pins that immutable tag; it differs from PR head SHA.
+# PR validation: ci.yml (may push pr-<#>-<headSha> for tests/cache — not for production deploy).
+# Authoritative images for deploy: this workflow’s sha-<mergeCommit> tags on Docker Hub after merge.
 #
 # Deploy modes — read from repository VARIABLE `DEPLOY_MODE` first; if empty, from secret `DEPLOY_MODE` (same names).
 # Other settings: optional same-named repository Variables when the secret is empty — `secrets.* || vars.*`
