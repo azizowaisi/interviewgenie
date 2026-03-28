@@ -12,4 +12,5 @@ spec:
       name: mongo
   selector:
     app: mongo
-  clusterIP: None   # headless for StatefulSet
+  # Standard ClusterIP (default). Do not flip headless ↔ ClusterIP on a live cluster:
+  # Kubernetes forbids changing spec.clusterIP once the Service exists.
