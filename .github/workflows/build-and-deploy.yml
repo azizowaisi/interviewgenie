@@ -15,7 +15,7 @@
 #
 # Manual dispatch:
 #   deploy_only    — apply k8s only (skip tests & Docker; cluster keeps current images)
-#   force_build    — build & push every image (default true when not deploy_only)
+#   force_build    — build & push all eight images (default off: use path filter like push-to-main)
 #   skip_tests / skip_deploy — unchanged
 #
 # See docs/DEPLOY-GIT-K8S.md, docs/GITHUB-ACTIONS-K8S-OIDC.md
@@ -35,9 +35,9 @@ on:
         type: boolean
         default: false
       force_build:
-        description: "Build & push all images (ignored if deploy_only; default true for manual)"
+        description: "Build & push all images (ignored if deploy_only; leave off for path-based incremental builds)"
         type: boolean
-        default: true
+        default: false
       skip_tests:
         description: "Skip Python unit tests"
         type: boolean
@@ -63,8 +63,10 @@ jobs:
   detect:
     runs-on: ubuntu-24.04
     outputs:
+      deploy_mode: ${{ steps.deploy_mode.outputs.deploy_mode }}
       build_any: ${{ steps.resolve.outputs.build_any }}
       tests_any: ${{ steps.resolve.outputs.tests_any }}
+      build_matrix_slugs: ${{ steps.resolve.outputs.build_matrix_slugs }}
       build_api_service: ${{ steps.resolve.outputs.build_api_service }}
       build_audio_service: ${{ steps.resolve.outputs.build_audio_service }}
       build_stt_service: ${{ steps.resolve.outputs.build_stt_service }}
@@ -239,15 +241,7 @@ jobs:
       fail-fast: false
       max-parallel: 8
       matrix:
-        slug:
-          - api-service
-          - audio-service
-          - stt-service
-          - question-service
-          - llm-service
-          - formatter-service
-          - monitoring-service
-          - web
+        slug: ${{ fromJson(needs.detect.outputs.build_matrix_slugs) }}
     runs-on: ubuntu-24.04
     env:
       IMAGE_TAG: sha-${{ github.sha }}
@@ -269,32 +263,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Gate — build this image?
-        id: gate
-        run: |
-          case "${{ matrix.slug }}" in
-            api-service) B="${{ needs.detect.outputs.build_api_service }}" ;;
-            audio-service) B="${{ needs.detect.outputs.build_audio_service }}" ;;
-            stt-service) B="${{ needs.detect.outputs.build_stt_service }}" ;;
-            question-service) B="${{ needs.detect.outputs.build_question_service }}" ;;
-            llm-service) B="${{ needs.detect.outputs.build_llm_service }}" ;;
-            formatter-service) B="${{ needs.detect.outputs.build_formatter_service }}" ;;
-            monitoring-service) B="${{ needs.detect.outputs.build_monitoring_service }}" ;;
-            web) B="${{ needs.detect.outputs.build_web }}" ;;
-            *) echo "Unknown slug"; exit 1 ;;
-          esac
-          echo "build=${B}" >> "$GITHUB_OUTPUT"
-
       - name: Set up QEMU
-        if: steps.gate.outputs.build == 'true' && needs.build-prep.outputs.need_qemu == 'true'
+        if: needs.build-prep.outputs.need_qemu == 'true'
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        if: steps.gate.outputs.build == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to Docker Hub
-        if: steps.gate.outputs.build == 'true'
         env:
           DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
           DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
@@ -315,7 +291,6 @@ jobs:
 
       - name: Build & push image (single service; see docs/DEPLOY-SPEED.md)
         id: docker_push
-        if: steps.gate.outputs.build == 'true'
         env:
           IMAGE_SLUG: ${{ matrix.slug }}
           DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -335,9 +310,7 @@ jobs:
       - name: Record push result artifact
         if: always()
         run: |
-          if [ "${{ steps.gate.outputs.build }}" != "true" ]; then
-            echo 0 > pushed.txt
-          elif [ "${{ steps.docker_push.outcome }}" = "success" ]; then
+          if [ "${{ steps.docker_push.outcome }}" = "success" ]; then
             echo 1 > pushed.txt
           else
             echo 0 > pushed.txt

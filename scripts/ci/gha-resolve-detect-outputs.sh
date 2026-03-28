@@ -2,7 +2,34 @@
 # Used by Build and Deploy workflow after dorny/paths-filter. Writes GITHUB_OUTPUT.
 # Env (boolean strings from GitHub): EVENT_NAME, INPUT_DEPLOY_ONLY, INPUT_FORCE_BUILD, INPUT_SKIP_TESTS
 # Env: FILTER_* for each paths-filter output (true/false from dorny)
+#
+# Also writes build_matrix_slugs (JSON array) for the build-images matrix so only changed
+# services spawn Docker build jobs (not all eight runners on every push).
 set -euo pipefail
+
+write_matrix_to_output() {
+  local json="$1"
+  {
+    echo "build_matrix_slugs<<BM_EOF"
+    echo "${json}"
+    echo "BM_EOF"
+  } >>"${GITHUB_OUTPUT}"
+}
+
+emit_build_matrix_from_filters() {
+  local json="["
+  local sep=""
+  if [[ "${FILTER_API_SERVICE:-false}" == "true" ]]; then json+="${sep}\"api-service\""; sep=","; fi
+  if [[ "${FILTER_AUDIO_SERVICE:-false}" == "true" ]]; then json+="${sep}\"audio-service\""; sep=","; fi
+  if [[ "${FILTER_STT_SERVICE:-false}" == "true" ]]; then json+="${sep}\"stt-service\""; sep=","; fi
+  if [[ "${FILTER_QUESTION_SERVICE:-false}" == "true" ]]; then json+="${sep}\"question-service\""; sep=","; fi
+  if [[ "${FILTER_LLM_SERVICE:-false}" == "true" ]]; then json+="${sep}\"llm-service\""; sep=","; fi
+  if [[ "${FILTER_FORMATTER_SERVICE:-false}" == "true" ]]; then json+="${sep}\"formatter-service\""; sep=","; fi
+  if [[ "${FILTER_MONITORING_SERVICE:-false}" == "true" ]]; then json+="${sep}\"monitoring-service\""; sep=","; fi
+  if [[ "${FILTER_WEB:-false}" == "true" ]]; then json+="${sep}\"web\""; sep=","; fi
+  json+="]"
+  write_matrix_to_output "${json}"
+}
 
 write_build_flags() {
   local v="$1"
@@ -24,6 +51,7 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
     echo "build_any=false" >>"${GITHUB_OUTPUT}"
     echo "tests_any=false" >>"${GITHUB_OUTPUT}"
     write_build_flags "false"
+    write_matrix_to_output "[]"
     echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
     echo "- **Mode:** deploy-only (skipped tests and image builds)" >>"${GITHUB_STEP_SUMMARY}"
     exit 0
@@ -31,6 +59,7 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   if [[ "${INPUT_FORCE_BUILD}" == "true" ]]; then
     echo "build_any=true" >>"${GITHUB_OUTPUT}"
     write_build_flags "true"
+    write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
     if [[ "${INPUT_SKIP_TESTS}" != "true" ]]; then
       tests_any=true
     fi
@@ -65,6 +94,12 @@ if [[ "${FILTER_PYTHON_TESTS:-false}" == "true" ]]; then tests_any=true; fi
 
 echo "build_any=${build_any}" >>"${GITHUB_OUTPUT}"
 echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
+
+if [[ "${build_any}" == "true" ]]; then
+  emit_build_matrix_from_filters
+else
+  write_matrix_to_output "[]"
+fi
 
 {
   echo "### Detect"
