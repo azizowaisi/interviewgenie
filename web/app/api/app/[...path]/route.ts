@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth0 } from "@/lib/auth0";
+import { shouldSetAuthorizationFromSdkAccessToken } from "@/lib/api-bearer-pick";
 import { apiBase } from "@/lib/config";
 
 type Ctx = { params: Promise<{ path: string[] }> };
@@ -22,14 +23,14 @@ async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidec
     const aud = process.env.AUTH0_AUDIENCE?.trim();
     if (aud) {
       const at = await auth0.getAccessToken(req, tokenSidecar, { audience: aud });
-      // Only use this token if the SDK says it is for our API. Otherwise we often get the
-      // default access token (wrong aud or opaque) and skip id_token — api-service returns 401.
-      if (at?.token && at.audience?.trim() === aud) {
+      if (shouldSetAuthorizationFromSdkAccessToken(aud, at) && at?.token) {
         headers.set("Authorization", `Bearer ${at.token}`);
       }
     } else {
       const at = await auth0.getAccessToken(req, tokenSidecar);
-      if (at?.token) headers.set("Authorization", `Bearer ${at.token}`);
+      if (shouldSetAuthorizationFromSdkAccessToken(undefined, at) && at?.token) {
+        headers.set("Authorization", `Bearer ${at.token}`);
+      }
     }
   } catch {
     // getAccessToken may fail if no API access token in session — fall through to session tokens.

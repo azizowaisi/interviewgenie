@@ -7,7 +7,7 @@ const typescript = require("eslint-config-next/typescript");
 /** @type {import("eslint").Linter.Config[]} */
 const eslintConfig = [
   {
-    ignores: [".next/**", "node_modules/**", "out/**", "next-env.d.ts"],
+    ignores: [".next/**", "node_modules/**", "out/**", "next-env.d.ts", "**/*.test.ts", "vitest.config.ts"],
   },
   ...coreWebVitals,
   ...typescript,

@@ -39,8 +39,9 @@ function extractAuthErrorDetail(error: Error): string {
 async function onCallback(
   error: SdkError | null,
   ctx: { appBaseUrl?: string; returnTo?: string },
-  _session: unknown,
+  session: unknown,
 ): Promise<NextResponse> {
+  void session;
   if (error) {
     const base = ctx.appBaseUrl;
     if (!base) {
