@@ -26,7 +26,7 @@ Used by: `build-and-deploy.yml`, `ci.yml` (matrix web build), `gha-build-single-
 `AUTH0_DOMAIN`, `AUTH0_ISSUER_BASE_URL`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`,
 `AUTH0_SECRET`, `AUTH0_BASE_URL`, `APP_BASE_URL`.
 
-**`AUTH0_AUDIENCE`** (Auth0 API identifier) must be set on the **web** runtime (e.g. `web-auth0-env` in k8s) and match **`api-service` `AUTH0_AUDIENCE`**, so login requests an access token and Save job works. Not read automatically by Auth0 SDK v4 — the app configures it via `Auth0Client` + `getAccessToken({ audience })`.
+**`AUTH0_AUDIENCE`** (Auth0 API identifier) must match **`api-service`** for JWT checks and for **`getAccessToken({ audience })`** on the BFF. By default the app does **not** send `audience` on the initial Auth0 `/authorize` URL: if that API is not created in Auth0 → **APIs**, login fails with *Service not found*. After you create the API and authorize the app for it, you may set **`AUTH0_AUTHORIZE_AUDIENCE=true`** on **web** so the login flow also requests an API access token (optional; **ID token** fallback still works for Save job when **`AUTH0_CLIENT_ID`** is set on api-service).
 
 You can also provide runtime fallback through Kubernetes secret `web-auth0-env`
 (`k8s/web-service/deployment.yaml` uses optional `envFrom.secretRef`). The same secret’s

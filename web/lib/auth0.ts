@@ -3,9 +3,14 @@ import type { SdkError } from "@auth0/nextjs-auth0/errors";
 import { NextResponse } from "next/server";
 
 /**
- * Auth0 v4 does not read AUTH0_AUDIENCE from the environment. When calling a backend
- * that validates JWTs (our api-service), we must request an API access token at login
- * via authorizationParameters.audience, and pass the same audience to getAccessToken().
+ * Auth0 v4 does not read AUTH0_AUDIENCE from the environment. The BFF passes
+ * `getAccessToken({ audience: AUTH0_AUDIENCE })` in `/api/app/*`.
+ *
+ * We do **not** put `audience` on the default `/authorize` request: if that identifier
+ * is not created under Auth0 → APIs, Auth0 returns `access_denied` / "Service not found"
+ * and login never completes. ID tokens still work for api-service when AUTH0_CLIENT_ID matches.
+ *
+ * Opt in to audience on authorize only after the API exists: `AUTH0_AUTHORIZE_AUDIENCE=true`.
  */
 
 const GENERIC_AUTH0_MESSAGES = new Set([
@@ -67,16 +72,17 @@ async function onCallback(
 
 function createClient(): Auth0Client {
   const audience = process.env.AUTH0_AUDIENCE?.trim();
-  if (audience) {
-    return new Auth0Client({
-      onCallback,
-      authorizationParameters: {
-        audience,
-        scope: "openid profile email offline_access",
-      },
-    });
+  const includeAudienceOnAuthorize = process.env.AUTH0_AUTHORIZE_AUDIENCE === "true";
+  const authorizationParameters: { audience?: string; scope: string } = {
+    scope: "openid profile email offline_access",
+  };
+  if (includeAudienceOnAuthorize && audience) {
+    authorizationParameters.audience = audience;
   }
-  return new Auth0Client({ onCallback });
+  return new Auth0Client({
+    onCallback,
+    authorizationParameters,
+  });
 }
 
 export const auth0 = createClient();
