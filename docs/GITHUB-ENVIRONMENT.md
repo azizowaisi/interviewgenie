@@ -26,6 +26,8 @@ Used by: `build-and-deploy.yml`, `ci.yml` (matrix web build), `gha-build-single-
 `AUTH0_DOMAIN`, `AUTH0_ISSUER_BASE_URL`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`,
 `AUTH0_SECRET`, `AUTH0_BASE_URL`, `APP_BASE_URL`.
 
+**`AUTH0_AUDIENCE`** (Auth0 API identifier) must be set on the **web** runtime (e.g. `web-auth0-env` in k8s) and match **`api-service` `AUTH0_AUDIENCE`**, so login requests an access token and Save job works. Not read automatically by Auth0 SDK v4 — the app configures it via `Auth0Client` + `getAccessToken({ audience })`.
+
 You can also provide runtime fallback through Kubernetes secret `web-auth0-env`
 (`k8s/web-service/deployment.yaml` uses optional `envFrom.secretRef`).
 
@@ -62,6 +64,7 @@ Create secret `web-auth0-env` in namespace `interview-ai` with:
 - `AUTH0_SECRET`
 - `AUTH0_BASE_URL`
 - `APP_BASE_URL`
+- `AUTH0_AUDIENCE` (same value as api-service; required for API calls from the BFF)
 - `NEXT_PUBLIC_PUBLIC_APP_URL` (optional; usually already baked at build)
 
 ---
