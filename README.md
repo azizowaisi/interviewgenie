@@ -199,7 +199,7 @@ Tests mock HTTP peers (Whisper, Ollama) and run offline.
 - **Pull requests:** `.github/workflows/ci.yml` — backend pytest, frontend builds, Docker builds.
 - **Main branch:** `.github/workflows/build-and-deploy.yml` — images and optional cluster deploy.
 
-Details: **[docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md)**, **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**.
+Details: **[docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md)**, **[docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md)**, **[docs/DEVOPS-RUNBOOK.md](docs/DEVOPS-RUNBOOK.md)** (CI/CD, secrets, k8s ops, Dependabot).
 
 ---
 

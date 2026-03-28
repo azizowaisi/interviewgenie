@@ -1,0 +1,60 @@
+# Dependency updates — review PRs, run CI, merge when green.
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      web-npm:
+        patterns:
+          - "*"
+
+  # Python services (one entry per directory — Dependabot requirement)
+  - package-ecosystem: pip
+    directory: /backend/api-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: pip
+    directory: /backend/audio-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: pip
+    directory: /backend/stt-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: pip
+    directory: /backend/question-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: pip
+    directory: /backend/llm-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: pip
+    directory: /backend/formatter-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: pip
+    directory: /backend/monitoring-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2

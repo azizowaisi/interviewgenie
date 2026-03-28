@@ -255,6 +255,7 @@ jobs:
 
   build-images-pr:
     name: build-images-pr (${{ matrix.slug }})
+    timeout-minutes: 45
     needs: [detect-pr, build-prep-pr, backend-tests]
     if: |
       always() &&

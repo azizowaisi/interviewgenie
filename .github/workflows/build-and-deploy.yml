@@ -263,6 +263,7 @@ jobs:
   # One image per matrix leg (parallel runners). GHA + registry cache per slug (same as serial script).
   build-images:
     needs: [detect, test, build-prep]
+    timeout-minutes: 45
     if: |
       always() &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
@@ -461,6 +462,7 @@ jobs:
 
   deploy_remote:
     needs: [detect, test, build-meta, deploy_gates]
+    timeout-minutes: 25
     if: |
       always() &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
@@ -529,6 +531,7 @@ jobs:
 
   deploy_self_hosted:
     needs: [detect, test, build-meta]
+    timeout-minutes: 30
     if: |
       always() &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
@@ -598,6 +601,7 @@ jobs:
   # Explicit DEPLOY_MODE=ssh, OR default/remote with no KUBE_CONFIG but SSH secrets (typical k3s VM).
   deploy_ssh_bootstrap:
     needs: [detect, test, build-meta, deploy_gates]
+    timeout-minutes: 45
     if: |
       always() &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
