@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.6
 # Build Vue SPA (landing + /app workspace shell), then Python API.
 # Vite resolves `../../../static/workspace.css` from frontend/src → /app/static (repo: api-service/static).
-FROM node:22-alpine AS web
+# Mirror of docker.io/library/node — avoids Docker Hub rate limits in CI.
+FROM public.ecr.aws/docker/library/node:22-alpine AS web
 WORKDIR /app
 COPY static ./static/
 COPY frontend/package.json frontend/package-lock.json* ./frontend/
