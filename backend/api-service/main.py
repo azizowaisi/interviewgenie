@@ -1,6 +1,7 @@
 """
 API Service: Auth0 (optional), CV upload/parsing, MongoDB (users, CVs, Q&A history, sessions).
 """
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Header
 from fastapi.responses import FileResponse, JSONResponse
+from pymongo.errors import PyMongoError
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -34,6 +36,20 @@ app = FastAPI(
     version="0.1.0",
     root_path=_PUBLIC_PREFIX,
 )
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(PyMongoError)
+async def pymongo_exception_handler(request: Request, exc: PyMongoError):
+    """Avoid opaque 500s when Mongo is down, misconfigured, or timing out."""
+    logger.exception("MongoDB error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Database unavailable. Check MongoDB is reachable and MONGODB_URI / MONGODB_DB match your cluster.",
+        },
+    )
 
 
 def _public_path(path: str) -> str:
@@ -268,10 +284,24 @@ async def cv_upload(
     parsed = parse_cv(data, filename)
     if not parsed:
         raise HTTPException(400, "Could not parse file (supported: PDF, DOCX, TXT)")
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    except OSError as e:
+        logger.exception("UPLOAD_DIR not writable: %s", UPLOAD_DIR)
+        raise HTTPException(
+            status_code=503,
+            detail="Upload storage is not writable. Set UPLOAD_DIR to a mounted volume (see k8s api-service).",
+        ) from e
     path = os.path.join(UPLOAD_DIR, f"{user_id}_{uuid.uuid4().hex}_{filename}")
-    with open(path, "wb") as f:
-        f.write(data)
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+    except OSError as e:
+        logger.exception("CV file write failed: %s", path)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not store the uploaded file. Ensure UPLOAD_DIR exists and the volume has free space.",
+        ) from e
     cvs = get_cvs_collection()
     doc = {
         "user_id": user_id,
@@ -826,10 +856,24 @@ async def topic_upload_cv(
     parsed = parse_cv(data, filename)
     if not parsed:
         raise HTTPException(400, "Could not parse file (supported: PDF, DOCX, TXT)")
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    except OSError as e:
+        logger.exception("UPLOAD_DIR not writable: %s", UPLOAD_DIR)
+        raise HTTPException(
+            status_code=503,
+            detail="Upload storage is not writable. Set UPLOAD_DIR to a mounted volume (see k8s api-service).",
+        ) from e
     path = os.path.join(UPLOAD_DIR, f"{user_id}_{uuid.uuid4().hex}_{filename}")
-    with open(path, "wb") as f:
-        f.write(data)
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+    except OSError as e:
+        logger.exception("CV file write failed: %s", path)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not store the uploaded file. Ensure UPLOAD_DIR exists and the volume has free space.",
+        ) from e
     cvs = get_cvs_collection()
     cv_doc = {
         "user_id": user_id,

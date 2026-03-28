@@ -8,6 +8,26 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { appFetch } from "@/lib/api-fetch";
 
+function messageFromFailedApiResponse(raw: string, status: number, fallback: string): string {
+  const t = raw.trim();
+  if (t.startsWith("<!") || /<html[\s>]/i.test(t)) {
+    return `Server error (${status}). The response was HTML, not JSON — usually a Next.js or gateway failure. Check web and api-service pod logs; confirm API_URL in the web deployment reaches api-service inside the cluster.`;
+  }
+  let msg = t || fallback;
+  try {
+    const j = JSON.parse(raw) as { detail?: string; error?: string; message?: string };
+    if (typeof j.detail === "string") msg = j.detail;
+    else if (typeof j.message === "string") msg = j.message;
+    else if (typeof j.error === "string" && j.error.startsWith("bff_")) {
+      const d = typeof j.detail === "string" ? j.detail : "";
+      msg = d ? `${j.error}: ${d}` : j.error;
+    }
+  } catch {
+    /* keep msg */
+  }
+  return msg;
+}
+
 export function InterviewPrep() {
   const [jobTitle, setJobTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -46,18 +66,7 @@ export function InterviewPrep() {
             "Not authorized to save. Log out and log in again. If this persists: AUTH0_AUDIENCE on web must match api-service and your Auth0 API; api-service needs AUTH0_CLIENT_ID from the same Auth0 app; use a current web deploy (BFF forwards session tokens)."
           );
         }
-        let msg = raw || `Save failed (${tRes.status})`;
-        try {
-          const j = JSON.parse(raw) as { detail?: string; error?: string; message?: string };
-          if (typeof j.detail === "string") msg = j.detail;
-          else if (typeof j.message === "string") msg = j.message;
-          else if (typeof j.error === "string" && j.error.startsWith("bff_")) {
-            const d = typeof j.detail === "string" ? j.detail : "";
-            msg = d ? `${j.error}: ${d}` : j.error;
-          }
-        } catch {
-          /* use raw */
-        }
+        const msg = messageFromFailedApiResponse(raw, tRes.status, `Save failed (${tRes.status})`);
         throw new Error(msg);
       }
       const topicJson = (await tRes.json()) as { id: string };
@@ -75,14 +84,7 @@ export function InterviewPrep() {
             "Not authorized to upload CV. Log out and log in again after AUTH0_AUDIENCE is configured."
           );
         }
-        let msg = raw || `Upload failed (${cvRes.status})`;
-        try {
-          const j = JSON.parse(raw) as { detail?: string; message?: string };
-          if (typeof j.detail === "string") msg = j.detail;
-          else if (typeof j.message === "string") msg = j.message;
-        } catch {
-          /* use raw */
-        }
+        const msg = messageFromFailedApiResponse(raw, cvRes.status, `Upload failed (${cvRes.status})`);
         throw new Error(msg);
       }
       setSuccess("Job and CV saved. Continue to ATS, Mock, or Live pages.");

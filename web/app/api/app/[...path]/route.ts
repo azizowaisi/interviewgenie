@@ -3,7 +3,13 @@ import { auth0 } from "@/lib/auth0";
 import { shouldSetAuthorizationFromSdkAccessToken } from "@/lib/api-bearer-pick";
 import { apiBase } from "@/lib/config";
 
-type Ctx = { params: Promise<{ path: string[] }> };
+type Ctx = { params: Promise<{ path?: string[] | string }> };
+
+/** Next may pass catch-all `path` as string[] or, in edge cases, a single string. */
+function normalizePathSegments(path: string[] | string | undefined): string[] {
+  if (path == null) return [];
+  return Array.isArray(path) ? path : [path];
+}
 
 /** Copy Set-Cookie headers from Auth0 token refresh onto the outgoing BFF response. */
 function mergeSetCookieHeaders(from: Headers, to: Headers) {
@@ -57,7 +63,7 @@ async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidec
 }
 
 async function forward(req: NextRequest, segments: string[]) {
-  const path = segments.join("/");
+  const path = segments.filter(Boolean).join("/");
   let target: URL;
   try {
     target = new URL(`${apiBase.replace(/\/$/, "")}/${path}`);
@@ -132,7 +138,7 @@ async function forward(req: NextRequest, segments: string[]) {
 async function handle(req: NextRequest, ctx: Ctx) {
   try {
     const { path } = await ctx.params;
-    return await forward(req, path);
+    return await forward(req, normalizePathSegments(path));
   } catch (e) {
     console.error("[api/app] unhandled", e);
     return NextResponse.json(
