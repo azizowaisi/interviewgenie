@@ -223,6 +223,23 @@ jobs:
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Node.js (web quality gate)
+        if: steps.dh.outputs.skip != 'true' && needs.detect.outputs.build_web == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # Dockerfile skips eslint so multi-arch web builds do not run lint per platform.
+      - name: ESLint & Vitest (web only)
+        if: steps.dh.outputs.skip != 'true' && needs.detect.outputs.build_web == 'true'
+        run: |
+          cd web
+          npm ci
+          npm run lint
+          npm run test:bff
+
   # One image per matrix leg (parallel runners). GHA + registry cache per slug (same as serial script).
   build-images:
     needs: [detect, test, build-prep]

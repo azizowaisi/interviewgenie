@@ -24,6 +24,14 @@ If you change only **secrets** or **docs**, path filters may show **no** image p
 
 Filters are per folder. If you change something **outside** `web/` and `backend/<service>/` (e.g. only `README.md`), **no** image may rebuild. To roll new images anyway, use manual **force_build** or touch a file under the service you need.
 
+### Why the web image is slower than Python services
+
+- **Next.js `next build`** compiles the whole app (TypeScript, bundling, static generation) — much heavier than installing wheels and copying Python source.
+- **Multi-arch** (`linux/amd64` + `linux/arm64`) means Buildx runs that compile **twice**; the **arm64** leg on GitHub’s amd64 runners uses **QEMU**, which is especially slow for Node.
+- **Mitigations in-repo:** ESLint and Vitest run **once** in **build-prep** when `web/` changed (not inside the Docker build, so not duplicated per platform). The web **Dockerfile** uses a BuildKit cache mount on **`.next/cache`** so repeat builds reuse Next’s cache when layers align.
+
+To go faster still you need infrastructure tradeoffs: **arm64-native** runner (no QEMU for that leg), **amd64-only** cluster and images (drops arm from the manifest — do not do this if you run on Ampere), or a remote **BuildKit** builder.
+
 ---
 
 ## Realistic targets (GitHub-hosted `ubuntu-24.04`)
@@ -40,7 +48,7 @@ Filters are per folder. If you change something **outside** `web/` and `backend/
 ## What we optimized
 
 1. **Path filters** — skip Docker when code under a service didn’t change.
-2. **Dynamic `build-images` matrix** — one runner per **changed** image only (not eight every time).
+2. **Dynamic `build-images` matrix** — one runner per **changed** image only (not eight every time). For **web**, ESLint and Vitest run **once** in **build-prep** when `web/` changes; the image runs **`next build` only** with a **`.next/cache`** BuildKit mount (`web/Dockerfile`).
 3. **Partial `kubectl set image` + rollouts** — `K8S_UPDATE_DEPLOYMENTS` in `k8s-apply.sh`.
 4. **Fixed multi-arch in workflow** — one tag works on **Ampere and amd64**; deploy applies a **Docker Hub pull secret** from **`DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`** so in-cluster pulls (e.g. **mongo**) use authenticated rate limits.
 5. **Registry cache** — each image uses a `:cache` tag on Docker Hub (plus GHA cache) so layers survive runner rotation.
