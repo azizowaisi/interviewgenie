@@ -6,6 +6,8 @@
 #                          llm-service | formatter-service | monitoring-service | web
 # Required env: DH_USER, IMAGE_TAG (e.g. sha-abc123def456)
 # Optional: PLATFORMS (CI sets this; default matches workflow: multi-arch)
+# Optional: WEB_DOCKER_PLATFORMS — when IMAGE_SLUG=web and this is non-empty, overrides PLATFORMS
+#   (e.g. linux/amd64 only — avoids QEMU arm64 and often cuts web build time by ~50%+).
 # Optional web build-args: WEB_PUBLIC_APP_URL, WEB_ADMIN_SITE_URL, WEB_ADMIN_HOSTS, WEB_MAIN_APP_HOSTS
 # Optional Auth0/app build-args for web: AUTH0_DOMAIN, AUTH0_ISSUER_BASE_URL, AUTH0_CLIENT_ID,
 #   AUTH0_CLIENT_SECRET, AUTH0_SECRET, AUTH0_BASE_URL, APP_BASE_URL
@@ -13,6 +15,10 @@ set -euo pipefail
 
 SLUG="${IMAGE_SLUG:?IMAGE_SLUG is required}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+if [[ "${SLUG}" == "web" ]] && [[ -n "${WEB_DOCKER_PLATFORMS:-}" ]]; then
+  PLATFORMS="${WEB_DOCKER_PLATFORMS}"
+  echo "Web build: using WEB_DOCKER_PLATFORMS=${PLATFORMS} (overrides global PLATFORMS)"
+fi
 ENABLE_REGISTRY_CACHE="${ENABLE_REGISTRY_CACHE:-true}"
 
 case "${SLUG}" in

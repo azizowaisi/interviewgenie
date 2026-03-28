@@ -297,11 +297,19 @@ jobs:
       AUTH0_SECRET: ${{ secrets.AUTH0_SECRET || vars.AUTH0_SECRET }}
       AUTH0_BASE_URL: ${{ secrets.AUTH0_BASE_URL || vars.AUTH0_BASE_URL }}
       APP_BASE_URL: ${{ secrets.APP_BASE_URL || vars.APP_BASE_URL }}
+      # Web-only: set to linux/amd64 if all K8s nodes are amd64 — skips arm64/QEMU (major speedup).
+      WEB_DOCKER_PLATFORMS: ${{ vars.WEB_DOCKER_PLATFORMS }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Set up QEMU
-        if: needs.build-prep.outputs.need_qemu == 'true'
+        if: |
+          needs.build-prep.outputs.need_qemu == 'true' && !(
+            matrix.slug == 'web' &&
+            vars.WEB_DOCKER_PLATFORMS != '' &&
+            !contains(vars.WEB_DOCKER_PLATFORMS, 'arm64') &&
+            !contains(vars.WEB_DOCKER_PLATFORMS, 'aarch64')
+          )
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx

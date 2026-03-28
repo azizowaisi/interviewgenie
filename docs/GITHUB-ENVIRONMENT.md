@@ -44,6 +44,7 @@ Do **not** commit real Auth0 secrets to the repo.
 | `DOCKERHUB_USERNAME` | Variable *or* Secret | `your-dockerhub-user` | Workflows accept `secrets` or `vars`. |
 | `DOCKERHUB_TOKEN` | **Secret** | (PAT or access token) | Required for push/pull. |
 | `DOCKER_REGISTRY_CACHE` | Variable | `true` or `false` | Optional; default enables registry cache when not `false`. |
+| `WEB_DOCKER_PLATFORMS` | Variable | `linux/amd64` | Optional; **web image only** — speeds CI Docker build by skipping the arm64/QEMU leg. Use only if **all** Kubernetes nodes that run **web** are amd64. |
 
 ---
 
