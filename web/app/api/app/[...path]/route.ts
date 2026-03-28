@@ -32,9 +32,16 @@ async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidec
     const session = await auth0.getSession(req);
     if (!session) return;
     const aud = process.env.AUTH0_AUDIENCE?.trim();
-    const scoped = aud ? session.accessTokens?.find((t) => t.audience === aud) : undefined;
+    const scoped = aud
+      ? session.accessTokens?.find((t) => t.audience?.trim() === aud)
+      : undefined;
+    // Prefer id_token over tokenSet.accessToken when no scoped API token: the default
+    // access token may be opaque or wrong aud (decode fails → 401); id_token is a JWT
+    // with aud=client_id, which api-service accepts when AUTH0_CLIENT_ID is set.
     const bearer =
-      scoped?.accessToken || session.tokenSet?.accessToken || session.tokenSet?.idToken;
+      scoped?.accessToken ||
+      session.tokenSet?.idToken ||
+      session.tokenSet?.accessToken;
     if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   } catch {
     // Ignore — anonymous/dev flows still use X-User-Id.

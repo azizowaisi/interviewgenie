@@ -1,4 +1,4 @@
-# Cursor AI – Development Blueprint
+# Interview Genie – Development Blueprint
 
 ## Architecture (integrated)
 

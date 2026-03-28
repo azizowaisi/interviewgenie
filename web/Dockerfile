@@ -50,7 +50,7 @@ ENV AUTH0_CLIENT_SECRET=$AUTH0_CLIENT_SECRET
 ENV AUTH0_SECRET=$AUTH0_SECRET
 ENV AUTH0_BASE_URL=$AUTH0_BASE_URL
 ENV APP_BASE_URL=$APP_BASE_URL
-RUN npm run build
+RUN npm run lint && npm run build
 
 FROM public.ecr.aws/docker/library/node:22-alpine AS runner
 WORKDIR /app

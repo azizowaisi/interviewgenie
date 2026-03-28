@@ -23,7 +23,14 @@ def get_jwks_uri() -> str:
 
 async def verify_token(credentials: Optional[HTTPAuthorizationCredentials]) -> Optional[dict]:
     """Verify JWT and return payload (sub, email, name). Return None if auth disabled or no token."""
-    if not AUTH0_DOMAIN or not AUTH0_AUDIENCE:
+    if not AUTH0_DOMAIN:
+        return None
+    if not AUTH0_AUDIENCE:
+        if credentials:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AUTH0_AUDIENCE is required when AUTH0_DOMAIN is set",
+            )
         return None
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization")

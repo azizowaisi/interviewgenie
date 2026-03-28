@@ -1,8 +1,8 @@
-# Cursor AI – AI Interview Preparation & Live Interview Assistant
+# Interview Genie – AI Interview Preparation & Live Interview Assistant
 
 ## Project overview
 
-Cursor AI is an **AI-powered interview preparation platform** that helps users prepare for jobs by analyzing **CV and job description**, generating an **ATS compatibility score**, and conducting **topic-based AI interviews**.
+Interview Genie is an **AI-powered interview preparation platform** that helps users prepare for jobs by analyzing **CV and job description**, generating an **ATS compatibility score**, and conducting **topic-based AI interviews**.
 
 ### Core capabilities
 
