@@ -4,6 +4,19 @@ import { apiBase } from "@/lib/config";
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
+/** Copy Set-Cookie headers from Auth0 token refresh onto the outgoing BFF response. */
+function mergeSetCookieHeaders(from: Headers, to: Headers) {
+  const extended = from as Headers & { getSetCookie?: () => string[] };
+  if (typeof extended.getSetCookie === "function") {
+    for (const c of extended.getSetCookie()) {
+      to.append("Set-Cookie", c);
+    }
+    return;
+  }
+  const single = from.get("set-cookie");
+  if (single) to.append("Set-Cookie", single);
+}
+
 async function forward(req: NextRequest, segments: string[]) {
   const path = segments.join("/");
   const target = new URL(`${apiBase.replace(/\/$/, "")}/${path}`);
@@ -15,10 +28,14 @@ async function forward(req: NextRequest, segments: string[]) {
   const auth = req.headers.get("authorization");
   if (auth) headers.set("Authorization", auth);
 
-  // Prefer Auth0 identity when available so data is stable across logout/login.
+  // Pass NextResponse so getAccessToken can persist refreshed tokens (Set-Cookie).
+  // Without (req, res), App Router route handlers may not save rotation — Save Job then gets 401.
+  const tokenSidecar = new NextResponse();
   try {
     const aud = process.env.AUTH0_AUDIENCE?.trim();
-    const token = aud ? await auth0.getAccessToken({ audience: aud }) : await auth0.getAccessToken();
+    const token = aud
+      ? await auth0.getAccessToken(req, tokenSidecar, { audience: aud })
+      : await auth0.getAccessToken(req, tokenSidecar);
     if (token?.token) headers.set("Authorization", `Bearer ${token.token}`);
   } catch {
     // Ignore — anonymous/dev flows still use X-User-Id.
@@ -41,10 +58,12 @@ async function forward(req: NextRequest, segments: string[]) {
   const outHeaders = new Headers(res.headers);
   outHeaders.delete("content-encoding");
   outHeaders.delete("transfer-encoding");
-  return new NextResponse(await res.arrayBuffer(), {
+  const out = new NextResponse(await res.arrayBuffer(), {
     status: res.status,
     headers: outHeaders,
   });
+  mergeSetCookieHeaders(tokenSidecar.headers, out.headers);
+  return out;
 }
 
 export async function GET(req: NextRequest, ctx: Ctx) {
