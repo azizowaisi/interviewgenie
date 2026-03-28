@@ -27,7 +27,7 @@ spec:
       containers:
         - name: web
           image: azizowaisi/interview-ai-web:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3002
           env:
