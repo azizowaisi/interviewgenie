@@ -5,7 +5,32 @@
 #
 # Also writes build_matrix_slugs (JSON array) for the build-images matrix so only changed
 # services spawn Docker build jobs (not all eight runners on every push).
+# Writes test_matrix_services (JSON) for pytest — only backends under backend/<svc> that changed.
 set -euo pipefail
+
+write_test_matrix_to_output() {
+  local json="$1"
+  {
+    echo "test_matrix_services<<TM_EOF"
+    echo "${json}"
+    echo "TM_EOF"
+  } >>"${GITHUB_OUTPUT}"
+}
+
+emit_test_matrix_from_filters() {
+  local json="["
+  local sep=""
+  if [[ "${FILTER_QUESTION_SERVICE:-false}" == "true" ]]; then json+="${sep}\"question-service\""; sep=","; fi
+  if [[ "${FILTER_FORMATTER_SERVICE:-false}" == "true" ]]; then json+="${sep}\"formatter-service\""; sep=","; fi
+  if [[ "${FILTER_LLM_SERVICE:-false}" == "true" ]]; then json+="${sep}\"llm-service\""; sep=","; fi
+  if [[ "${FILTER_STT_SERVICE:-false}" == "true" ]]; then json+="${sep}\"stt-service\""; sep=","; fi
+  if [[ "${FILTER_AUDIO_SERVICE:-false}" == "true" ]]; then json+="${sep}\"audio-service\""; sep=","; fi
+  json+="]"
+  write_test_matrix_to_output "${json}"
+  if [[ "${json}" != "[]" ]]; then
+    tests_any=true
+  fi
+}
 
 write_matrix_to_output() {
   local json="$1"
@@ -52,6 +77,7 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
     echo "tests_any=false" >>"${GITHUB_OUTPUT}"
     write_build_flags "false"
     write_matrix_to_output "[]"
+    write_test_matrix_to_output "[]"
     echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
     echo "- **Mode:** deploy-only (skipped tests and image builds)" >>"${GITHUB_STEP_SUMMARY}"
     exit 0
@@ -60,8 +86,12 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
     echo "build_any=true" >>"${GITHUB_OUTPUT}"
     write_build_flags "true"
     write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
+    tests_any=false
     if [[ "${INPUT_SKIP_TESTS}" != "true" ]]; then
       tests_any=true
+      write_test_matrix_to_output '["question-service","formatter-service","llm-service","stt-service","audio-service"]'
+    else
+      write_test_matrix_to_output "[]"
     fi
     echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
     echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
@@ -90,7 +120,13 @@ echo "build_formatter_service=${FILTER_FORMATTER_SERVICE:-false}" >>"${GITHUB_OU
 echo "build_monitoring_service=${FILTER_MONITORING_SERVICE:-false}" >>"${GITHUB_OUTPUT}"
 echo "build_web=${FILTER_WEB:-false}" >>"${GITHUB_OUTPUT}"
 
-if [[ "${FILTER_PYTHON_TESTS:-false}" == "true" ]]; then tests_any=true; fi
+tests_any=false
+emit_test_matrix_from_filters
+# If paths were added only under python_tests (not per-service) later, still run all five.
+if [[ "${FILTER_PYTHON_TESTS:-false}" == "true" ]] && [[ "${tests_any}" != "true" ]]; then
+  tests_any=true
+  write_test_matrix_to_output '["question-service","formatter-service","llm-service","stt-service","audio-service"]'
+fi
 
 echo "build_any=${build_any}" >>"${GITHUB_OUTPUT}"
 echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
@@ -117,4 +153,5 @@ fi
   echo "| monitoring-service | ${FILTER_MONITORING_SERVICE:-n/a} |"
   echo "| web | ${FILTER_WEB:-n/a} |"
   echo "| python tests (pytest services) | ${FILTER_PYTHON_TESTS:-n/a} |"
+  echo "| **pytest matrix** | ${tests_any} (see test_matrix_services) |"
 } >>"${GITHUB_STEP_SUMMARY}"

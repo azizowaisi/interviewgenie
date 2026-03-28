@@ -16,7 +16,9 @@
 # Manual dispatch:
 #   deploy_only    — apply k8s only (skip tests & Docker; cluster keeps current images)
 #   force_build    — build & push all eight images (default off: use path filter like push-to-main)
+#   amd64_only     — Docker build/push linux/amd64 only (much faster; unsafe if cluster has arm64 nodes)
 #   skip_tests / skip_deploy — unchanged
+# Optional repo Variable CI_DOCKER_PLATFORMS (e.g. linux/amd64) — default multi-arch if unset; manual amd64_only wins.
 #
 # See docs/DEPLOY-GIT-K8S.md, docs/GITHUB-ACTIONS-K8S-OIDC.md
 #
@@ -44,6 +46,10 @@ on:
         default: false
       skip_deploy:
         description: "Push images only; do not run deploy jobs"
+        type: boolean
+        default: false
+      amd64_only:
+        description: "Faster Docker: linux/amd64 only (omit if any Kubernetes node is arm64)"
         type: boolean
         default: false
 
@@ -75,6 +81,7 @@ jobs:
       build_formatter_service: ${{ steps.resolve.outputs.build_formatter_service }}
       build_monitoring_service: ${{ steps.resolve.outputs.build_monitoring_service }}
       build_web: ${{ steps.resolve.outputs.build_web }}
+      test_matrix_services: ${{ steps.resolve.outputs.test_matrix_services }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -155,7 +162,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [question-service, formatter-service, llm-service, stt-service, audio-service]
+        service: ${{ fromJson(needs.detect.outputs.test_matrix_services) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -194,12 +201,24 @@ jobs:
 
       - name: Configure Docker platforms
         id: plat
+        env:
+          AMD64_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.amd64_only == true && 'true' || 'false' }}
+          CI_DOCKER_PLATFORMS: ${{ vars.CI_DOCKER_PLATFORMS }}
         run: |
-          # Fixed multi-arch: Ampere (arm64) + amd64 VMs without repo variables or manual steps.
-          P="linux/amd64,linux/arm64"
+          set -euo pipefail
+          if [ "${AMD64_ONLY}" = "true" ]; then
+            P="linux/amd64"
+          elif [ -n "${CI_DOCKER_PLATFORMS:-}" ]; then
+            P="${CI_DOCKER_PLATFORMS}"
+          else
+            P="linux/amd64,linux/arm64"
+          fi
           echo "platforms=${P}" >> "$GITHUB_OUTPUT"
-          echo "need_qemu=true" >> "$GITHUB_OUTPUT"
-          echo "Using PLATFORMS=${P} (fixed in workflow)" >> "$GITHUB_STEP_SUMMARY"
+          case ",${P}," in
+            *,linux/arm64,*|*,arm64,*) echo "need_qemu=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "need_qemu=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "Using PLATFORMS=${P}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check Docker Hub credentials
         id: dh

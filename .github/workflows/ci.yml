@@ -41,6 +41,8 @@ jobs:
       build_formatter_service: ${{ steps.resolve.outputs.build_formatter_service }}
       build_monitoring_service: ${{ steps.resolve.outputs.build_monitoring_service }}
       build_web: ${{ steps.resolve.outputs.build_web }}
+      tests_any: ${{ steps.resolve.outputs.tests_any }}
+      test_matrix_services: ${{ steps.resolve.outputs.test_matrix_services }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -97,10 +99,12 @@ jobs:
 
   backend-tests:
     name: backend-tests (${{ matrix.service }})
+    needs: [detect-pr]
+    if: needs.detect-pr.outputs.tests_any == 'true'
     strategy:
       fail-fast: false
       matrix:
-        service: [question-service, formatter-service, llm-service, stt-service, audio-service]
+        service: ${{ fromJson(needs.detect-pr.outputs.test_matrix_services) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -120,8 +124,11 @@ jobs:
   # Next.js + two Vue apps in parallel (after backend tests pass).
   frontend-verify:
     name: frontend-verify (${{ matrix.app }})
-    needs: backend-tests
-    if: always() && needs.backend-tests.result == 'success'
+    needs: [detect-pr, backend-tests]
+    if: |
+      always() &&
+      needs.detect-pr.result == 'success' &&
+      (needs.backend-tests.result == 'success' || needs.backend-tests.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -153,8 +160,11 @@ jobs:
   # One image per runner (parallel with frontend-verify and across matrix legs).
   docker-verify:
     name: docker-verify (${{ matrix.image }})
-    needs: backend-tests
-    if: always() && needs.backend-tests.result == 'success'
+    needs: [detect-pr, backend-tests]
+    if: |
+      always() &&
+      needs.detect-pr.result == 'success' &&
+      (needs.backend-tests.result == 'success' || needs.backend-tests.result == 'skipped')
     strategy:
       fail-fast: false
       max-parallel: 8
@@ -207,10 +217,20 @@ jobs:
 
       - name: Configure Docker platforms
         id: plat
+        env:
+          CI_DOCKER_PLATFORMS: ${{ vars.CI_DOCKER_PLATFORMS }}
         run: |
-          P="linux/amd64,linux/arm64"
+          set -euo pipefail
+          if [ -n "${CI_DOCKER_PLATFORMS:-}" ]; then
+            P="${CI_DOCKER_PLATFORMS}"
+          else
+            P="linux/amd64,linux/arm64"
+          fi
           echo "platforms=${P}" >> "$GITHUB_OUTPUT"
-          echo "need_qemu=true" >> "$GITHUB_OUTPUT"
+          case ",${P}," in
+            *,linux/arm64,*|*,arm64,*) echo "need_qemu=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "need_qemu=false" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: Check Docker Hub credentials
         id: dh
@@ -318,8 +338,8 @@ jobs:
             echo "::error::detect-pr did not succeed (result=${{ needs.detect-pr.result }})"
             exit 1
           fi
-          if ! ok "${{ needs.backend-tests.result }}"; then
-            echo "::error::backend-tests did not succeed (result=${{ needs.backend-tests.result }})"
+          if ! sk "${{ needs.backend-tests.result }}"; then
+            echo "::error::backend-tests did not succeed or skip (result=${{ needs.backend-tests.result }})"
             exit 1
           fi
           if ! ok "${{ needs.frontend-verify.result }}"; then
