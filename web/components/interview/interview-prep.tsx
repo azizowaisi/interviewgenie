@@ -39,7 +39,15 @@ export function InterviewPrep() {
           job_description: jobDescription.trim() || undefined,
         }),
       });
-      if (!tRes.ok) throw new Error(await tRes.text());
+      if (!tRes.ok) {
+        const body = await tRes.text();
+        if (tRes.status === 401 || tRes.status === 403) {
+          throw new Error(
+            "Not authorized to save (API token missing). Log out and log in again. If this persists, set AUTH0_AUDIENCE on the web app to your Auth0 API identifier (same as api-service)."
+          );
+        }
+        throw new Error(body || `Save failed (${tRes.status})`);
+      }
       const topicJson = (await tRes.json()) as { id: string };
 
       const fd = new FormData();
@@ -48,7 +56,15 @@ export function InterviewPrep() {
         method: "POST",
         body: fd,
       });
-      if (!cvRes.ok) throw new Error(await cvRes.text());
+      if (!cvRes.ok) {
+        const body = await cvRes.text();
+        if (cvRes.status === 401 || cvRes.status === 403) {
+          throw new Error(
+            "Not authorized to upload CV. Log out and log in again after AUTH0_AUDIENCE is configured."
+          );
+        }
+        throw new Error(body || `Upload failed (${cvRes.status})`);
+      }
       setSuccess("Job and CV saved. Continue to ATS, Mock, or Live pages.");
       setJobTitle("");
       setCompanyName("");

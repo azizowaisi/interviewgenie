@@ -17,7 +17,8 @@ async function forward(req: NextRequest, segments: string[]) {
 
   // Prefer Auth0 identity when available so data is stable across logout/login.
   try {
-    const token = await auth0.getAccessToken();
+    const aud = process.env.AUTH0_AUDIENCE?.trim();
+    const token = aud ? await auth0.getAccessToken({ audience: aud }) : await auth0.getAccessToken();
     if (token?.token) headers.set("Authorization", `Bearer ${token.token}`);
   } catch {
     // Ignore — anonymous/dev flows still use X-User-Id.
