@@ -1,13 +1,14 @@
 # syntax=docker/dockerfile:1.6
 # Production-style image (also used for local full-stack compose).
-# Node 22 LTS on Alpine — official Node images are Debian/Alpine-based (not Ubuntu).
-FROM node:22-alpine AS deps
+# Node 22 Alpine via AWS Public ECR mirror of Docker Official Images — avoids Docker Hub
+# anonymous/authenticated pull rate limits in CI (registry-1.docker.io 429).
+FROM public.ecr.aws/docker/library/node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* .npmrc ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
-FROM node:22-alpine AS builder
+FROM public.ecr.aws/docker/library/node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -51,7 +52,7 @@ ENV AUTH0_BASE_URL=$AUTH0_BASE_URL
 ENV APP_BASE_URL=$APP_BASE_URL
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM public.ecr.aws/docker/library/node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
