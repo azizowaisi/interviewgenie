@@ -25,6 +25,7 @@
 # Optional repository Variables:
 #   CI_FORCE_BUILD_ALL = true — on push to main only: build & push all eight images (+ full pytest matrix), like manual force_build.
 #     Clear after use; otherwise every main push pays full Docker matrix.
+#   Or put [ci-full-build] in the commit subject/body (push to main) for a one-off full matrix without changing variables.
 #   K8S_SKIP_OLLAMA_PULL = true — skip ollama model pull after apply (faster when model already present).
 #   K8S_AUTO_RECOVER_IMAGE_PULL = true — after deploy, if ImagePullBackOff/ErrImagePull, run k8s-recover-stuck-rollouts.sh --apply.
 
@@ -155,6 +156,7 @@ jobs:
           FILTER_WEB: ${{ steps.filter.outputs.web }}
           FILTER_PYTHON_TESTS: ${{ steps.filter.outputs.python_tests }}
           VAR_CI_FORCE_BUILD_ALL: ${{ vars.CI_FORCE_BUILD_ALL }}
+          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message || '' }}
         run: bash scripts/ci/gha-resolve-detect-outputs.sh
 
   test:

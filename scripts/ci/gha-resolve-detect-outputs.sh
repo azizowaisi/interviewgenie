@@ -2,6 +2,7 @@
 # Used by Build and Deploy workflow after dorny/paths-filter. Writes GITHUB_OUTPUT.
 # Env (boolean strings from GitHub): EVENT_NAME, INPUT_DEPLOY_ONLY, INPUT_FORCE_BUILD, INPUT_SKIP_TESTS
 # Env: VAR_CI_FORCE_BUILD_ALL — repository Variable CI_FORCE_BUILD_ALL (true/1/yes): on push, build all eight images.
+# Env: HEAD_COMMIT_MESSAGE — github.event.head_commit.message; if it contains [ci-full-build], same full matrix on push.
 # Env: FILTER_* for each paths-filter output (true/false from dorny)
 #
 # Also writes build_matrix_slugs (JSON array) for the build-images matrix so only changed
@@ -72,6 +73,35 @@ write_build_flags() {
 build_any=false
 tests_any=false
 
+# Full image + pytest matrix on push (same slugs as manual workflow force_build).
+emit_push_full_matrix() {
+  local note="$1"
+  echo "build_any=true" >>"${GITHUB_OUTPUT}"
+  write_build_flags "true"
+  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
+  echo "tests_any=true" >>"${GITHUB_OUTPUT}"
+  write_test_matrix_to_output '["question-service","formatter-service","llm-service","stt-service","audio-service"]'
+  {
+    echo "### Detect"
+    echo "- ${note}"
+    echo "- **build_any:** true"
+    echo "- **tests_any:** true"
+    echo ""
+    echo "| Path group | Changed |"
+    echo "|------------|---------|"
+    echo "| api-service | true |"
+    echo "| audio-service | true |"
+    echo "| stt-service | true |"
+    echo "| question-service | true |"
+    echo "| llm-service | true |"
+    echo "| formatter-service | true |"
+    echo "| monitoring-service | true |"
+    echo "| web | true |"
+    echo "| python tests (pytest services) | true |"
+    echo "| **pytest matrix** | true (see test_matrix_services) |"
+  } >>"${GITHUB_STEP_SUMMARY}"
+}
+
 if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   if [[ "${INPUT_DEPLOY_ONLY}" == "true" ]]; then
     echo "build_any=false" >>"${GITHUB_OUTPUT}"
@@ -102,18 +132,15 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   fi
 fi
 
-# Push to main + Variable CI_FORCE_BUILD_ALL=true — same image matrix as manual force_build (unset var after to save CI minutes).
+# Push to main: full matrix if Variable CI_FORCE_BUILD_ALL or commit message contains [ci-full-build].
 _force_var="$(printf '%s' "${VAR_CI_FORCE_BUILD_ALL:-}" | tr '[:upper:]' '[:lower:]' | tr -d ' \t\r\n')"
+_commit_msg="${HEAD_COMMIT_MESSAGE:-}"
+if [[ "${EVENT_NAME}" == "push" ]] && printf '%s' "${_commit_msg}" | grep -qF '[ci-full-build]'; then
+  emit_push_full_matrix "**Mode:** commit message contains \`[ci-full-build]\` — full Docker matrix + pytest (path filters ignored for this run)."
+  exit 0
+fi
 if [[ "${EVENT_NAME}" == "push" ]] && [[ "${_force_var}" == "true" || "${_force_var}" == "1" || "${_force_var}" == "yes" ]]; then
-  echo "build_any=true" >>"${GITHUB_OUTPUT}"
-  write_build_flags "true"
-  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
-  echo "tests_any=true" >>"${GITHUB_OUTPUT}"
-  write_test_matrix_to_output '["question-service","formatter-service","llm-service","stt-service","audio-service"]'
-  echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
-  echo "- **Mode:** \`CI_FORCE_BUILD_ALL\` repository variable — build all images on push to main" >>"${GITHUB_STEP_SUMMARY}"
-  echo "- **Tests:** true (five backend pytest jobs)" >>"${GITHUB_STEP_SUMMARY}"
-  echo "- **Tip:** Clear or set variable to \`false\` after this run so future pushes stay path-filtered." >>"${GITHUB_STEP_SUMMARY}"
+  emit_push_full_matrix "**Mode:** \`CI_FORCE_BUILD_ALL\` repository variable — full matrix on push. *Tip:* set variable to \`false\` or remove after this run so future pushes stay path-filtered."
   exit 0
 fi
 
