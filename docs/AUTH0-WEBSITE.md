@@ -120,8 +120,29 @@ kubectl exec -n interview-ai deploy/api-service -- grep -F "AUTH0_AUDIENCE is re
 
 ---
 
+## Generic “fix Auth0” prompts (often wrong here)
+
+Checklists from other AI tools frequently assume a **`web/src/`** layout, **`API_SERVICE_URL`**, **`app/api/auth/[...auth0]/route.ts`**, **always-on `audience` in `authorizationParameters`**, and rewriting **`auth.py`** with **python-jose**. **Do not apply those to Interview Genie** without comparing to this repo.
+
+| Common suggestion | This project instead |
+|-------------------|----------------------|
+| Put `middleware.ts` only under `web/src/` | App lives in **`web/app/`** with **`web/middleware.ts`** (no `src/` folder). Moving middleware breaks routing. |
+| `app/api/auth/[...auth0]/route.ts` + `auth0.handler` | **Auth0 v4** uses **`auth0.middleware(request)`** for **`/auth/*`** in **`web/middleware.ts`** (see `pathname.startsWith("/auth")`). |
+| Always set `authorizationParameters.audience` | **Intentionally optional** here: if the Auth0 **API** does not exist yet, that breaks login (*Service not found*). Use **`AUTH0_AUTHORIZE_AUDIENCE=true`** only after the API exists. **`web/lib/auth0.ts`** documents this. |
+| “Do not use `AUTH0_BASE_URL`” | This codebase and k8s use **`AUTH0_BASE_URL`** and/or **`APP_BASE_URL`**; both are supported in callbacks and docs. |
+| Rename env to `API_SERVICE_URL` | Server-side base URL for FastAPI is **`API_URL`** (see `web/lib/config.ts`, Docker, k8s `deployment.yaml`). |
+| Replace BFF with `getAccessToken()` snippets | **`web/app/api/app/[...path]/route.ts`** already attaches **Bearer** (API access token when audience matches, else **ID token** fallback) plus **`X-User-Id`** for dev. |
+| Rewrite **`auth.py`** with **python-jose** | **api-service** uses **PyJWT** + **`PyJWKClient`** in **`backend/api-service/auth.py`**, with **`AUTH0_CLIENT_ID`** + **`AUTH0_AUDIENCE`** handling. Do not swap stacks blindly. |
+| Add **`AUTH0_ENABLED`** on the API | Auth is on when **`AUTH0_DOMAIN`** is set; there is no separate **`AUTH0_ENABLED`** flag in this repo. |
+| Callback on port **3000** | Default web port is **`3002`** (`http://localhost:3002/auth/callback`). |
+
+**What actually fixes production issues:** create the Auth0 **API**, set **`AUTH0_AUDIENCE`** in **`web-auth0-env`** (and local **`.env.local`**), ensure **`AUTH0_CLIENT_ID`** matches the Regular Web Application, deploy **api-service** from **`main`** (includes JWT fixes after **`f686c2e`**), and optionally set **`AUTH0_AUTHORIZE_AUDIENCE=true`** on **web** once the API is authorized for the app.
+
+---
+
 ## Related repo files
 
-- `web/.env.example`, `web/lib/auth0.ts`, `web/app/api/app/[...path]/route.ts`
+- `web/.env.example`, `web/.env.local.example`, `web/lib/auth0.ts`, `web/app/api/app/[...path]/route.ts`, `web/middleware.ts`
+- `backend/api-service/auth.py`
 - `docs/GITHUB-ENVIRONMENT.md` — CI variables and `web-auth0-env` keys
 - `docs/DEPLOY-WEB-ADMIN-GIT.md` — TLS / hostnames
