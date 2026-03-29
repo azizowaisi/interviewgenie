@@ -9,6 +9,11 @@ export type SdkAccessTokenShape = {
   expiresAt?: number;
 };
 
+function looksLikeJwt(token: string): boolean {
+  // JWTs are base64url.base64url.base64url (two dots). Opaque tokens break api-service JWT verification.
+  return token.split(".").length === 3;
+}
+
 /**
  * When AUTH0_AUDIENCE is set, only forward the SDK access token if it reports that
  * audience. Otherwise the SDK often returns the default access token (wrong `aud` or
@@ -19,6 +24,7 @@ export function shouldSetAuthorizationFromSdkAccessToken(
   at: SdkAccessTokenShape | null | undefined,
 ): boolean {
   const aud = envAudience?.trim();
-  if (!aud) return Boolean(at?.token);
-  return Boolean(at?.token && at.audience?.trim() === aud);
+  const token = at?.token?.trim() ?? "";
+  if (!aud) return Boolean(token);
+  return Boolean(token && looksLikeJwt(token) && at?.audience?.trim() === aud);
 }

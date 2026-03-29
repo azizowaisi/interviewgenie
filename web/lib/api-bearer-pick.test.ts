@@ -10,11 +10,11 @@ describe("shouldSetAuthorizationFromSdkAccessToken", () => {
       false,
     );
     expect(shouldSetAuthorizationFromSdkAccessToken(apiAud, { token: "jwt", audience: "https://wrong/" })).toBe(false);
-    expect(shouldSetAuthorizationFromSdkAccessToken(apiAud, { token: "x", audience: `${apiAud} ` })).toBe(true);
+    expect(shouldSetAuthorizationFromSdkAccessToken(apiAud, { token: "x.y.z", audience: `${apiAud} ` })).toBe(true);
   });
 
   it("forwards SDK token when audience matches", () => {
-    expect(shouldSetAuthorizationFromSdkAccessToken(apiAud, { token: "jwt", audience: apiAud })).toBe(true);
+    expect(shouldSetAuthorizationFromSdkAccessToken(apiAud, { token: "x.y.z", audience: apiAud })).toBe(true);
   });
 
   it("when no AUTH0_AUDIENCE, forwards any non-empty token", () => {
