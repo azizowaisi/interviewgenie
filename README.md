@@ -128,7 +128,7 @@ kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
 
 Manifests under **`k8s/`** define routing: web BFF, WebSocket to audio, API paths to **api-service**, optional admin host. STT expects a **Whisper** endpoint (`WHISPER_URL`); add a Whisper workload or an external URL as needed.
 
-**Further reading:** [docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md), [docs/DEPLOY-WEB-ADMIN-GIT.md](docs/DEPLOY-WEB-ADMIN-GIT.md), [docs/MONITORING-ADMIN.md](docs/MONITORING-ADMIN.md), [docs/VUE-FRONTENDS.md](docs/VUE-FRONTENDS.md), [docs/K8S-SCALING-AND-ROLLING.md](docs/K8S-SCALING-AND-ROLLING.md).
+**Further reading:** [docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md), [docs/DEPLOY-WEB-ADMIN-GIT.md](docs/DEPLOY-WEB-ADMIN-GIT.md), [docs/AUTH0-WEBSITE.md](docs/AUTH0-WEBSITE.md), [docs/MONITORING-ADMIN.md](docs/MONITORING-ADMIN.md), [docs/VUE-FRONTENDS.md](docs/VUE-FRONTENDS.md), [docs/K8S-SCALING-AND-ROLLING.md](docs/K8S-SCALING-AND-ROLLING.md).
 
 ---
 
@@ -155,7 +155,7 @@ Answers **stream** to the client. **Audio service** can call LLM **`/warmup`** o
 - **LLM Service:** `OLLAMA_HOST` (default `http://ollama:11434`), `OLLAMA_MODEL` (default `qwen2.5:0.5b`)
 - **Whisper Service:** `WHISPER_MODEL` — `base` (default) or `small`
 
-Auth0 and production env for the Next.js app are documented in **`docs/GITHUB-ENVIRONMENT.md`** and **`web/.env.local.example`**.
+Auth0 for the **website** (callbacks, API audience, social logins): **`docs/AUTH0-WEBSITE.md`**. CI and Kubernetes secrets: **`docs/GITHUB-ENVIRONMENT.md`**. Local: copy **`web/.env.local.example`** → **`web/.env.local`** (and see **`web/.env.example`**).
 
 ---
 

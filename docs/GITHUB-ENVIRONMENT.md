@@ -1,5 +1,7 @@
 # GitHub repository Variables and Secrets (production)
 
+**Auth0 dashboard setup for the Next.js site** (application type, callback URLs, API identifier, social connections): see **[AUTH0-WEBSITE.md](AUTH0-WEBSITE.md)**.
+
 Configure these under **Settings → Secrets and variables → Actions**.
 
 - **Variables** — non-sensitive; visible in logs if echoed (still avoid putting tokens here).
