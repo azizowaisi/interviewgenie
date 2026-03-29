@@ -23,6 +23,8 @@
 # See docs/DEPLOY-GIT-K8S.md, docs/GITHUB-ACTIONS-K8S-OIDC.md
 #
 # Optional repository Variables:
+#   CI_FORCE_BUILD_ALL = true — on push to main only: build & push all eight images (+ full pytest matrix), like manual force_build.
+#     Clear after use; otherwise every main push pays full Docker matrix.
 #   K8S_SKIP_OLLAMA_PULL = true — skip ollama model pull after apply (faster when model already present).
 #   K8S_AUTO_RECOVER_IMAGE_PULL = true — after deploy, if ImagePullBackOff/ErrImagePull, run k8s-recover-stuck-rollouts.sh --apply.
 
@@ -152,6 +154,7 @@ jobs:
           FILTER_MONITORING_SERVICE: ${{ steps.filter.outputs.monitoring_service }}
           FILTER_WEB: ${{ steps.filter.outputs.web }}
           FILTER_PYTHON_TESTS: ${{ steps.filter.outputs.python_tests }}
+          VAR_CI_FORCE_BUILD_ALL: ${{ vars.CI_FORCE_BUILD_ALL }}
         run: bash scripts/ci/gha-resolve-detect-outputs.sh
 
   test:

@@ -47,6 +47,7 @@ Do **not** commit real Auth0 secrets to the repo.
 | `DOCKERHUB_TOKEN` | **Secret** | (PAT or access token) | Required for push/pull. |
 | `DOCKER_REGISTRY_CACHE` | Variable | `true` or `false` | Optional; default enables registry cache when not `false`. |
 | `WEB_DOCKER_PLATFORMS` | Variable | `linux/amd64` | Optional; **web image only** — speeds CI Docker build by skipping the arm64/QEMU leg. Use only if **all** Kubernetes nodes that run **web** are amd64. |
+| `CI_FORCE_BUILD_ALL` | Variable | `true` | When **true** / **1** / **yes**, each **push to `main`** runs **all eight** image builds and the full backend pytest matrix (same idea as **Actions → Build and Deploy → Force rebuild all**). **Turn off or delete after** the run you care about, or every push will pay full Docker cost. |
 
 ---
 
