@@ -79,6 +79,8 @@ kubectl rollout status deployment/api-service -n "$K" --timeout=180s
 
 If you see **ImagePullBackOff**, the tag does **not** exist yet — **do not** leave the deployment broken; **`kubectl rollout undo deployment/api-service -n interview-ai`**.
 
+If the error is **`no match for platform in manifest: not found`**, the node is probably **ARM64** (`aarch64`) but the image on Docker Hub is **amd64-only**. Fix: in GitHub **repository Variables**, ensure you are **not** forcing **`CI_DOCKER_PLATFORMS=linux/amd64`** (or **workflow_dispatch → amd64_only**) unless **every** node that runs **web** / **api-service** is **amd64**. Default workflow behavior should build **`linux/amd64,linux/arm64`** when those vars are unset.
+
 ---
 
 ## 4. Browser check
