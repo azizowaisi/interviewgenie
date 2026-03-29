@@ -104,6 +104,22 @@ With **Auth0** enabled on **api-service** (`AUTH0_DOMAIN` set), it expects a **B
 
 ---
 
+## 9. Troubleshooting: “AUTH0_AUDIENCE is required when AUTH0_DOMAIN is set”
+
+That **exact sentence** is **not** returned by **current** `api-service` code on `main` (it was removed in commit **`f686c2e`**). If you still see it in the API JSON response, **`api-service` in Kubernetes is running an older image** — rebuild/redeploy from current `main`, or pin the image tag your CI pushed after that commit.
+
+**Fix it without waiting for a new image:** add **`AUTH0_AUDIENCE`** to the **`web-auth0-env`** secret (same value as Auth0 **APIs → Identifier**), then restart the **api-service** pod. That satisfies the old server code and is the correct long-term setting anyway.
+
+**If you see a different 503:** `Set AUTH0_CLIENT_ID (and ideally AUTH0_AUDIENCE) when AUTH0_DOMAIN is set` — both **`AUTH0_CLIENT_ID`** and **`AUTH0_AUDIENCE`** are missing from the pod environment; at minimum put **`AUTH0_CLIENT_ID`** in `web-auth0-env` (and preferably **`AUTH0_AUDIENCE`** too).
+
+**Sanity check on the cluster** (should **not** print the old phrase):
+
+```bash
+kubectl exec -n interview-ai deploy/api-service -- grep -F "AUTH0_AUDIENCE is required" /app/auth.py || echo "ok: old message not in image"
+```
+
+---
+
 ## Related repo files
 
 - `web/.env.example`, `web/lib/auth0.ts`, `web/app/api/app/[...path]/route.ts`
