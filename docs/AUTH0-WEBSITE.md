@@ -2,6 +2,8 @@
 
 This project’s browser app uses **Next.js** with **`@auth0/nextjs-auth0`** (server session, `/auth/*` routes). Default dev URL is **`http://localhost:3002`**. This guide covers **the website only** (not Electron or mobile).
 
+**Production stuck for days (Save Job / 503 / audience errors)?** Use the ordered runbook **[AUTH0-END-TO-END-FIX.md](AUTH0-END-TO-END-FIX.md)** first.
+
 ---
 
 ## 1. Auth0 tenant

@@ -155,7 +155,7 @@ Answers **stream** to the client. **Audio service** can call LLM **`/warmup`** o
 - **LLM Service:** `OLLAMA_HOST` (default `http://ollama:11434`), `OLLAMA_MODEL` (default `qwen2.5:0.5b`)
 - **Whisper Service:** `WHISPER_MODEL` — `base` (default) or `small`
 
-Auth0 for the **website** (callbacks, API audience, social logins): **`docs/AUTH0-WEBSITE.md`**. CI and Kubernetes secrets: **`docs/GITHUB-ENVIRONMENT.md`**. Local: copy **`web/.env.local.example`** → **`web/.env.local`** (and see **`web/.env.example`**).
+Auth0 for the **website** (callbacks, API audience, social logins): **`docs/AUTH0-WEBSITE.md`**. If login or **Save Job** has failed for days: **`docs/AUTH0-END-TO-END-FIX.md`** (ordered kubectl + secret patch). CI and Kubernetes secrets: **`docs/GITHUB-ENVIRONMENT.md`**. Local: copy **`web/.env.local.example`** → **`web/.env.local`** (and see **`web/.env.example`**).
 
 ---
 

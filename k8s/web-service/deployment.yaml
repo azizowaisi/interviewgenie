@@ -50,7 +50,7 @@ spec:
             # var in `env` above; explicit env wins over envFrom and would ignore secret updates (401 on Save).
             # Keys: AUTH0_DOMAIN, AUTH0_ISSUER_BASE_URL, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET,
             # AUTH0_SECRET, AUTH0_BASE_URL, APP_BASE_URL, AUTH0_AUDIENCE (required for Save job / BFF),
-            # NEXT_PUBLIC_PUBLIC_APP_URL (optional if baked in image).
+            # NEXT_PUBLIC_PUBLIC_APP_URL (optional if baked in image). Stuck for days? docs/AUTH0-END-TO-END-FIX.md
             - secretRef:
                 name: web-auth0-env
                 optional: true
