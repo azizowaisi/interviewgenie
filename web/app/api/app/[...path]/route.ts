@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth0 } from "@/lib/auth0";
-import { shouldSetAuthorizationFromSdkAccessToken } from "@/lib/api-bearer-pick";
+import { pickJwtBearer, shouldSetAuthorizationFromSdkAccessToken } from "@/lib/api-bearer-pick";
 import { apiBase } from "@/lib/config";
 
 type Ctx = { params: Promise<{ path?: string[] | string }> };
@@ -49,13 +49,13 @@ async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidec
     const scoped = aud
       ? session.accessTokens?.find((t) => t.audience?.trim() === aud)
       : undefined;
-    // Prefer id_token over tokenSet.accessToken when no scoped API token: the default
-    // access token may be opaque or wrong aud (decode fails → 401); id_token is a JWT
-    // with aud=client_id, which api-service accepts when AUTH0_CLIENT_ID is set.
-    const bearer =
-      scoped?.accessToken ||
-      session.tokenSet?.idToken ||
-      session.tokenSet?.accessToken;
+    // Session may include a scoped access token that is opaque (wrong for PyJWT).
+    // Pick the first JWT among scoped token, id_token, and default access token.
+    const bearer = pickJwtBearer(
+      scoped?.accessToken,
+      session.tokenSet?.idToken,
+      session.tokenSet?.accessToken,
+    );
     if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   } catch {
     // Ignore — anonymous/dev flows still use X-User-Id.

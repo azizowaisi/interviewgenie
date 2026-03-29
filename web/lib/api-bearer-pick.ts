@@ -9,9 +9,18 @@ export type SdkAccessTokenShape = {
   expiresAt?: number;
 };
 
-function looksLikeJwt(token: string): boolean {
+export function looksLikeJwt(token: string): boolean {
   // JWTs are base64url.base64url.base64url (two dots). Opaque tokens break api-service JWT verification.
   return token.split(".").length === 3;
+}
+
+/** Prefer the first candidate that is a JWT (opaque access tokens must not win over id_token). */
+export function pickJwtBearer(...candidates: (string | undefined | null)[]): string | undefined {
+  for (const c of candidates) {
+    const t = typeof c === "string" ? c.trim() : "";
+    if (t && looksLikeJwt(t)) return t;
+  }
+  return undefined;
 }
 
 /**

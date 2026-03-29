@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { shouldSetAuthorizationFromSdkAccessToken } from "./api-bearer-pick";
+import { pickJwtBearer, shouldSetAuthorizationFromSdkAccessToken } from "./api-bearer-pick";
+
+describe("pickJwtBearer", () => {
+  it("skips opaque tokens and returns first JWT", () => {
+    expect(pickJwtBearer("opaque", "a.b.c", "x.y.z")).toBe("a.b.c");
+    expect(pickJwtBearer(undefined, null, "")).toBeUndefined();
+    expect(pickJwtBearer("a.b.c.d")).toBeUndefined();
+  });
+});
 
 describe("shouldSetAuthorizationFromSdkAccessToken", () => {
   const apiAud = "https://api.interviewgenie.teckiz.com";

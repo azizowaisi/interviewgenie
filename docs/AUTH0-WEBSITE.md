@@ -138,6 +138,8 @@ Checklists from other AI tools frequently assume a **`web/src/`** layout, **`API
 | Add **`AUTH0_ENABLED`** on the API | Auth is on when **`AUTH0_DOMAIN`** is set; there is no separate **`AUTH0_ENABLED`** flag in this repo. |
 | Callback on port **3000** | Default web port is **`3002`** (`http://localhost:3002/auth/callback`). |
 
+**“Option C” / full rewrite prompts** (move everything to `web/src/`, always send `audience` on `/authorize`, replace FastAPI auth with **python-jose**, new `app/auth.py` package): **do not apply** — this repo already implements per-user JWT auth; a wholesale swap breaks k8s, the BFF, and ARM images. If you still see **“Not authorized to save”** after **`AUTH0_AUDIENCE`** is set, the usual cause is an **opaque** access token being forwarded instead of the **ID token**; that is handled in **`web/app/api/app/[...path]/route.ts`** and **`web/lib/api-bearer-pick.ts`** (deploy a current **web** image).
+
 **What actually fixes production issues:** create the Auth0 **API**, set **`AUTH0_AUDIENCE`** in **`web-auth0-env`** (and local **`.env.local`**), ensure **`AUTH0_CLIENT_ID`** matches the Regular Web Application, deploy **api-service** from **`main`** (includes JWT fixes after **`f686c2e`**), and optionally set **`AUTH0_AUTHORIZE_AUDIENCE=true`** on **web** once the API is authorized for the app.
 
 ---
