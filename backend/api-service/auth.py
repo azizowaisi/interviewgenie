@@ -8,7 +8,19 @@ import jwt
 from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "").rstrip("/")
+
+def _normalize_auth0_domain(raw: str) -> str:
+    """Host only, no scheme — fixes JWKS URL when env is set to https://tenant.auth0.com."""
+    d = (raw or "").strip().rstrip("/")
+    low = d.lower()
+    if low.startswith("https://"):
+        d = d[8:]
+    elif low.startswith("http://"):
+        d = d[7:]
+    return d.rstrip("/")
+
+
+AUTH0_DOMAIN = _normalize_auth0_domain(os.getenv("AUTH0_DOMAIN", ""))
 AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "").strip()
 # Same as the Auth0 Application "Client ID" (public). When set, we accept ID tokens
 # (aud = client_id) as well as API access tokens (aud = AUTH0_AUDIENCE) — needed if

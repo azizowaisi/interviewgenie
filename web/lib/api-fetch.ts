@@ -6,10 +6,13 @@ const appPrefix = "/api/app";
 export async function appFetch(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("X-User-Id", getUserId());
-  return fetch(`${appPrefix}${path.startsWith("/") ? path : `/${path}`}`, {
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return fetch(`${appPrefix}${suffix}`, {
     ...init,
     headers,
     cache: "no-store",
+    // Session cookie for BFF Auth0 must be sent (explicit for edge cases / proxies).
+    credentials: "include",
   });
 }
 

@@ -62,8 +62,11 @@ export function InterviewPrep() {
       if (!tRes.ok) {
         const raw = await tRes.text();
         if (tRes.status === 401 || tRes.status === 403) {
+          const hint = messageFromFailedApiResponse(raw, tRes.status, "");
           throw new Error(
-            "Not authorized to save. Log out and log in again. If this persists: AUTH0_AUDIENCE on web must match api-service and your Auth0 API; api-service needs AUTH0_CLIENT_ID from the same Auth0 app; use a current web deploy (BFF forwards session tokens)."
+            hint
+              ? `Not authorized (${tRes.status}): ${hint}. If this persists: log out and log in; ensure AUTH0_AUDIENCE matches your Auth0 API identifier on web + api-service; AUTH0_CLIENT_ID matches the same Auth0 app.`
+              : "Not authorized to save. Log out and log in again. If this persists: AUTH0_AUDIENCE on web must match api-service and your Auth0 API; api-service needs AUTH0_CLIENT_ID from the same Auth0 app; use a current web deploy (BFF forwards session tokens).",
           );
         }
         const msg = messageFromFailedApiResponse(raw, tRes.status, `Save failed (${tRes.status})`);
@@ -80,8 +83,11 @@ export function InterviewPrep() {
       if (!cvRes.ok) {
         const raw = await cvRes.text();
         if (cvRes.status === 401 || cvRes.status === 403) {
+          const hint = messageFromFailedApiResponse(raw, cvRes.status, "");
           throw new Error(
-            "Not authorized to upload CV. Log out and log in again after AUTH0_AUDIENCE is configured."
+            hint
+              ? `Not authorized (${cvRes.status}): ${hint}. Log out and log in; check AUTH0_AUDIENCE + CLIENT_ID alignment.`
+              : "Not authorized to upload CV. Log out and log in again after AUTH0_AUDIENCE is configured.",
           );
         }
         const msg = messageFromFailedApiResponse(raw, cvRes.status, `Upload failed (${cvRes.status})`);

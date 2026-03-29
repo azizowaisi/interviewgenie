@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth0 } from "@/lib/auth0";
-import { pickJwtBearer, shouldSetAuthorizationFromSdkAccessToken } from "@/lib/api-bearer-pick";
+import {
+  looksLikeJwt,
+  pickJwtBearer,
+  shouldSetAuthorizationFromSdkAccessToken,
+} from "@/lib/api-bearer-pick";
 import { apiBase } from "@/lib/config";
 
 type Ctx = { params: Promise<{ path?: string[] | string }> };
@@ -25,38 +29,46 @@ function mergeSetCookieHeaders(from: Headers, to: Headers) {
 }
 
 async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidecar: NextResponse) {
+  let sdkBearer: string | undefined;
   try {
     const aud = process.env.AUTH0_AUDIENCE?.trim();
     if (aud) {
       const at = await auth0.getAccessToken(req, tokenSidecar, { audience: aud });
       if (shouldSetAuthorizationFromSdkAccessToken(aud, at) && at?.token) {
-        headers.set("Authorization", `Bearer ${at.token}`);
+        sdkBearer = at.token;
       }
     } else {
       const at = await auth0.getAccessToken(req, tokenSidecar);
       if (shouldSetAuthorizationFromSdkAccessToken(undefined, at) && at?.token) {
-        headers.set("Authorization", `Bearer ${at.token}`);
+        sdkBearer = at.token;
       }
     }
   } catch {
     // getAccessToken may fail if no API access token in session — fall through to session tokens.
   }
-  if (headers.has("Authorization")) return;
+  // getAccessToken may refresh tokens; the returned JWT is fresh. getSession(req) still reads
+  // request cookies, which can hold an expired id_token — prefer SDK JWT when it is a JWT.
+  if (sdkBearer && looksLikeJwt(sdkBearer)) {
+    headers.set("Authorization", `Bearer ${sdkBearer}`);
+    return;
+  }
   try {
     const session = await auth0.getSession(req);
-    if (!session) return;
-    const aud = process.env.AUTH0_AUDIENCE?.trim();
-    const scoped = aud
-      ? session.accessTokens?.find((t) => t.audience?.trim() === aud)
-      : undefined;
-    // Session may include a scoped access token that is opaque (wrong for PyJWT).
-    // Pick the first JWT among scoped token, id_token, and default access token.
-    const bearer = pickJwtBearer(
-      scoped?.accessToken,
-      session.tokenSet?.idToken,
-      session.tokenSet?.accessToken,
-    );
-    if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
+    if (session) {
+      const aud = process.env.AUTH0_AUDIENCE?.trim();
+      const scoped = aud
+        ? session.accessTokens?.find((t) => t.audience?.trim() === aud)
+        : undefined;
+      const fromSession = pickJwtBearer(
+        session.tokenSet?.idToken,
+        scoped?.accessToken,
+        session.tokenSet?.accessToken,
+      );
+      if (fromSession) {
+        headers.set("Authorization", `Bearer ${fromSession}`);
+        return;
+      }
+    }
   } catch {
     // Ignore — anonymous/dev flows still use X-User-Id.
   }
