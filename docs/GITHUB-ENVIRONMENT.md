@@ -73,6 +73,8 @@ Create secret `web-auth0-env` in namespace `interview-ai` with:
 
 If you see **“Not authorized to save”**: confirm `AUTH0_AUDIENCE` is in `web-auth0-env`, matches Auth0 and `k8s/api-service` expectations, **`AUTH0_CLIENT_ID`** is present (ID-token fallback), then restart web + api pods after `kubectl apply`.
 
+If the API returns **503** with **`AUTH0_AUDIENCE is required when AUTH0_DOMAIN is set`**, the **api-service** image is older than commit **`f686c2e`**: either add **`AUTH0_AUDIENCE`** to `web-auth0-env` (fixes it immediately), or wait for **Build and Deploy** on `main` to push `interview-ai-api-service:sha-<commit>` and roll that tag (do not point at a sha tag until the workflow has finished — otherwise the pod stays **ImagePullBackOff**).
+
 ---
 
 ## SSH deploy (when using SSH path)
