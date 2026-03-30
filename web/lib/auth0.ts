@@ -41,7 +41,11 @@ async function onCallback(
   ctx: { appBaseUrl?: string; returnTo?: string },
   session: unknown,
 ): Promise<NextResponse> {
-  void session;
+  // Auth0 SDK provides the new session object; we only care about redirect behavior here.
+  // Keep reference so TS/linters don't treat it as unused.
+  if (session) {
+    // no-op
+  }
   if (error) {
     const base = ctx.appBaseUrl;
     if (!base) {
@@ -73,7 +77,10 @@ async function onCallback(
 
 function createClient(): Auth0Client {
   const audience = process.env.AUTH0_AUDIENCE?.trim();
-  const includeAudienceOnAuthorize = process.env.AUTH0_AUTHORIZE_AUDIENCE === "true";
+  // In production we want an API access token available immediately for BFF → api-service calls (Save Job).
+  // Keep local/dev safe: do not force audience unless explicitly enabled.
+  const includeAudienceOnAuthorize =
+    process.env.AUTH0_AUTHORIZE_AUDIENCE === "true" || (process.env.NODE_ENV === "production" && Boolean(audience));
   const authorizationParameters: { audience?: string; scope: string } = {
     scope: "openid profile email offline_access",
   };
