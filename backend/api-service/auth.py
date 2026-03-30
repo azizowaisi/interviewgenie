@@ -1,6 +1,7 @@
 """
 Optional Auth0 JWT validation. If AUTH0_DOMAIN is not set, auth is skipped (local dev).
 """
+import logging
 import os
 from typing import Optional
 
@@ -27,6 +28,8 @@ AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "").strip()
 # the SPA session has no separate API access token yet.
 AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID", "").strip()
 security = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
+INVALID_TOKEN_DETAIL = "Invalid token"
 
 
 def get_jwks_uri() -> str:
@@ -56,7 +59,7 @@ async def verify_token(credentials: Optional[HTTPAuthorizationCredentials]) -> O
         signing_key = jwk_client.get_signing_key_from_jwt(credentials.credentials)
         audiences = [a for a in (AUTH0_AUDIENCE, AUTH0_CLIENT_ID) if a]
         if not audiences:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_TOKEN_DETAIL)
         payload = jwt.decode(
             credentials.credentials,
             signing_key.key,
@@ -65,8 +68,19 @@ async def verify_token(credentials: Optional[HTTPAuthorizationCredentials]) -> O
             options={"verify_exp": True},
         )
         return payload
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except jwt.ExpiredSignatureError:
+        logger.warning("Auth0 token expired")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_TOKEN_DETAIL)
+    except jwt.InvalidAudienceError:
+        logger.warning("Auth0 token audience mismatch (expected one of %s)", [a for a in (AUTH0_AUDIENCE, AUTH0_CLIENT_ID) if a])
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_TOKEN_DETAIL)
+    except jwt.InvalidIssuerError:
+        logger.warning("Auth0 token issuer mismatch (domain=%s)", AUTH0_DOMAIN)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_TOKEN_DETAIL)
+    except Exception as e:
+        # Do not leak token details to clients; log for operators.
+        logger.exception("Auth0 token verify failed: %s", str(e)[:200])
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_TOKEN_DETAIL)
 
 
 async def get_optional_user(request: Request) -> Optional[dict]:
