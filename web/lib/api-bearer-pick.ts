@@ -35,11 +35,26 @@ function jwtAudiences(token: string): string[] {
   return [];
 }
 
-/** Prefer the first candidate that is a JWT (opaque access tokens must not win over id_token). */
+function jwtExpSeconds(token: string): number | null {
+  if (!looksLikeJwt(token)) return null;
+  const payloadSeg = token.split(".")[1] ?? "";
+  const payload = b64UrlToJson(payloadSeg) as { exp?: unknown } | null;
+  const exp = payload?.exp;
+  return typeof exp === "number" && Number.isFinite(exp) ? exp : null;
+}
+
+function jwtIsExpired(token: string, skewSeconds = 60): boolean {
+  const exp = jwtExpSeconds(token);
+  if (!exp) return false;
+  const now = Math.floor(Date.now() / 1000);
+  return exp <= now + skewSeconds;
+}
+
+/** Prefer the first candidate that is a non-expired JWT (opaque access tokens must not win over id_token). */
 export function pickJwtBearer(...candidates: (string | undefined | null)[]): string | undefined {
   for (const c of candidates) {
     const t = typeof c === "string" ? c.trim() : "";
-    if (t && looksLikeJwt(t)) return t;
+    if (t && looksLikeJwt(t) && !jwtIsExpired(t)) return t;
   }
   return undefined;
 }
