@@ -87,7 +87,12 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ -n "${DOCKERHUB_TOKEN:-}" ]]; then
         -p "{\"imagePullSecrets\":[{\"name\":\"interview-ai-dockerhub\"}]}" || true
     fi
   done
-  kubectl rollout restart statefulset/mongo -n "$NS" 2>/dev/null || true
+  # Do not restart Mongo on every deploy. This is a single-replica StatefulSet in most installs,
+  # so a forced restart causes avoidable downtime and can surface as 503 "Database unavailable"
+  # in api-service during user actions (Save job/history).
+  if [[ "${K8S_RESTART_MONGO_ON_DEPLOY:-}" == "1" || "${K8S_RESTART_MONGO_ON_DEPLOY:-}" == "true" ]]; then
+    kubectl rollout restart statefulset/mongo -n "$NS" 2>/dev/null || true
+  fi
 fi
 
 TAG="${K8S_IMAGE_TAG:-latest}"

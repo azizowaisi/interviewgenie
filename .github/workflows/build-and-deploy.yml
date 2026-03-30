@@ -25,6 +25,7 @@
 # Optional repository Variables:
 #   K8S_SKIP_OLLAMA_PULL = true — skip ollama model pull after apply (faster when model already present).
 #   K8S_AUTO_RECOVER_IMAGE_PULL = true — after deploy, if ImagePullBackOff/ErrImagePull, run k8s-recover-stuck-rollouts.sh --apply.
+#   K8S_RESTART_MONGO_ON_DEPLOY = true — optional; if set, restart MongoDB StatefulSet after updating image pull secrets.
 
 name: Build and Deploy
 
