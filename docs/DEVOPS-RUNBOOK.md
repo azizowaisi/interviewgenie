@@ -10,7 +10,6 @@ Single entry point for **CI/CD**, **Kubernetes**, **secrets**, and **operational
 |---------|----------|---------|
 | PR → `main` | `.github/workflows/ci.yml` | Path-scoped pytest, frontends, Docker verify, optional PR image push |
 | Push / manual on `main` | `.github/workflows/build-and-deploy.yml` | Path-scoped tests, Docker build/push, deploy (mode from `DEPLOY_MODE`) |
-| Release / tag (if configured) | `desktop-installers.yml` | Desktop builds (separate from app deploy) |
 
 **Concurrency:** `build-and-deploy` uses one concurrent group per workflow on `main` (`cancel-in-progress: true`) to avoid overlapping deploys.
 

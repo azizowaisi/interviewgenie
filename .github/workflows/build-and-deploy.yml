@@ -1,5 +1,5 @@
 # Push to main + manual dispatch — tests (when relevant), conditional image build/push, deploy.
-# Desktop installers are built separately — see `.github/workflows/desktop-installers.yml`.
+# Desktop installers are not part of this repo’s CI/CD anymore.
 # PR validation: ci.yml (may push pr-<#>-<headSha> for tests/cache — not for production deploy).
 # Authoritative images for deploy: this workflow’s sha-<mergeCommit> tags on Docker Hub after merge.
 #

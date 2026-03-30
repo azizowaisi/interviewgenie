@@ -33,10 +33,10 @@ def test_generate_returns_ollama_response(mock_client):
     mock_client.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
     mock_client.return_value.__aexit__ = AsyncMock(return_value=None)
     inner = AsyncMock()
-    inner.post = AsyncMock(return_value=AsyncMock(
-        raise_for_status=AsyncMock(),
-        json=lambda: {"response": "I led a team project successfully."},
-    ))
+    resp = AsyncMock()
+    resp.raise_for_status = lambda: None
+    resp.json = lambda: {"response": "I led a team project successfully."}
+    inner.post = AsyncMock(return_value=resp)
     mock_client.return_value.__aenter__.return_value = inner
 
     r = client.post("/generate", json={"prompt": "Tell me about leadership."})

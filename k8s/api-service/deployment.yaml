@@ -43,7 +43,11 @@ spec:
               value: "/api/svc"
             # Enable per-user persistence via Auth0 JWTs (fallback: X-User-Id when missing).
             - name: AUTH0_DOMAIN
-              value: "dev-q34hgwqzbjiwzodu.us.auth0.com"
+              valueFrom:
+                secretKeyRef:
+                  name: web-auth0-env
+                  key: AUTH0_DOMAIN
+                  optional: true
             # Must match web BFF and Auth0 API identifier — read from same secret as web.
             # If empty in pod, Save Job → 503. Runbook: docs/AUTH0-END-TO-END-FIX.md
             - name: AUTH0_AUDIENCE

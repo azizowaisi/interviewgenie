@@ -57,7 +57,7 @@ async def generate(body: LlmRequest) -> LlmResponse:
             resp.raise_for_status()
             data = resp.json()
             return LlmResponse(raw_answer=data.get("response", "") or MOCK_ANSWER)
-        except (httpx.TimeoutException, httpx.ConnectError) as e:
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
             return LlmResponse(raw_answer=MOCK_ANSWER)
 
 
@@ -90,7 +90,7 @@ async def generate_stream(body: LlmRequest):
                             pass
                     if not full:
                         yield json.dumps({"token": MOCK_ANSWER}) + "\n"
-            except (httpx.TimeoutException, httpx.ConnectError):
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
                 yield json.dumps({"token": MOCK_ANSWER}) + "\n"
 
     return StreamingResponse(

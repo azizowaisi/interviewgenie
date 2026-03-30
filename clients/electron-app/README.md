@@ -109,17 +109,4 @@ Some setups see `require('electron')` return the binary path instead of the Elec
 
 ## Windows and Linux installers (all platforms)
 
-To produce **macOS, Windows, and Linux** artifacts together, use GitHub Actions:
-
-1. Repo workflow **Desktop installers** (`.github/workflows/desktop-installers.yml`).
-2. Push to `main` (with changes under `clients/electron-app/` or `web/`) or run it manually (**Actions → Desktop installers → Run workflow**).
-
-It builds in parallel on `macos-latest`, `windows-latest`, and `ubuntu-24.04`, then merges:
-
-| OS | Artifact (in `dist/` or download volume) |
-|----|--------------------------------------------|
-| macOS | `InterviewGenie-macos.dmg` |
-| Windows | `InterviewGenie-windows.exe` (NSIS installer) |
-| Linux | `InterviewGenie-linux.AppImage` |
-
-Point the website download buttons at your hosted URLs (or use `NEXT_PUBLIC_DESKTOP_DOWNLOAD_*` / JSON). See repo root workflow comments for rsync to a static volume.
+This repository no longer ships the desktop installer build pipeline. This folder is kept only as historical reference.

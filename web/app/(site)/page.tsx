@@ -3,8 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Mic, BarChart3, Users, Sparkles, Zap, LineChart, MessageSquare, Target, Shield, Download } from "lucide-react";
-import { DesktopDownloadSection } from "@/components/layout/desktop-download-section";
+import { Mic, BarChart3, Users, Sparkles, Zap, LineChart, MessageSquare, Target, Shield } from "lucide-react";
 
 const features = [
   "Real-time interview simulation",
@@ -48,12 +47,6 @@ export default function LandingPage() {
             <Button size="lg" variant="secondary" asChild>
               <Link href="/upload" prefetch={false}>
                 Analyze CV
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link href="#desktop-app" prefetch={false}>
-                <Download className="mr-2 h-4 w-4" />
-                Desktop app
               </Link>
             </Button>
           </div>
@@ -139,8 +132,6 @@ export default function LandingPage() {
       </section>
 
       <Separator />
-
-      <DesktopDownloadSection />
     </div>
   );
 }

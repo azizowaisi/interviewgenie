@@ -39,4 +39,4 @@ Both service `Dockerfile`s run `npm install` + `npm run build` in a Node stage, 
 
 ## Electron
 
-The desktop app (`clients/electron-app`) is unchanged; it still loads the production site. The web workspace behavior is the same via `web-bridge.js` + `workspace.js`.
+Desktop is out of scope for this repository now. The browser workspace still uses `web-bridge.js` + `workspace.js`.

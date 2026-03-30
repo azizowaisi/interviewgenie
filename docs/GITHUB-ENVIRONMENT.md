@@ -89,22 +89,9 @@ If the API returns **503** with the **legacy** text **`AUTH0_AUDIENCE is require
 
 ---
 
-## Desktop installers workflow (optional)
-
-| Name | Type | Notes |
-|------|------|--------|
-| `DESKTOP_DOWNLOAD_PAGE` | Variable | Marketing/download page URL. |
-| `DESKTOP_MIN_VERSION` | Variable | Optional minimum client version. |
-| `DESKTOP_INSTALLERS_RSYNC_DEST` | Variable | e.g. `user@host:/var/www/desktop` — if set, rsync runs. |
-| `DESKTOP_INSTALLERS_SSH_PORT` | Variable | SSH port (default 22). |
-| `DESKTOP_INSTALLERS_SSH_PRIVATE_KEY` | **Secret** | Key for rsync SSH. |
-
----
-
 ## Quick checklist for a new production site
 
 1. Set **`WEB_PUBLIC_APP_URL`** (and admin host vars if you split admin).
 2. Configure **Docker Hub** credentials for image push.
 3. Configure **deploy** (`KUBE_CONFIG` and/or `SSH_*`, `DEPLOY_MODE`) as your pipeline requires.
 4. Wire **Auth0** for the live `web` service (build-time and/or K8s Secret), and register callback/logout URLs for your public URL.
-5. Optionally set **desktop** variables if you use `desktop-installers.yml` + rsync.

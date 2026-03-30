@@ -81,24 +81,7 @@ docker compose --profile ollama exec ollama ollama pull qwen2.5:0.5b
 More detail: **[docs/LOCAL-FULL-STACK.md](docs/LOCAL-FULL-STACK.md)**.
 
 ### Desktop (Electron)
-
-```bash
-cd clients/electron-app
-npm install
-npm start
-```
-
-Configure API/audio/WebSocket base URLs for your environment — see **`clients/electron-app/README.md`**.
-
-### Mobile (Flutter)
-
-```bash
-cd clients/flutter-app
-flutter pub get
-flutter run
-```
-
-On Android emulator, `ws://10.0.2.2:8000/ws/audio`; on a device, use your host machine’s IP.
+Removed from this project. This repository focuses on the **website**.
 
 ---
 
@@ -173,9 +156,6 @@ InterviewGenie/
 │   ├── api-service/          # REST, CV, topics, Auth0 optional
 │   └── monitoring-service/   # optional cluster admin API
 ├── web/                      # Next.js UI + BFF
-├── clients/
-│   ├── electron-app/
-│   └── flutter-app/
 ├── k8s/
 ├── docker-compose.yml
 └── .github/workflows/

@@ -9,5 +9,8 @@ if ! command -v kubectl >/dev/null 2>&1; then
   exit 1
 fi
 echo "Applying k8s/ (context: $(kubectl config current-context 2>/dev/null || echo '?'))"
-kubectl apply -k k8s/
-echo "Done. Check: kubectl get pods -n interview-ai"
+echo "Tip: to pin immutable images, set K8S_IMAGE_TAG=sha-<commit> and DOCKERHUB_USERNAME=<user>."
+
+chmod +x scripts/ci/k8s-apply.sh
+export K8S_SKIP_SET_IMAGE="${K8S_SKIP_SET_IMAGE:-1}"
+exec scripts/ci/k8s-apply.sh

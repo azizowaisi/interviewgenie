@@ -7,7 +7,6 @@ export function SiteFooter() {
     { href: "/mock", label: "Mock" },
     { href: "/live", label: "Live" },
     { href: "/history", label: "History" },
-    { href: "/#desktop-app", label: "Desktop app" },
   ] as const;
 
   return (
