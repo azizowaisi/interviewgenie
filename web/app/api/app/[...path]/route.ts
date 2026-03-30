@@ -3,6 +3,7 @@ import { auth0 } from "@/lib/auth0";
 import {
   looksLikeJwt,
   pickJwtBearer,
+  pickJwtBearerForApi,
   shouldSetAuthorizationFromSdkAccessToken,
 } from "@/lib/api-bearer-pick";
 import { apiBase } from "@/lib/config";
@@ -29,48 +30,42 @@ function mergeSetCookieHeaders(from: Headers, to: Headers) {
 }
 
 async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidecar: NextResponse) {
-  let sdkBearer: string | undefined;
-  try {
-    const aud = process.env.AUTH0_AUDIENCE?.trim();
-    if (aud) {
-      const at = await auth0.getAccessToken(req, tokenSidecar, { audience: aud });
-      if (shouldSetAuthorizationFromSdkAccessToken(aud, at) && at?.token) {
-        sdkBearer = at.token;
-      }
-    } else {
-      const at = await auth0.getAccessToken(req, tokenSidecar);
-      if (shouldSetAuthorizationFromSdkAccessToken(undefined, at) && at?.token) {
-        sdkBearer = at.token;
-      }
+  const aud = process.env.AUTH0_AUDIENCE?.trim();
+
+  const fromSdk = await (async () => {
+    try {
+      const at = aud
+        ? await auth0.getAccessToken(req, tokenSidecar, { audience: aud })
+        : await auth0.getAccessToken(req, tokenSidecar);
+      if (shouldSetAuthorizationFromSdkAccessToken(aud, at) && at?.token) return at.token;
+    } catch {
+      // getAccessToken may fail if no API access token in session — fall through to session tokens.
     }
-  } catch {
-    // getAccessToken may fail if no API access token in session — fall through to session tokens.
-  }
+    return undefined;
+  })();
+
   // getAccessToken may refresh tokens; the returned JWT is fresh. getSession(req) still reads
   // request cookies, which can hold an expired id_token — prefer SDK JWT when it is a JWT.
-  if (sdkBearer && looksLikeJwt(sdkBearer)) {
-    headers.set("Authorization", `Bearer ${sdkBearer}`);
+  if (fromSdk && looksLikeJwt(fromSdk)) {
+    headers.set("Authorization", `Bearer ${fromSdk}`);
     return;
   }
-  try {
-    const session = await auth0.getSession(req);
-    if (session) {
-      const aud = process.env.AUTH0_AUDIENCE?.trim();
-      const scoped = aud
-        ? session.accessTokens?.find((t) => t.audience?.trim() === aud)
-        : undefined;
-      const fromSession = pickJwtBearer(
-        session.tokenSet?.idToken,
-        scoped?.accessToken,
-        session.tokenSet?.accessToken,
-      );
-      if (fromSession) {
-        headers.set("Authorization", `Bearer ${fromSession}`);
-        return;
-      }
+
+  const fromSession = await (async () => {
+    try {
+      const session = await auth0.getSession(req);
+      if (!session) return undefined;
+      const scoped = aud ? session.accessTokens?.find((t) => t.audience?.trim() === aud) : undefined;
+      return aud
+        ? pickJwtBearerForApi(aud, session.tokenSet?.idToken, scoped?.accessToken, session.tokenSet?.accessToken)
+        : pickJwtBearer(session.tokenSet?.idToken, scoped?.accessToken, session.tokenSet?.accessToken);
+    } catch {
+      return undefined;
     }
-  } catch {
-    // Ignore — anonymous/dev flows still use X-User-Id.
+  })();
+
+  if (fromSession) {
+    headers.set("Authorization", `Bearer ${fromSession}`);
   }
 }
 

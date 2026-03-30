@@ -50,12 +50,44 @@ function jwtIsExpired(token: string, skewSeconds = 60): boolean {
   return exp <= now + skewSeconds;
 }
 
+function jwtHasAudience(token: string, requiredAudience: string | undefined): boolean {
+  const req = requiredAudience?.trim();
+  if (!req) return true;
+  return jwtAudiences(token).includes(req);
+}
+
 /** Prefer the first candidate that is a non-expired JWT (opaque access tokens must not win over id_token). */
 export function pickJwtBearer(...candidates: (string | undefined | null)[]): string | undefined {
   for (const c of candidates) {
     const t = typeof c === "string" ? c.trim() : "";
     if (t && looksLikeJwt(t) && !jwtIsExpired(t)) return t;
   }
+  return undefined;
+}
+
+/**
+ * API-specific bearer picking.
+ *
+ * - Prefer a non-expired id_token first (api-service accepts aud=AUTH0_CLIENT_ID).
+ * - Only use access tokens when they are non-expired JWTs whose aud includes the API identifier.
+ *
+ * This avoids forwarding a JWT that "looks valid" but has the wrong audience (401 Invalid token).
+ */
+export function pickJwtBearerForApi(
+  apiAudience: string | undefined,
+  idToken: string | undefined | null,
+  scopedAccessToken: string | undefined | null,
+  fallbackAccessToken: string | undefined | null,
+): string | undefined {
+  const id = pickJwtBearer(idToken);
+  if (id) return id;
+
+  const scoped = pickJwtBearer(scopedAccessToken);
+  if (scoped && jwtHasAudience(scoped, apiAudience)) return scoped;
+
+  const fallback = pickJwtBearer(fallbackAccessToken);
+  if (fallback && jwtHasAudience(fallback, apiAudience)) return fallback;
+
   return undefined;
 }
 

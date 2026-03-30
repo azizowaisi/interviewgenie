@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pickJwtBearer, shouldSetAuthorizationFromSdkAccessToken } from "./api-bearer-pick";
+import { pickJwtBearer, pickJwtBearerForApi, shouldSetAuthorizationFromSdkAccessToken } from "./api-bearer-pick";
 
 function b64Url(obj: unknown): string {
   const raw = Buffer.from(JSON.stringify(obj), "utf8").toString("base64");
@@ -24,6 +24,25 @@ describe("pickJwtBearer", () => {
     const expired = fakeJwt({ exp: now - 10, aud: "x" });
     const ok = fakeJwt({ exp: now + 3600, aud: "x" });
     expect(pickJwtBearer(expired, ok)).toBe(ok);
+  });
+});
+
+describe("pickJwtBearerForApi", () => {
+  const apiAud = "https://api.interviewgenie.teckiz.com";
+
+  it("prefers id_token even when access token has wrong audience", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const id = fakeJwt({ exp: now + 3600, aud: "client_id" });
+    const wrongAt = fakeJwt({ exp: now + 3600, aud: "https://wrong.example" });
+    expect(pickJwtBearerForApi(apiAud, id, wrongAt, wrongAt)).toBe(id);
+  });
+
+  it("uses access token only when aud matches API audience", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const okAt = fakeJwt({ exp: now + 3600, aud: apiAud });
+    expect(pickJwtBearerForApi(apiAud, null, okAt, null)).toBe(okAt);
+    const wrongAt = fakeJwt({ exp: now + 3600, aud: "https://wrong.example" });
+    expect(pickJwtBearerForApi(apiAud, null, wrongAt, null)).toBeUndefined();
   });
 });
 
