@@ -16,6 +16,26 @@ function normalizePathSegments(path: string[] | string | undefined): string[] {
   return Array.isArray(path) ? path : [path];
 }
 
+function b64UrlToJson(seg: string): unknown {
+  try {
+    const pad = seg.length % 4 === 0 ? "" : "=".repeat(4 - (seg.length % 4));
+    const b64 = (seg + pad).replaceAll("-", "+").replaceAll("_", "/");
+    const raw = Buffer.from(b64, "base64").toString("utf8");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function jwtMeta(token: string): { aud?: unknown; exp?: unknown; iss?: unknown; sub?: unknown } | null {
+  if (!looksLikeJwt(token)) return null;
+  const payloadSeg = token.split(".")[1] ?? "";
+  const payload = b64UrlToJson(payloadSeg);
+  if (!payload || typeof payload !== "object") return null;
+  const o = payload as Record<string, unknown>;
+  return { aud: o.aud, exp: o.exp, iss: o.iss, sub: o.sub };
+}
+
 /** Copy Set-Cookie headers from Auth0 token refresh onto the outgoing BFF response. */
 function mergeSetCookieHeaders(from: Headers, to: Headers) {
   const extended = from as Headers & { getSetCookie?: () => string[] };
@@ -29,7 +49,11 @@ function mergeSetCookieHeaders(from: Headers, to: Headers) {
   if (single) to.append("Set-Cookie", single);
 }
 
-async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidecar: NextResponse) {
+async function attachBearerForApi(
+  req: NextRequest,
+  headers: Headers,
+  tokenSidecar: NextResponse,
+): Promise<{ source: "sdk" | "session" | "none"; meta: ReturnType<typeof jwtMeta> }> {
   const aud = process.env.AUTH0_AUDIENCE?.trim();
 
   const fromSdk = await (async () => {
@@ -48,7 +72,7 @@ async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidec
   // request cookies, which can hold an expired id_token — prefer SDK JWT when it is a JWT.
   if (fromSdk && looksLikeJwt(fromSdk)) {
     headers.set("Authorization", `Bearer ${fromSdk}`);
-    return;
+    return { source: "sdk", meta: jwtMeta(fromSdk) };
   }
 
   const fromSession = await (async () => {
@@ -66,7 +90,9 @@ async function attachBearerForApi(req: NextRequest, headers: Headers, tokenSidec
 
   if (fromSession) {
     headers.set("Authorization", `Bearer ${fromSession}`);
+    return { source: "session", meta: jwtMeta(fromSession) };
   }
+  return { source: "none", meta: null };
 }
 
 async function forward(req: NextRequest, segments: string[]) {
@@ -82,6 +108,21 @@ async function forward(req: NextRequest, segments: string[]) {
   }
   target.search = req.nextUrl.search;
 
+  async function upstream(target: URL, headers: Headers): Promise<Response> {
+    const init: RequestInit = {
+      method: req.method,
+      headers,
+      cache: "no-store",
+    };
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      const body = await req.arrayBuffer();
+      if (body.byteLength) init.body = body;
+      const ct = req.headers.get("content-type");
+      if (ct) headers.set("Content-Type", ct);
+    }
+    return fetch(target, init);
+  }
+
   const headers = new Headers();
   const uid = req.headers.get("x-user-id");
   if (uid) headers.set("X-User-Id", uid);
@@ -91,8 +132,9 @@ async function forward(req: NextRequest, segments: string[]) {
   // Pass NextResponse so getAccessToken can persist refreshed tokens (Set-Cookie).
   // Without (req, res), App Router route handlers may not save rotation — Save Job then gets 401.
   const tokenSidecar = new NextResponse();
+  let authInfo: Awaited<ReturnType<typeof attachBearerForApi>>;
   try {
-    await attachBearerForApi(req, headers, tokenSidecar);
+    authInfo = await attachBearerForApi(req, headers, tokenSidecar);
   } catch (e) {
     console.error("[api/app] attachBearerForApi", e);
     return NextResponse.json(
@@ -104,22 +146,9 @@ async function forward(req: NextRequest, segments: string[]) {
     );
   }
 
-  const init: RequestInit = {
-    method: req.method,
-    headers,
-    cache: "no-store",
-  };
-
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    const body = await req.arrayBuffer();
-    if (body.byteLength) init.body = body;
-    const ct = req.headers.get("content-type");
-    if (ct) headers.set("Content-Type", ct);
-  }
-
   let res: Response;
   try {
-    res = await fetch(target, init);
+    res = await upstream(target, headers);
   } catch (e) {
     console.error("[api/app] upstream fetch failed", target.href, e);
     return NextResponse.json(
@@ -134,6 +163,15 @@ async function forward(req: NextRequest, segments: string[]) {
   const outHeaders = new Headers(res.headers);
   outHeaders.delete("content-encoding");
   outHeaders.delete("transfer-encoding");
+  if (res.status === 401) {
+    // Diagnose intermittent 401s: log claim-level token info without printing the token itself.
+    console.warn("[api/app] upstream 401", {
+      path,
+      target: target.origin + target.pathname,
+      auth_source: authInfo.source,
+      jwt: authInfo.meta,
+    });
+  }
   const out = new NextResponse(await res.arrayBuffer(), {
     status: res.status,
     headers: outHeaders,
