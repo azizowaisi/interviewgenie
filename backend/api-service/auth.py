@@ -72,7 +72,10 @@ async def verify_token(credentials: Optional[HTTPAuthorizationCredentials]) -> O
         logger.warning("Auth0 token expired")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_TOKEN_DETAIL)
     except jwt.InvalidAudienceError:
-        logger.warning("Auth0 token audience mismatch (expected one of %s)", [a for a in (AUTH0_AUDIENCE, AUTH0_CLIENT_ID) if a])
+        logger.warning(
+            "Auth0 token audience mismatch (expected one of %s)",
+            [a for a in (AUTH0_AUDIENCE, AUTH0_CLIENT_ID) if a],
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_TOKEN_DETAIL)
     except jwt.InvalidIssuerError:
         logger.warning("Auth0 token issuer mismatch (domain=%s)", AUTH0_DOMAIN)
