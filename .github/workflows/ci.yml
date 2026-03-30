@@ -164,20 +164,13 @@ jobs:
     if: |
       always() &&
       needs.detect-pr.result == 'success' &&
+      needs.detect-pr.outputs.build_any == 'true' &&
       (needs.backend-tests.result == 'success' || needs.backend-tests.result == 'skipped')
     strategy:
       fail-fast: false
       max-parallel: 8
       matrix:
-        image:
-          - api-service
-          - audio-service
-          - stt-service
-          - question-service
-          - llm-service
-          - formatter-service
-          - monitoring-service
-          - web
+        image: ${{ fromJson(needs.detect-pr.outputs.build_matrix_slugs) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
