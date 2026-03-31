@@ -175,7 +175,7 @@ async def get_user_id(
         creds = await bearer(request)
         if not creds:
             raise HTTPException(401, "Missing authorization")
-        payload = await verify_token(creds)
+        payload = verify_token(creds)
         auth0_id = payload.get("sub") or payload.get("auth0_id")
         if not auth0_id:
             raise HTTPException(401, "Token missing subject (sub)")
