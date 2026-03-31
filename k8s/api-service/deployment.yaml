@@ -23,8 +23,8 @@ spec:
     spec:
       containers:
         - name: api-service
-          image: azizowaisi/interview-ai-api-service:latest
-          # IfNotPresent avoids Docker Hub rate limits on single-node k3s when :latest is re-resolved every sync.
+          image: azizowaisi/interview-ai-api-service:sha-0000000
+          # IfNotPresent avoids Docker Hub rate limits; production pins immutable sha-* tags via CI.
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8001
