@@ -76,6 +76,11 @@ case "${CI_ALWAYS_BUILD_ALL:-}" in
   1 | true | TRUE | yes | YES) ci_always_build_all=true ;;
 esac
 
+ci_pr_always_build_all=false
+case "${CI_PR_ALWAYS_BUILD_ALL:-}" in
+  1 | true | TRUE | yes | YES) ci_pr_always_build_all=true ;;
+esac
+
 if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   if [[ "${INPUT_DEPLOY_ONLY}" == "true" ]]; then
     echo "build_any=false" >>"${GITHUB_OUTPUT}"
@@ -116,6 +121,20 @@ if [[ "${EVENT_NAME}" == "push" ]] && [[ "${ci_always_build_all}" == "true" ]]; 
   echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
   echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
   echo "- **Mode:** push force — build all images (CI_ALWAYS_BUILD_ALL)" >>"${GITHUB_STEP_SUMMARY}"
+  echo "- **Tests:** ${tests_any}" >>"${GITHUB_STEP_SUMMARY}"
+  exit 0
+fi
+
+# On PRs: optionally force full-system build (all images) via repository variable.
+if [[ "${EVENT_NAME}" == "pull_request" ]] && [[ "${ci_pr_always_build_all}" == "true" ]]; then
+  echo "build_any=true" >>"${GITHUB_OUTPUT}"
+  write_build_flags "true"
+  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
+  tests_any=false
+  emit_test_matrix_from_filters
+  echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
+  echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
+  echo "- **Mode:** PR force — build all images (CI_PR_ALWAYS_BUILD_ALL)" >>"${GITHUB_STEP_SUMMARY}"
   echo "- **Tests:** ${tests_any}" >>"${GITHUB_STEP_SUMMARY}"
   exit 0
 fi
