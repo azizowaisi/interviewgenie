@@ -26,7 +26,7 @@ spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: web
-          image: azizowaisi/interview-ai-web:latest
+          image: azizowaisi/interview-ai-web:sha-0000000
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3002
