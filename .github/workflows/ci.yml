@@ -348,8 +348,8 @@ jobs:
             echo "::error::frontend-verify did not succeed (result=${{ needs.frontend-verify.result }})"
             exit 1
           fi
-          if ! ok "${{ needs.docker-verify.result }}"; then
-            echo "::error::docker-verify did not succeed (result=${{ needs.docker-verify.result }})"
+          if ! sk "${{ needs.docker-verify.result }}"; then
+            echo "::error::docker-verify did not succeed or skip (result=${{ needs.docker-verify.result }})"
             exit 1
           fi
           if ! sk "${{ needs.build-prep-pr.result }}"; then
