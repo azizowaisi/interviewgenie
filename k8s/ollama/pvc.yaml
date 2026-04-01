@@ -10,3 +10,6 @@ spec:
     requests:
       storage: 20Gi
   # storageClassName: optional, use default
+  #
+  # Note: this PVC stores Ollama models (e.g. Mistral-7B) pulled at runtime. If pulls fail or the pod is Pending
+  # due to storage constraints, increase this size or use a different StorageClass with enough capacity.
