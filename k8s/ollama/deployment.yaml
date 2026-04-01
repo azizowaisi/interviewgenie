@@ -48,11 +48,11 @@ spec:
               value: "0.0.0.0"
           resources:
             requests:
-              memory: "10Gi"
-              cpu: "1500m"
+              memory: "4Gi"
+              cpu: "1000m"
             limits:
-              memory: "20Gi"
-              cpu: "5000m"
+              memory: "8Gi"
+              cpu: "4000m"
           readinessProbe:
             tcpSocket:
               port: 11434
