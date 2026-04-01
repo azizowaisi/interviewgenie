@@ -542,11 +542,10 @@ export function AdminDashboard() {
             </div>
             {hasValidCluster && cluster.metrics_available === false && (
               <p className="mt-3 max-w-3xl text-xs text-muted-foreground">
-                CPU and memory stay empty until the cluster exposes{" "}
-                <span className="font-mono text-[11px]">metrics.k8s.io</span> (install or enable{" "}
-                <strong className="font-normal">metrics-server</strong>; on k3s,{" "}
-                <span className="font-mono text-[11px]">kubectl top nodes</span> should work). Pod list
-                CPU/memory columns use the same source.
+                Live metrics-server data is unavailable, so CPU and memory are shown as estimates from pod
+                resource requests. Install or enable <span className="font-mono text-[11px]">metrics-server</span>
+                for live usage values; on k3s, <span className="font-mono text-[11px]">kubectl top nodes</span>{" "}
+                should work.
               </p>
             )}
           </section>

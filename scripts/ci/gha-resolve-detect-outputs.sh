@@ -139,19 +139,9 @@ if [[ "${EVENT_NAME}" == "pull_request" ]] && [[ "${ci_pr_always_build_all}" == 
   exit 0
 fi
 
-# Push to main always rebuild all images, even if no tracked source paths changed.
-if [[ "${EVENT_NAME}" == "push" ]] && [[ "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
-  echo "build_any=true" >>"${GITHUB_OUTPUT}"
-  write_build_flags "true"
-  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
-  tests_any=false
-  emit_test_matrix_from_filters
-  echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
-  echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
-  echo "- **Mode:** main push — force build all images" >>"${GITHUB_STEP_SUMMARY}"
-  echo "- **Tests:** ${tests_any}" >>"${GITHUB_STEP_SUMMARY}"
-  exit 0
-fi
+# Push to main: do not force a full-system rebuild. Use path-based incremental build selection
+# so only changed services are built, pushed, and deployed.
+# Pushes that modify no mapped paths will keep current cluster image tags.
 
 # Push to main, or manual incremental (paths-filter ran)
 if [[ "${FILTER_API_SERVICE:-false}" == "true" ]]; then build_any=true; fi
