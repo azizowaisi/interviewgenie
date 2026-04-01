@@ -558,6 +558,9 @@ async def api_services():
 
         total_cpu_m = 0.0
         total_mem_b = 0
+        total_requests_cpu_m = 0.0
+        total_requests_mem_b = 0
+        metrics_found = False
         oldest_start = None
         for p in matching:
             if p.status.start_time:
@@ -567,8 +570,16 @@ async def api_services():
             for cs in p.status.container_statuses or []:
                 key = (p.metadata.name, cs.name)
                 if key in mm:
+                    metrics_found = True
                     total_cpu_m += _parse_quantity_cpu(mm[key].get("cpu", ""))
                     total_mem_b += _parse_quantity_mem(mm[key].get("memory", ""))
+            spec_agg = _sum_pod_spec_resources(p)
+            total_requests_cpu_m += spec_agg["requests_cpu_millicores"]
+            total_requests_mem_b += spec_agg["requests_memory_bytes"]
+
+        if not metrics_found and total_requests_cpu_m > 0:
+            total_cpu_m = total_requests_cpu_m
+            total_mem_b = total_requests_mem_b
 
         uptime_s = None
         if oldest_start:
