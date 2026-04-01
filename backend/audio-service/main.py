@@ -363,7 +363,7 @@ IMPROVEMENT_SUMMARY: [2-4 sentences: strengths improved, areas still to work on]
 # Per-step timeouts (LLM can be slow on first load or with large models)
 STT_TIMEOUT = 30.0
 QUESTION_TIMEOUT = 10.0
-LLM_TIMEOUT = 120.0  # 2 min for Ollama (first token + full response)
+LLM_TIMEOUT = httpx.Timeout(60.0, connect=10.0, read=60.0, write=10.0)  # 1 min for llm-service request
 FORMATTER_TIMEOUT = 10.0
 API_TIMEOUT = 10.0
 

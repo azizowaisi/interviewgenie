@@ -264,20 +264,35 @@ export function MockInterview() {
   }
 
   async function generateQuestions(topicData: TopicResponse, cvText: string): Promise<string[]> {
-    const gr = await audioFetch("/mock/generate-questions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        job_description: (topicData.job_description || "").slice(0, 3000),
-        cv_text: cvText.slice(0, 3000),
-        interview_type: normalizeInterviewType(topicData.interview_type || interviewType),
-        num_questions: 5,
-        previous_questions: [],
-      }),
-    });
-    if (!gr.ok) throw new Error(await gr.text());
-    const gj = (await gr.json()) as { questions?: string[] };
-    return gj.questions?.length ? gj.questions : ["Tell me about your relevant experience for this role."];
+    const fallback = [
+      "Tell me about your relevant experience for this role.",
+      "Describe a challenging problem you solved and how you approached it.",
+      "How do you prioritize tasks when multiple deadlines overlap?",
+      "Give an example of a time you worked effectively with a team.",
+      "What steps do you take to learn new tools or technologies?",
+    ];
+    try {
+      const gr = await audioFetch("/mock/generate-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_description: (topicData.job_description || "").slice(0, 3000),
+          cv_text: cvText.slice(0, 3000),
+          interview_type: normalizeInterviewType(topicData.interview_type || interviewType),
+          num_questions: 5,
+          previous_questions: [],
+        }),
+      });
+      if (!gr.ok) {
+        console.error("Mock question generation failed:", await gr.text());
+        return fallback;
+      }
+      const gj = (await gr.json()) as { questions?: string[] };
+      return gj.questions?.length ? gj.questions : fallback;
+    } catch (e) {
+      console.error("Mock question generation failed:", e);
+      return fallback;
+    }
   }
 
   async function createAttempt(topicId: string): Promise<string> {
