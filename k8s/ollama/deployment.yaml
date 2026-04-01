@@ -16,7 +16,6 @@ spec:
   selector:
     matchLabels:
       app: ollama
-      model: mistral-7b-v0
   template:
     metadata:
       labels:
