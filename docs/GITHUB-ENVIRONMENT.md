@@ -55,6 +55,8 @@ Do **not** commit real Auth0 secrets to the repo.
 |------|------|--------|
 | `DEPLOY_MODE` | Variable *or* Secret | See header comment in `build-and-deploy.yml` (`remote`, `self_hosted`, `ssh`, `none`, …). |
 | `KUBE_CONFIG` | **Secret** | Base64 kubeconfig (some jobs expect `KUBE_CONFIG_B64` style usage — follow your workflow). |
+| `CI_ALWAYS_BUILD_ALL` | Variable | Optional; `true` forces a **full-system build** on every push to `main` (ignore path filters). |
+| `CI_PR_ALWAYS_BUILD_ALL` | Variable | Optional; `true` forces a **full-system build** on every pull request (ignore path filters). |
 | `K8S_AUTO_RECOVER_IMAGE_PULL` | Variable | Optional; `true` to run recovery script on ImagePullBackOff. |
 | `K8S_SKIP_OLLAMA_PULL` | Variable | Optional; `true` / `1` / `yes` to skip `ollama pull` after deploy (faster when the model is already on the node; see `scripts/ci/k8s-apply.sh`). |
 

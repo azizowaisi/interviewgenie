@@ -83,6 +83,7 @@ To go faster still you need infrastructure tradeoffs: **arm64-native** runner (n
 | `WEB_DOCKER_PLATFORMS` | **Strongly recommended for fast web builds:** set to `linux/amd64` when **every** node that runs the **web** Deployment is amd64. Overrides platforms **only** for the `web` image (other services still use `CI_DOCKER_PLATFORMS` or default multi-arch). Skips QEMU for that matrix leg — often **~2× faster** than amd64+arm64. **Do not use** if any web pod schedules on arm64 (e.g. Ampere). |
 | `CI_DOCKER_PLATFORMS` | e.g. `linux/amd64` for **all** images when the cluster is **amd64-only**. If **unset**, workflow uses `linux/amd64,linux/arm64`. |
 | `CI_ALWAYS_BUILD_ALL` | Set to `true` to force **full-system** image builds on every push to `main` (ignores path filters). Use temporarily when you need to refresh every service image in production. |
+| `CI_PR_ALWAYS_BUILD_ALL` | Set to `true` to force **full-system** image builds on every pull request (ignores path filters). Use when you want a fresh image set built for every PR, even docs-only. |
 | `DOCKER_BUILD_PLATFORMS` | *(unused — use `CI_DOCKER_PLATFORMS`)* |
 | `DOCKER_REGISTRY_CACHE` | Set to `false` to disable registry `:cache` tags (GHA cache only) |
 
