@@ -52,11 +52,11 @@ spec:
               mountPath: /root/.ollama
           resources:
             requests:
-              memory: "8Gi"
-              cpu: "1500m"
-            limits:
               memory: "12Gi"
               cpu: "4000m"
+            limits:
+              memory: "24Gi"
+              cpu: "6000m"
           readinessProbe:
             tcpSocket:
               port: 11434
