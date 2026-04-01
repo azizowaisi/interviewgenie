@@ -36,8 +36,8 @@ spec:
               mountPath: /root/.ollama
       containers:
         - name: ollama
-          image: ollama/ollama@sha256:cd0ccd6d7f8af1b82df392059619475575ca6996633a3548ab9386b54bb1cf9e
-          imagePullPolicy: Always
+          image: ollama/ollama:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 11434
           volumeMounts:
