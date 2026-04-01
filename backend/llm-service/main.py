@@ -8,6 +8,7 @@ import json
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
 # Ultra-low latency: qwen2.5:0.5b (~400MB, <1GB RAM). Alternatives: llama3.2:1b, phi3
 MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+OLLAMA_TIMEOUT = httpx.Timeout(60.0, connect=10.0, read=60.0, write=10.0)
 
 
 class LlmRequest(BaseModel):
@@ -48,7 +49,7 @@ Result: We shipped on time and the stakeholder was very satisfied."""
 
 @app.post("/generate", response_model=LlmResponse)
 async def generate(body: LlmRequest) -> LlmResponse:
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
         try:
             resp = await client.post(
                 f"{OLLAMA_HOST}/api/generate",
@@ -57,7 +58,7 @@ async def generate(body: LlmRequest) -> LlmResponse:
             resp.raise_for_status()
             data = resp.json()
             return LlmResponse(raw_answer=data.get("response", "") or MOCK_ANSWER)
-        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
+        except (httpx.RequestError, ValueError):
             return LlmResponse(raw_answer=MOCK_ANSWER)
 
 
@@ -66,7 +67,7 @@ async def generate_stream(body: LlmRequest):
     """Stream LLM tokens as newline-delimited JSON: {"token": "..."} per line."""
 
     async def stream_tokens():
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
             try:
                 async with client.stream(
                     "POST",
@@ -90,7 +91,7 @@ async def generate_stream(body: LlmRequest):
                             pass
                     if not full:
                         yield json.dumps({"token": MOCK_ANSWER}) + "\n"
-            except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
+            except Exception:
                 yield json.dumps({"token": MOCK_ANSWER}) + "\n"
 
     return StreamingResponse(
