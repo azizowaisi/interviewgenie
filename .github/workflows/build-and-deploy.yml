@@ -16,7 +16,7 @@
 # Manual dispatch:
 #   deploy_only    — apply k8s only (skip tests & Docker; cluster keeps current images)
 #   force_build    — build & push all eight images (default off: use path filter like push-to-main)
-#   amd64_only     — Docker build/push linux/amd64 only (much faster; unsafe if cluster has arm64 nodes)
+#   amd64_only     — Docker build/push linux/amd64 only (UNSAFE for this cluster — all nodes are arm64)
 #   skip_tests / skip_deploy — unchanged
 # Optional repo Variable CI_DOCKER_PLATFORMS (e.g. linux/amd64) — default multi-arch if unset; manual amd64_only wins.
 #
@@ -51,7 +51,7 @@ on:
         type: boolean
         default: false
       amd64_only:
-        description: "Faster Docker: linux/amd64 only (omit if any Kubernetes node is arm64)"
+        description: "Faster Docker: linux/amd64 only (UNSAFE — cluster nodes are arm64)"
         type: boolean
         default: false
 
@@ -282,7 +282,9 @@ jobs:
       max-parallel: 8
       matrix:
         slug: ${{ fromJson(needs.detect.outputs.build_matrix_slugs) }}
-    runs-on: ubuntu-24.04
+    # Web uses a native arm64 runner — no QEMU, no SIGILL with Node 22.
+    # Other services (Python) use the standard amd64 runner.
+    runs-on: ${{ matrix.slug == 'web' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     env:
       IMAGE_TAG: sha-${{ github.sha }}
       PLATFORMS: ${{ needs.build-prep.outputs.platforms }}
@@ -306,13 +308,11 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up QEMU
+        # Skip for web: it runs on a native arm64 runner (ubuntu-24.04-arm) — no emulation needed.
+        # Also skip when WEB_DOCKER_PLATFORMS is amd64-only (no arm64 to emulate).
         if: |
-          needs.build-prep.outputs.need_qemu == 'true' && !(
-            matrix.slug == 'web' &&
-            vars.WEB_DOCKER_PLATFORMS != '' &&
-            !contains(vars.WEB_DOCKER_PLATFORMS, 'arm64') &&
-            !contains(vars.WEB_DOCKER_PLATFORMS, 'aarch64')
-          )
+          needs.build-prep.outputs.need_qemu == 'true' &&
+          matrix.slug != 'web'
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
