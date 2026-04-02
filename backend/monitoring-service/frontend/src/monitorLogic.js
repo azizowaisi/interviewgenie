@@ -27,7 +27,7 @@ const SERVICE_LABELS = {
   let chartMem = [];
   let podsSort = { key: "name", dir: 1 };
   let refreshTimer = null;
-  let currentPage = "dashboard";
+  let currentPage = "infrastructure";
 
   const $ = (id) => document.getElementById(id);
 
@@ -120,9 +120,13 @@ const SERVICE_LABELS = {
     const seg = p.split("/").filter(Boolean);
     if (seg[0] === "service" && seg[1])
       return { page: "service-detail", service: decodeURIComponent(seg[1]) };
-    const allowed = ["dashboard", "pods", "services", "logs", "infrastructure", "settings"];
+    // Default landing page is Infrastructure (formerly "Dashboard/Overview").
+    if (seg.length === 0) return { page: "infrastructure" };
+    // Backwards-compat: keep /dashboard but treat it as Infrastructure.
+    if (seg[0] === "dashboard") return { page: "infrastructure" };
+    const allowed = ["pods", "services", "logs", "infrastructure", "settings"];
     if (allowed.includes(seg[0])) return { page: seg[0] };
-    return { page: "dashboard" };
+    return { page: "infrastructure" };
   }
 
   function setActiveNav(page) {
@@ -154,7 +158,7 @@ const SERVICE_LABELS = {
   function navigate(page, serviceName) {
     if (page === "service-detail" && serviceName)
       location.hash = HASH_BASE + "/service/" + encodeURIComponent(serviceName);
-    else if (page === "dashboard") location.hash = HASH_BASE + "/";
+    else if (page === "dashboard") location.hash = HASH_BASE + "/infrastructure";
     else location.hash = HASH_BASE + "/" + page;
   }
 
@@ -687,7 +691,7 @@ const SERVICE_LABELS = {
     showPage(r.page === "service-detail" ? "service-detail" : r.page);
     showErr("");
     try {
-      if (r.page === "dashboard") await renderDashboard();
+      if (r.page === "dashboard") await renderInfrastructure();
       else if (r.page === "pods") await renderPods();
       else if (r.page === "services") await renderServicesPage();
       else if (r.page === "logs") {
@@ -713,7 +717,7 @@ const SERVICE_LABELS = {
     refreshTimer = setInterval(() => {
       if (document.hidden) return;
       const p = parseRoute().page;
-      if (p === "dashboard" || p === "pods" || p === "services" || p === "service-detail") refreshCurrentPage();
+      if (p === "infrastructure" || p === "pods" || p === "services" || p === "service-detail") refreshCurrentPage();
     }, REFRESH_MS);
   }
 
@@ -733,7 +737,7 @@ const SERVICE_LABELS = {
     document.querySelectorAll(".nav-item").forEach((btn) => {
       btn.addEventListener("click", () => {
         const p = btn.getAttribute("data-page");
-        if (p === "dashboard") navigate("dashboard");
+        if (p === "dashboard") navigate("infrastructure");
         else navigate(p);
         document.body.classList.remove("drawer-open");
       });
