@@ -50,9 +50,7 @@ ENV AUTH0_CLIENT_SECRET=$AUTH0_CLIENT_SECRET
 ENV AUTH0_SECRET=$AUTH0_SECRET
 ENV AUTH0_BASE_URL=$AUTH0_BASE_URL
 ENV APP_BASE_URL=$APP_BASE_URL
-ENV NODE_OPTIONS=--max-old-space-size=6144
-# Lint runs in CI (build-and-deploy build-prep when web changes, PR frontend-verify) — not here, so multi-arch
-# builds do not run eslint twice (once per platform). Next cache speeds repeat builds.
+# Next cache speeds repeat builds.
 RUN --mount=type=cache,target=/app/.next/cache \
     npm run build
 
