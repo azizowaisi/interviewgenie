@@ -33,17 +33,19 @@ export function MobileNav({ loggedIn, logoutHref }: Props) {
           aria-label="Site navigation"
         >
           <nav className="flex flex-col gap-1">
-            {MAIN_NAV_LINKS.map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                prefetch={false}
-                className="text-foreground hover:bg-accent rounded-md px-3 py-2 text-sm font-medium"
-                onClick={() => setOpen(false)}
-              >
-                {label}
-              </Link>
-            ))}
+            {loggedIn
+              ? MAIN_NAV_LINKS.map(({ href, label }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    prefetch={false}
+                    className="text-foreground hover:bg-accent rounded-md px-3 py-2 text-sm font-medium"
+                    onClick={() => setOpen(false)}
+                  >
+                    {label}
+                  </Link>
+                ))
+              : null}
             <div className="border-border mt-2 border-t pt-2">
               {loggedIn ? (
                 <a

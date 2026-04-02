@@ -39,19 +39,21 @@ export async function SiteHeader() {
           </Link>
         </div>
         <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
-          {MAIN_NAV_LINKS.map(({ href, label }, i) => (
-            <Button
-              key={href}
-              variant="ghost"
-              size="sm"
-              className={i === MAIN_NAV_LINKS.length - 1 ? "hidden lg:inline-flex" : undefined}
-              asChild
-            >
-              <Link href={href} prefetch={false}>
-                {label}
-              </Link>
-            </Button>
-          ))}
+          {loggedIn
+            ? MAIN_NAV_LINKS.map(({ href, label }, i) => (
+                <Button
+                  key={href}
+                  variant="ghost"
+                  size="sm"
+                  className={i === MAIN_NAV_LINKS.length - 1 ? "hidden lg:inline-flex" : undefined}
+                  asChild
+                >
+                  <Link href={href} prefetch={false}>
+                    {label}
+                  </Link>
+                </Button>
+              ))
+            : null}
         </nav>
         <div className="hidden items-center gap-2 md:flex">
           {loggedIn ? (
