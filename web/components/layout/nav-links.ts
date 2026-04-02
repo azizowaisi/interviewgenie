@@ -5,4 +5,5 @@ export const MAIN_NAV_LINKS = [
   { href: "/mock", label: "Mock" },
   { href: "/live", label: "Live" },
   { href: "/history", label: "History" },
+  { href: "/profile", label: "Profile" },
 ] as const;
