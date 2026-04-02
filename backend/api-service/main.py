@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Header
 from fastapi.responses import FileResponse, JSONResponse
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -74,7 +74,14 @@ class UserMe(BaseModel):
     id: str
     auth0_id: Optional[str] = None
     email: Optional[str] = None
+    language: Optional[str] = None
     name: Optional[str] = None
+
+
+class UserProfileUpdate(BaseModel):
+    email: Optional[str] = None
+    name: Optional[str] = None
+    language: Optional[str] = None
 
 
 class CVItem(BaseModel):
@@ -179,12 +186,24 @@ async def get_user_id(
         auth0_id = payload.get("sub") or payload.get("auth0_id")
         if not auth0_id:
             raise HTTPException(401, "Token missing subject (sub)")
+
+        email_raw = payload.get("email")
+        email = email_raw.strip().lower() if isinstance(email_raw, str) and email_raw.strip() else None
+
+        locale_raw = payload.get("locale")
+        language = "sv" if isinstance(locale_raw, str) and locale_raw.lower().startswith("sv") else "en"
+
         users = get_users_collection()
         user = users.find_one({"auth0_id": auth0_id})
+        if not user and email:
+            # If the same person logs in via a different provider, Auth0 subject may change.
+            # Reuse one Mongo user by matching stable email.
+            user = users.find_one({"email": email})
         if not user:
             doc = {
                 "auth0_id": auth0_id,
-                "email": payload.get("email"),
+                "email": email,
+                "language": language,
                 "name": payload.get("name"),
                 "created_at": datetime.now(timezone.utc),
             }
@@ -193,9 +212,25 @@ async def get_user_id(
                 return str(ins.inserted_id)
             except DuplicateKeyError:
                 user = users.find_one({"auth0_id": auth0_id})
+                if not user and email:
+                    user = users.find_one({"email": email})
                 if not user:
                     raise HTTPException(503, "Could not create or load user record")
                 return str(user["_id"])
+
+        # Keep identity linkage current, but do not overwrite user-edited profile fields.
+        updates = {
+            "auth0_id": auth0_id,
+        }
+        if ("email" not in user or not user.get("email")) and email:
+            updates["email"] = email
+        token_name = payload.get("name")
+        if ("name" not in user or not user.get("name")) and isinstance(token_name, str) and token_name.strip():
+            updates["name"] = token_name.strip()
+        if "language" not in user or not user.get("language"):
+            updates["language"] = language
+        if updates:
+            users.update_one({"_id": user["_id"]}, {"$set": updates})
         return str(user["_id"])
     if x_user_id:
         users = get_users_collection()
@@ -205,6 +240,7 @@ async def get_user_id(
         users.insert_one({
             "_id": x_user_id,
             "auth0_id": x_user_id,
+            "language": "en",
             "created_at": datetime.now(timezone.utc),
         })
         return x_user_id
@@ -266,7 +302,61 @@ async def users_me(user_id: Optional[str] = Depends(get_user_id)):
         id=str(doc["_id"]),
         auth0_id=doc.get("auth0_id"),
         email=doc.get("email"),
+        language=doc.get("language"),
         name=doc.get("name"),
+    )
+
+
+@app.put("/users/me", response_model=UserMe)
+async def users_me_update(body: UserProfileUpdate, user_id: Optional[str] = Depends(get_user_id)):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+
+    users = get_users_collection()
+    from bson import ObjectId
+
+    doc = users.find_one({"_id": user_id})
+    if not doc:
+        try:
+            doc = users.find_one({"_id": ObjectId(user_id)})
+        except Exception:
+            doc = users.find_one({"auth0_id": user_id})
+    if not doc:
+        raise HTTPException(404, "User not found")
+
+    updates = {}
+    if body.email is not None:
+        next_email = body.email.strip().lower()
+        if not next_email:
+            raise HTTPException(400, "Email cannot be empty")
+        updates["email"] = next_email
+
+    if body.name is not None:
+        next_name = body.name.strip()
+        updates["name"] = next_name
+
+    if body.language is not None:
+        next_language = body.language.strip().lower()
+        if next_language not in ("en", "sv"):
+            raise HTTPException(400, "language must be one of: en, sv")
+        updates["language"] = next_language
+
+    if updates:
+        try:
+            users.update_one({"_id": doc["_id"]}, {"$set": updates})
+        except DuplicateKeyError as e:
+            raise HTTPException(409, "Email already in use") from e
+
+    fresh = users.find_one({"_id": doc["_id"]})
+    if not fresh:
+        raise HTTPException(404, "User not found")
+
+    return UserMe(
+        id=str(fresh["_id"]),
+        auth0_id=fresh.get("auth0_id"),
+        email=fresh.get("email"),
+        language=fresh.get("language"),
+        name=fresh.get("name"),
     )
 
 

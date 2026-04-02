@@ -50,6 +50,10 @@ export function RequireAuth({ children }: { readonly children: ReactNode }) {
           return;
         }
 
+        // Ensure backend user entity exists for Auth0 users (email + language default).
+        // This endpoint is idempotent and upserts on the api-service side.
+        await fetch("/api/app/users/me", { cache: "no-store" }).catch(() => null);
+
         // Seed the existing X-User-Id plumbing with Auth0 stable `sub`.
         // Backend currently uses X-User-Id (Auth0 auth is optional for now), but this
         // keeps data consistent across sessions/devices for MVP.

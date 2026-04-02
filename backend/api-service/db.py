@@ -4,13 +4,14 @@ MongoDB connection and collection access.
 import os
 from typing import Optional
 
-from pymongo import MongoClient
+from pymongo import ASCENDING, MongoClient
 from pymongo.database import Database
 
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://mongo:27017")
 DB_NAME = os.getenv("MONGODB_DB", "interviewgenie")
 
 _client: Optional[MongoClient] = None
+_users_indexes_ready = False
 
 
 def get_db() -> Database:
@@ -21,7 +22,25 @@ def get_db() -> Database:
 
 
 def get_users_collection():
-    return get_db().users
+    global _users_indexes_ready
+    users = get_db().users
+    if not _users_indexes_ready:
+        # Enforce one user per email across different Auth0 providers.
+        # sparse avoids conflicts for legacy docs missing these fields.
+        users.create_index(
+            [("email", ASCENDING)],
+            name="email_unique_sparse",
+            unique=True,
+            sparse=True,
+        )
+        users.create_index(
+            [("auth0_id", ASCENDING)],
+            name="auth0_id_unique_sparse",
+            unique=True,
+            sparse=True,
+        )
+        _users_indexes_ready = True
+    return users
 
 
 def get_cvs_collection():
