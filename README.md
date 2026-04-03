@@ -58,7 +58,7 @@ Microphone
 docker compose build
 docker compose --profile ollama up -d
 
-docker compose exec ollama ollama pull mistral-7b-v0
+docker compose exec ollama ollama pull mistral
 ```
 
 Starts **MongoDB** (27017), **api-service** (8001), **audio-service** (8000), **whisper**, **stt**, **question**, **llm**, **formatter**, and **Ollama** (11434).
@@ -66,13 +66,13 @@ Starts **MongoDB** (27017), **api-service** (8001), **audio-service** (8000), **
 - **WebSocket:** `ws://localhost:8000/ws/audio`
 - After ~1 s of silence, the question is sent to the LLM and the answer **streams** back.
 - **Whisper:** default **base**; set `WHISPER_MODEL=small` for better accuracy.
-- **Ollama:** default `mistral-7b-v0`; override with `OLLAMA_MODEL` if you intentionally want a different model.
+- **Ollama:** default `mistral`; override with `OLLAMA_MODEL` if you intentionally want a different model.
 
 ### Full stack + Next.js (browser)
 
 ```bash
 npm run local:up
-docker compose --profile ollama exec ollama ollama pull mistral-7b-v0
+docker compose --profile ollama exec ollama ollama pull mistral
 ```
 
 - **Web:** http://localhost:3002  
@@ -106,7 +106,7 @@ For **no-login** mode, send **`X-User-Id: default`** on API requests and `user_i
 ```bash
 kubectl apply -f k8s/traefik/helmchartconfig.yaml   # TLS — adjust for your cluster
 kubectl apply -k k8s/
-kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral-7b-v0
+kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral
 ```
 
 Manifests under **`k8s/`** define routing: web BFF, WebSocket to audio, API paths to **api-service**, optional admin host. STT expects a **Whisper** endpoint (`WHISPER_URL`); add a Whisper workload or an external URL as needed.
@@ -135,7 +135,7 @@ Answers **stream** to the client. **Audio service** can call LLM **`/warmup`** o
 
 - **Audio Service:** `STT_SERVICE_URL`, `QUESTION_SERVICE_URL`, `LLM_SERVICE_URL`, `FORMATTER_SERVICE_URL`
 - **STT Service:** `WHISPER_URL` — must point at a working Whisper-compatible HTTP API for speech to work
-- **LLM Service:** `OLLAMA_HOST` (default `http://ollama:11434`), `OLLAMA_MODEL` (default `mistral-7b-v0`)
+- **LLM Service:** `OLLAMA_HOST` (default `http://ollama:11434`), `OLLAMA_MODEL` (default `mistral`)
 - **Whisper Service:** `WHISPER_MODEL` — `base` (default) or `small`
 
 Auth0 for the **website** (callbacks, API audience, social logins): **`docs/AUTH0-WEBSITE.md`**. If login or **Save Job** has failed for days: **`docs/AUTH0-END-TO-END-FIX.md`** (ordered kubectl + secret patch). CI and Kubernetes secrets: **`docs/GITHUB-ENVIRONMENT.md`**. Local: copy **`web/.env.local.example`** → **`web/.env.local`** (and see **`web/.env.example`**).

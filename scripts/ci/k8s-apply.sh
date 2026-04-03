@@ -192,7 +192,7 @@ done
     esac
   fi
 
-  OLLAMA_MODEL_NAME="${OLLAMA_MODEL:-mistral-7b-v0}"
+  OLLAMA_MODEL_NAME="${OLLAMA_MODEL:-mistral}"
 
   case "${K8S_SKIP_OLLAMA_PULL:-}" in
     1 | true | TRUE | yes | YES)

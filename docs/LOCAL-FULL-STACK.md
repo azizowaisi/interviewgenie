@@ -19,7 +19,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollam
 **First time only** — pull the default LLM (inside the Ollama container):
 
 ```bash
-docker compose --profile ollama exec ollama ollama pull mistral-7b-v0
+docker compose --profile ollama exec ollama ollama pull mistral
 ```
 
 ## URLs

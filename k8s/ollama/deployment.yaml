@@ -5,7 +5,7 @@ metadata:
   namespace: interview-ai
   labels:
     app: ollama
-    model: mistral-7b-v0
+    model: mistral
 spec:
   replicas: 1
   selector:
@@ -55,8 +55,8 @@ spec:
                 fi
                 sleep 2
               done
-              ollama pull mistral-7b-v0
-              ollama list | grep -q "mistral-7b-v0"
+              ollama pull mistral
+              ollama list | grep -q "mistral"
           env:
             - name: OLLAMA_HOST
               value: "127.0.0.1:11434"
@@ -91,7 +91,7 @@ spec:
               command:
                 - sh
                 - -c
-                - ollama list | grep -q "mistral-7b-v0"
+                - ollama list | grep -q "mistral"
             initialDelaySeconds: 20
             periodSeconds: 5
             failureThreshold: 6
@@ -100,7 +100,7 @@ spec:
               command:
                 - sh
                 - -c
-                - ollama list | grep -q "mistral-7b-v0"
+                - ollama list | grep -q "mistral"
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 90

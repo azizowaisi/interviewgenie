@@ -1,7 +1,7 @@
 # Local development: run all backend services + Ollama + API (MongoDB, CV, history).
 # Build: docker compose build
 # Run: docker compose --profile ollama up -d
-# Pull model once: docker compose exec ollama ollama pull mistral-7b-v0
+# Pull model once: docker compose exec ollama ollama pull mistral
 # Clients: ws://localhost:8000/ws/audio (audio), http://localhost:8001 (API)
 #
 # Full stack + Next.js web UI + admin (no Kubernetes):
@@ -95,7 +95,7 @@ services:
       dockerfile: Dockerfile
     environment:
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: mistral-7b-v0
+      OLLAMA_MODEL: mistral
     # Start Ollama when needed: docker compose --profile ollama up -d
 
   formatter-service:

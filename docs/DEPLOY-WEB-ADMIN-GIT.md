@@ -138,7 +138,7 @@ curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.teckiz.com/hea
 LLM (first time):
 
 ```bash
-kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral-7b-v0
+kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral
 ```
 
 ---

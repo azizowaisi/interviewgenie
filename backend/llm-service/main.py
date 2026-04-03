@@ -7,7 +7,7 @@ import json
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
 # Balanced speed + reasoning on ARM64 CPU nodes.
-MODEL_NAME = os.getenv("OLLAMA_MODEL", "mistral-7b-v0")
+MODEL_NAME = os.getenv("OLLAMA_MODEL", "mistral")
 OLLAMA_TIMEOUT = httpx.Timeout(60.0, connect=10.0, read=60.0, write=10.0)
 
 

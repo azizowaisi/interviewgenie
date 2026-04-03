@@ -48,7 +48,7 @@ docker compose build
 docker compose --profile ollama up -d
 
 # Pull the LLM model (one-time, several GB)
-docker compose exec ollama ollama pull mistral-7b-v0
+docker compose exec ollama ollama pull mistral
 ```
 
 ### 4. Expose the app (so you can use it from your laptop/phone)
@@ -126,7 +126,7 @@ The repo defines a **StorageClass** `interview-mongo` (`k8s/mongo/storageclass.y
 # Wait for Ollama pod to be running
 kubectl get pods -n interview-ai -w
 # Then:
-kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral-7b-v0
+kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral
 ```
 
 ### 5. Expose the API and WebSocket
