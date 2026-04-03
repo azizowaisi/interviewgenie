@@ -100,7 +100,14 @@ type InfraSummary = {
 type InfraNode = {
   name: string;
   ready: boolean;
+  architecture?: string;
   instance_type?: string;
+  os_image?: string;
+  kernel_version?: string;
+  kubelet_version?: string;
+  container_runtime?: string;
+  capacity_ephemeral_bytes?: number;
+  capacity_memory_bytes?: number;
   capacity_cpu_display?: string;
   allocatable_cpu_millicores?: number;
   allocatable_memory_bytes?: number;
@@ -148,11 +155,31 @@ type PodRow = {
 };
 type SvcRow = {
   name: string;
+  type?: string;
+  cluster_ip?: string | null;
   status: string;
   cpu_millicores?: number | null;
   memory_bytes?: number | null;
   pods_ready?: string;
+  uptime_seconds?: number | null;
 };
+
+function formatUptime(seconds: number | null | undefined) {
+  if (seconds == null || seconds <= 0) return "—";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function serviceBadgeVariant(status: string): "success" | "warning" | "destructive" | "outline" {
+  if (status === "Running") return "success";
+  if (status === "CrashLoop") return "destructive";
+  if (status === "Degraded" || status === "NoEndpoints") return "warning";
+  return "outline";
+}
 
 export function AdminDashboard() {
   const [cluster, setCluster] = useState<Cluster | null>(null);
@@ -383,11 +410,21 @@ export function AdminDashboard() {
         })
       : highlighted.map((name) => ({
           name,
+          type: "ClusterIP",
+          cluster_ip: null,
           status: "—",
           cpu_millicores: null as number | null,
           memory_bytes: null as number | null,
           pods_ready: "—",
+          uptime_seconds: null as number | null,
         }));
+
+  const runningServices = displayServices.filter((svc) => svc.status === "Running").length;
+  const unhealthyServices = displayServices.filter(
+    (svc) => svc.status === "CrashLoop" || svc.status === "Degraded" || svc.status === "NoEndpoints",
+  ).length;
+  const maxServiceCpu = Math.max(...displayServices.map((svc) => svc.cpu_millicores ?? 0), 0);
+  const maxServiceMem = Math.max(...displayServices.map((svc) => svc.memory_bytes ?? 0), 0);
 
   return (
     <div className="flex min-h-screen">
@@ -410,7 +447,7 @@ export function AdminDashboard() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border bg-background/95 px-4 py-4 backdrop-blur">
           <div>
-            <h1 className="text-lg font-semibold">Cluster</h1>
+            <h1 className="text-lg font-semibold">Infrastructure</h1>
             <p className="text-xs text-muted-foreground">
               {config?.environment_label ?? "—"} · NS {config?.namespace ?? "—"}
             </p>
@@ -462,6 +499,75 @@ export function AdminDashboard() {
           {msg && (
             <p className="rounded-xl border border-border bg-secondary/30 p-3 text-sm text-muted-foreground">{msg}</p>
           )}
+
+          {monOk.infrastructure && (infra?.nodes?.length ?? 0) > 0 ? (
+            <section>
+              <h2 className="mb-4 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Server className="h-4 w-4" />
+                Infrastructure
+              </h2>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {(infra?.nodes ?? []).map((node) => (
+                  <Card key={`${node.name}-overview`} className="shadow-md">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <span>{node.name}</span>
+                        <Badge variant={node.ready ? "success" : "destructive"}>{node.ready ? "Ready" : "Not ready"}</Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Architecture</p>
+                        <p className="text-sm font-medium">{node.architecture || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Instance type</p>
+                        <p className="text-sm font-medium">{node.instance_type || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">OS</p>
+                        <p className="text-sm font-medium">{node.os_image || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Kernel</p>
+                        <p className="text-sm font-medium">{node.kernel_version || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Kubelet</p>
+                        <p className="text-sm font-medium">{node.kubelet_version || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">CPU (capacity)</p>
+                        <p className="text-sm font-medium">{node.capacity_cpu_display || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Memory (capacity)</p>
+                        <p className="text-sm font-medium">{formatBytes(node.capacity_memory_bytes)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Ephemeral disk (capacity)</p>
+                        <p className="text-sm font-medium">{formatBytes(node.capacity_ephemeral_bytes)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">CPU usage</p>
+                        <p className="text-sm font-medium">
+                          {node.cpu_percent != null ? `${node.cpu_percent.toFixed(1)}%` : "—"}
+                        </p>
+                        <UsageBar pct={node.cpu_percent} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Memory usage</p>
+                        <p className="text-sm font-medium">
+                          {node.memory_percent != null ? `${node.memory_percent.toFixed(1)}%` : "—"}
+                        </p>
+                        <UsageBar pct={node.memory_percent} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section>
             <h2 className="mb-4 flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -721,6 +827,45 @@ export function AdminDashboard() {
                   </div>
                 </CardContent>
               </Card>
+              <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {(infra?.nodes ?? []).map((n) => (
+                  <Card key={`${n.name}-details`} className="shadow-md">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">{n.name}</CardTitle>
+                      <CardDescription>
+                        {n.instance_type || "Unknown type"}
+                        {n.architecture ? ` · ${n.architecture}` : ""}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">OS</span>
+                        <span className="text-right">{n.os_image || "—"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Kernel</span>
+                        <span className="text-right font-mono text-xs">{n.kernel_version || "—"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Kubelet</span>
+                        <span className="text-right font-mono text-xs">{n.kubelet_version || "—"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Runtime</span>
+                        <span className="text-right font-mono text-xs">{n.container_runtime || "—"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">CPU capacity</span>
+                        <span>{n.capacity_cpu_display || "—"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Memory capacity</span>
+                        <span>{formatBytes(n.capacity_memory_bytes)}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
               {infra?.note_ephemeral ? (
                 <p className="mt-2 text-xs text-muted-foreground">{infra.note_ephemeral}</p>
               ) : null}
@@ -737,8 +882,34 @@ export function AdminDashboard() {
               second pod stuck <span className="font-mono text-[11px]">Pending</span> on a bad image during rollout).
               Fix stuck rollouts or missing Docker Hub tags; CPU/memory here also need metrics-server.
             </p>
+            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Card className="shadow-md">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Services total</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold">{displayServices.length}</p>
+                </CardContent>
+              </Card>
+              <Card className="shadow-md">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Running services</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold">{runningServices}</p>
+                </CardContent>
+              </Card>
+              <Card className="shadow-md">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Need attention</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold">{unhealthyServices}</p>
+                </CardContent>
+              </Card>
+            </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {displayServices.slice(0, 12).map((svc) => (
+              {displayServices.map((svc) => (
                 <Card key={svc.name} className="shadow-md">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">{SERVICE_LABELS[svc.name] ?? svc.name}</CardTitle>
@@ -747,19 +918,33 @@ export function AdminDashboard() {
                   <CardContent className="grid gap-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Status</span>
-                      <Badge variant="outline">{svc.status}</Badge>
+                      <Badge variant={serviceBadgeVariant(svc.status)}>{svc.status}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Type</span>
+                      <span>{svc.type || "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Cluster IP</span>
+                      <span className="font-mono text-xs">{svc.cluster_ip || "—"}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">CPU</span>
                       <span>{svc.cpu_millicores != null ? `${svc.cpu_millicores} m` : "—"}</span>
                     </div>
+                    {svc.cpu_millicores != null && maxServiceCpu > 0 ? <UsageBar pct={(svc.cpu_millicores / maxServiceCpu) * 100} /> : null}
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Memory</span>
                       <span>{formatBytes(svc.memory_bytes ?? null)}</span>
                     </div>
+                    {svc.memory_bytes != null && maxServiceMem > 0 ? <UsageBar pct={(svc.memory_bytes / maxServiceMem) * 100} /> : null}
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Pods</span>
                       <span>{svc.pods_ready}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Uptime</span>
+                      <span>{formatUptime(svc.uptime_seconds)}</span>
                     </div>
                   </CardContent>
                 </Card>
