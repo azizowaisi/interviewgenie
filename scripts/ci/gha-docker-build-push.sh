@@ -12,6 +12,7 @@ set -euo pipefail
 
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 ENABLE_REGISTRY_CACHE="${ENABLE_REGISTRY_CACHE:-true}"
+KEEP_LAST_IMAGES="${KEEP_LAST_IMAGES:-3}"
 
 need() {
   [[ "${!1:-false}" == "true" ]]
@@ -40,6 +41,12 @@ build_one() {
     -t "${DH_USER}/interview-ai-${image_slug}:${IMAGE_TAG}" \
     "$@" \
     "${context_dir}"
+
+  if [[ -n "${DH_TOKEN:-}" ]]; then
+    IMAGE_SLUG="${image_slug}" KEEP_LAST_IMAGES="${KEEP_LAST_IMAGES}" \
+      DH_USER="${DH_USER}" DH_TOKEN="${DH_TOKEN}" \
+      bash scripts/ci/gha-clean-dockerhub-tags.sh
+  fi
 }
 
 if need BUILD_API_SERVICE; then build_one ./backend/api-service api-service api-service; fi
