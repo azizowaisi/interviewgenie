@@ -27,6 +27,13 @@ type CvResponse = {
 
 type QAPair = { question: string; answer: string };
 const DURATION_OPTIONS = [5, 10, 15, 20, 30, 45, 60];
+const FALLBACK_QUESTIONS = [
+  "Tell me about your relevant experience for this role.",
+  "Describe a challenging problem you solved and how you approached it.",
+  "How do you prioritize tasks when multiple deadlines overlap?",
+  "Give an example of a time you worked effectively with a team.",
+  "What steps do you take to learn new tools or technologies?",
+];
 
 type BrowserSpeechRecognitionResult = {
   isFinal: boolean;
@@ -74,7 +81,7 @@ export function MockInterview() {
   const router = useRouter();
   const [topics, setTopics] = useState<TopicResponse[]>([]);
   const [selectedTopicId, setSelectedTopicId] = useState("");
-  const [interviewType, setInterviewType] = useState<"technical" | "hr">("technical");
+  const [interviewType, setInterviewType] = useState<"technical" | "personality" | "hr">("technical");
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [starting, setStarting] = useState(false);
   const [session, setSession] = useState<InterviewSession | null>(null);
@@ -85,6 +92,7 @@ export function MockInterview() {
   const [transcript, setTranscript] = useState("");
   const [pairs, setPairs] = useState<QAPair[]>([]);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const [cvTextForInterview, setCvTextForInterview] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -99,12 +107,11 @@ export function MockInterview() {
   const [ttsSupported, setTtsSupported] = useState(false);
   const [ttsVoices, setTtsVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [ttsVoiceUri, setTtsVoiceUri] = useState<string>("");
+  const autoFinishedRef = useRef(false);
 
   const currentQuestion = questions[idx] ?? "";
-  const isLastQuestion = questions.length > 0 && idx === questions.length - 1;
   let nextButtonLabel = "Save & next question";
   if (finishing) nextButtonLabel = "Evaluating…";
-  else if (isLastQuestion) nextButtonLabel = "Finish & evaluate";
 
   const persistLocal = useCallback(
     (nextPairs: QAPair[], nextIdx: number, nextDraft: string, tx: string) => {
@@ -124,7 +131,8 @@ export function MockInterview() {
       // Do not auto-start when opening /mock.
       // Prefill setup options and wait for explicit "Start interview" click.
       setSelectedTopicId(s.topicId);
-      setInterviewType((s.interviewType || "technical") === "hr" ? "hr" : "technical");
+      const savedType = (s.interviewType || "technical").toLowerCase();
+      setInterviewType(savedType === "hr" ? "hr" : savedType === "personality" ? "personality" : "technical");
       setDurationMinutes(Math.max(5, Math.min(120, Number(s.durationMinutes || 30))));
     }
     (async () => {
@@ -245,14 +253,16 @@ export function MockInterview() {
     const selected = topics.find((t) => t.id === selectedTopicId);
     if (!selected) return;
     const nextType = (selected.interview_type || "technical").toLowerCase();
-    setInterviewType(nextType === "hr" ? "hr" : "technical");
+    setInterviewType(nextType === "hr" ? "hr" : nextType === "personality" ? "personality" : "technical");
     const nextDuration = Number(selected.duration_minutes || 30);
     setDurationMinutes(Math.max(5, Math.min(120, Number.isFinite(nextDuration) ? nextDuration : 30)));
   }, [selectedTopicId, topics]);
 
-  function normalizeInterviewType(raw: string | undefined): "technical" | "hr" {
+  function normalizeInterviewType(raw: string | undefined): "technical" | "personality" | "hr" {
     const v = (raw || "").toLowerCase();
-    return v === "hr" ? "hr" : "technical";
+    if (v === "hr") return "hr";
+    if (v === "personality") return "personality";
+    return "technical";
   }
 
   async function loadCvText(topicData: TopicResponse): Promise<string> {
@@ -263,14 +273,13 @@ export function MockInterview() {
     return (cj.parsed_text || "").trim();
   }
 
-  async function generateQuestions(topicData: TopicResponse, cvText: string): Promise<string[]> {
-    const fallback = [
-      "Tell me about your relevant experience for this role.",
-      "Describe a challenging problem you solved and how you approached it.",
-      "How do you prioritize tasks when multiple deadlines overlap?",
-      "Give an example of a time you worked effectively with a team.",
-      "What steps do you take to learn new tools or technologies?",
-    ];
+  async function generateQuestions(
+    topicData: TopicResponse,
+    cvText: string,
+    previousQuestions: string[],
+    numQuestions = 1
+  ): Promise<string[]> {
+    const previousSet = new Set(previousQuestions.map((q) => q.trim()).filter(Boolean));
     try {
       const gr = await audioFetch("/mock/generate-questions", {
         method: "POST",
@@ -279,20 +288,30 @@ export function MockInterview() {
           job_description: (topicData.job_description || "").slice(0, 3000),
           cv_text: cvText.slice(0, 3000),
           interview_type: normalizeInterviewType(topicData.interview_type || interviewType),
-          num_questions: 5,
-          previous_questions: [],
+          num_questions: Math.max(1, Math.min(15, numQuestions)),
+          previous_questions: previousQuestions,
         }),
       });
       if (!gr.ok) {
         console.error("Mock question generation failed:", await gr.text());
-        return fallback;
+        return FALLBACK_QUESTIONS.filter((q) => !previousSet.has(q)).slice(0, Math.max(1, numQuestions));
       }
       const gj = (await gr.json()) as { questions?: string[] };
-      return gj.questions?.length ? gj.questions : fallback;
+      const cleaned = (gj.questions || []).map((q) => q.trim()).filter(Boolean);
+      const unique = cleaned.filter((q) => !previousSet.has(q));
+      if (unique.length) return unique.slice(0, Math.max(1, numQuestions));
+      return FALLBACK_QUESTIONS.filter((q) => !previousSet.has(q)).slice(0, Math.max(1, numQuestions));
     } catch (e) {
       console.error("Mock question generation failed:", e);
-      return fallback;
+      return FALLBACK_QUESTIONS.filter((q) => !previousSet.has(q)).slice(0, Math.max(1, numQuestions));
     }
+  }
+
+  function fallbackNextQuestion(previousQuestions: string[]): string {
+    const previousSet = new Set(previousQuestions.map((q) => q.trim()).filter(Boolean));
+    const next = FALLBACK_QUESTIONS.find((q) => !previousSet.has(q));
+    if (next) return next;
+    return "What is one specific improvement you would make in your last answer?";
   }
 
   async function createAttempt(topicId: string): Promise<string> {
@@ -324,6 +343,8 @@ export function MockInterview() {
       setDraft("");
       setTranscript("");
       setPairs([]);
+      setCvTextForInterview("");
+      autoFinishedRef.current = false;
       const updateTopicRes = await appFetch(`/topics/${topicId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -349,7 +370,8 @@ export function MockInterview() {
       const cv = await loadCvText(topicData);
       if (!cv) throw new Error("CV not found for this job. Upload a CV on the Start page first.");
 
-      const qs = await generateQuestions(topicData, cv);
+      const first = await generateQuestions(topicData, cv, [], 1);
+      if (!first.length) throw new Error("Could not generate the first question.");
       const attemptId = await createAttempt(topicId);
 
       const next: InterviewSession = {
@@ -360,8 +382,9 @@ export function MockInterview() {
       };
       saveInterviewSession(next);
       setTopic(topicData);
-      setQuestions(qs);
+      setQuestions([first[0]]);
       setSession(next);
+      setCvTextForInterview(cv);
       setSecondsLeft(next.durationMinutes * 60);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start mock interview");
@@ -539,11 +562,19 @@ export function MockInterview() {
     setTranscript((t) => (t ? `${t}\n\nQ: ${currentQuestion}\nA: ${answer}` : `Q: ${currentQuestion}\nA: ${answer}`));
     setDraft("");
 
-    if (nextIdx >= questions.length) {
+    if (secondsLeft <= 0) {
       await finishInterview(nextPairs);
       return;
     }
 
+    const prevAsked = nextPairs.map((p) => p.question);
+    const generated = topic
+      ? await generateQuestions(topic, cvTextForInterview, prevAsked, 1)
+      : [];
+    const nextQuestion = generated[0] || fallbackNextQuestion(prevAsked);
+    const nextQuestions = [...questions, nextQuestion];
+
+    setQuestions(nextQuestions);
     setIdx(nextIdx);
     persistLocal(nextPairs, nextIdx, "", transcript);
   }
@@ -669,6 +700,16 @@ export function MockInterview() {
     return () => clearTimeout(t);
   }, [draft, pairs, idx, currentQuestion, session, persistLocal, transcript]);
 
+  useEffect(() => {
+    if (!session) return;
+    if (secondsLeft > 0) return;
+    if (finishing) return;
+    if (autoFinishedRef.current) return;
+    autoFinishedRef.current = true;
+    void finishInterview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secondsLeft, finishing, session]);
+
   if (loading) {
     return (
       <Card className="mx-auto max-w-2xl shadow-md">
@@ -711,10 +752,11 @@ export function MockInterview() {
             <select
               id="mock-type"
               value={interviewType}
-              onChange={(e) => setInterviewType(e.target.value === "hr" ? "hr" : "technical")}
+              onChange={(e) => setInterviewType(normalizeInterviewType(e.target.value))}
               className="flex h-10 w-full rounded-xl border border-input bg-secondary/50 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="technical">Technical</option>
+              <option value="personality">Personality</option>
               <option value="hr">HR</option>
             </select>
           </div>
@@ -761,9 +803,9 @@ export function MockInterview() {
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle>
-            Question {questions.length ? idx + 1 : 0} / {questions.length || "—"}
+            Question {currentQuestion ? idx + 1 : pairs.length}
           </CardTitle>
-          <CardDescription>Answer with your voice (or type). The question can be read aloud.</CardDescription>
+          <CardDescription>Answer with your voice (or type). New questions are generated continuously until time ends.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           {error && <p className="text-sm text-red-400">{error}</p>}

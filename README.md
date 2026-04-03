@@ -25,7 +25,7 @@ Microphone
   Question Service (concise STAR prompt)
         |
         v
-  LLM Service (Ollama + Qwen2.5 0.5B, streaming)
+      LLM Service (Ollama + Mistral 7B, streaming)
         |
         v
   Answer Formatter (STAR)  ------>  Frontend (tokens + final STAR)
@@ -39,7 +39,7 @@ Microphone
 | **Whisper Service** | Local speech-to-text (faster-whisper, **base** or **small**) | FastAPI, faster-whisper |
 | **STT Service** | Forwards audio to Whisper, returns transcript to pipeline | FastAPI |
 | **Question Service** | Builds concise STAR prompt (2–3 lines, interview-style) | FastAPI |
-| **LLM Service** | Streams tokens from Ollama (default **Qwen2.5 0.5B**) | FastAPI, Ollama API |
+| **LLM Service** | Streams tokens from Ollama (default **Mistral 7B**) | FastAPI, Ollama API |
 | **Formatter Service** | Parses LLM output into STAR fields | FastAPI |
 | **API Service** | CV/topics/history, optional Auth0, MongoDB | FastAPI |
 | **Ollama** | Local LLM; keep `ollama serve` running so models stay loaded | Ollama |
@@ -58,7 +58,7 @@ Microphone
 docker compose build
 docker compose --profile ollama up -d
 
-docker compose exec ollama ollama pull qwen2.5:0.5b
+docker compose exec ollama ollama pull mistral-7b-v0
 ```
 
 Starts **MongoDB** (27017), **api-service** (8001), **audio-service** (8000), **whisper**, **stt**, **question**, **llm**, **formatter**, and **Ollama** (11434).
@@ -66,13 +66,13 @@ Starts **MongoDB** (27017), **api-service** (8001), **audio-service** (8000), **
 - **WebSocket:** `ws://localhost:8000/ws/audio`
 - After ~1 s of silence, the question is sent to the LLM and the answer **streams** back.
 - **Whisper:** default **base**; set `WHISPER_MODEL=small` for better accuracy.
-- **Ollama:** default `qwen2.5:0.5b`; override with `OLLAMA_MODEL` (e.g. `llama3.2:1b`, `phi3`).
+- **Ollama:** default `mistral-7b-v0`; override with `OLLAMA_MODEL` if you intentionally want a different model.
 
 ### Full stack + Next.js (browser)
 
 ```bash
 npm run local:up
-docker compose --profile ollama exec ollama ollama pull qwen2.5:0.5b
+docker compose --profile ollama exec ollama ollama pull mistral-7b-v0
 ```
 
 - **Web:** http://localhost:3002  
@@ -106,7 +106,7 @@ For **no-login** mode, send **`X-User-Id: default`** on API requests and `user_i
 ```bash
 kubectl apply -f k8s/traefik/helmchartconfig.yaml   # TLS — adjust for your cluster
 kubectl apply -k k8s/
-kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
+kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral-7b-v0
 ```
 
 Manifests under **`k8s/`** define routing: web BFF, WebSocket to audio, API paths to **api-service**, optional admin host. STT expects a **Whisper** endpoint (`WHISPER_URL`); add a Whisper workload or an external URL as needed.
@@ -117,17 +117,17 @@ Manifests under **`k8s/`** define routing: web BFF, WebSocket to audio, API path
 
 ## Performance (typical targets)
 
-With **Qwen2.5 0.5B** and **Whisper base/small**:
+With **Mistral 7B** and **Whisper base/small**:
 
 | Step | Target |
 |------|--------|
 | Speech recognition | ~500–800 ms |
-| LLM first token | &lt; ~1 s |
-| Full answer (short STAR) | ~1–2 s |
+| LLM first token | ~1–3 s |
+| Full answer (short STAR) | ~2–6 s |
 
 Answers **stream** to the client. **Audio service** can call LLM **`/warmup`** on startup to reduce cold starts.
 
-**Local/offline hardware (indicative):** modern **x86_64** or **ARM64**; ~**4 GB+ RAM** for smallest model stack; **8 GB+** for larger Whisper/LLM choices. **No GPU required** for the default path.
+**Local/offline hardware (indicative):** modern **x86_64** or **ARM64**; plan for **12 GB+ RAM** for the default Mistral path, with **16–24 GB** preferred for the full stack. **No GPU required** for the default path.
 
 ---
 
@@ -135,7 +135,7 @@ Answers **stream** to the client. **Audio service** can call LLM **`/warmup`** o
 
 - **Audio Service:** `STT_SERVICE_URL`, `QUESTION_SERVICE_URL`, `LLM_SERVICE_URL`, `FORMATTER_SERVICE_URL`
 - **STT Service:** `WHISPER_URL` — must point at a working Whisper-compatible HTTP API for speech to work
-- **LLM Service:** `OLLAMA_HOST` (default `http://ollama:11434`), `OLLAMA_MODEL` (default `qwen2.5:0.5b`)
+- **LLM Service:** `OLLAMA_HOST` (default `http://ollama:11434`), `OLLAMA_MODEL` (default `mistral-7b-v0`)
 - **Whisper Service:** `WHISPER_MODEL` — `base` (default) or `small`
 
 Auth0 for the **website** (callbacks, API audience, social logins): **`docs/AUTH0-WEBSITE.md`**. If login or **Save Job** has failed for days: **`docs/AUTH0-END-TO-END-FIX.md`** (ordered kubectl + secret patch). CI and Kubernetes secrets: **`docs/GITHUB-ENVIRONMENT.md`**. Local: copy **`web/.env.local.example`** → **`web/.env.local`** (and see **`web/.env.example`**).

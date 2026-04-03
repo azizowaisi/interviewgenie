@@ -8,6 +8,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { appFetch } from "@/lib/api-fetch";
 
+const STATUS_PRESETS = [
+  "Applied",
+  "HR Interview",
+  "Technical Interview",
+  "Final Interview",
+  "Offer",
+  "Accepted",
+  "Rejected",
+];
+
 function messageFromFailedApiResponse(raw: string, status: number, fallback: string): string {
   const t = raw.trim();
   if (t.startsWith("<!") || /<html[\s>]/i.test(t)) {
@@ -31,6 +41,15 @@ function messageFromFailedApiResponse(raw: string, status: number, fallback: str
 export function InterviewPrep() {
   const [jobTitle, setJobTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [initialStatus, setInitialStatus] = useState("Applied");
+  const [statusNote, setStatusNote] = useState("");
+  const [appliedAt, setAppliedAt] = useState(() => {
+    const d = new Date();
+    d.setSeconds(0, 0);
+    const offset = d.getTimezoneOffset();
+    const local = new Date(d.getTime() - offset * 60000);
+    return local.toISOString().slice(0, 16);
+  });
   const [jobDescription, setJobDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -93,10 +112,38 @@ export function InterviewPrep() {
         const msg = messageFromFailedApiResponse(raw, cvRes.status, `Upload failed (${cvRes.status})`);
         throw new Error(msg);
       }
+
+      const statusRes = await appFetch("/candidate/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_title: jobTitle.trim(),
+          company_name: companyName.trim() || undefined,
+          topic_id: topicJson.id,
+          status: initialStatus.trim() || "Applied",
+          notes: statusNote.trim() || undefined,
+          applied_at: appliedAt,
+        }),
+      });
+      if (!statusRes.ok) {
+        const raw = await statusRes.text();
+        const msg = messageFromFailedApiResponse(raw, statusRes.status, `Status tracking failed (${statusRes.status})`);
+        throw new Error(msg);
+      }
+
       setSuccess("Job and CV saved. Continue to ATS, Mock, or Live pages.");
       setJobTitle("");
       setCompanyName("");
+      setInitialStatus("Applied");
+      setStatusNote("");
       setJobDescription("");
+      setAppliedAt(() => {
+        const d = new Date();
+        d.setSeconds(0, 0);
+        const offset = d.getTimezoneOffset();
+        const local = new Date(d.getTime() - offset * 60000);
+        return local.toISOString().slice(0, 16);
+      });
       setFile(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start interview");
@@ -128,6 +175,49 @@ export function InterviewPrep() {
             placeholder="e.g. Stripe"
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
+          />
+        </div>
+        <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="initial-status">Initial status</Label>
+            <div className="flex flex-wrap gap-2">
+              {STATUS_PRESETS.map((status) => (
+                <Button
+                  key={status}
+                  type="button"
+                  size="sm"
+                  variant={initialStatus === status ? "default" : "outline"}
+                  onClick={() => setInitialStatus(status)}
+                >
+                  {status}
+                </Button>
+              ))}
+            </div>
+            <Input
+              id="initial-status"
+              placeholder="e.g. Applied"
+              value={initialStatus}
+              onChange={(e) => setInitialStatus(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="applied-at">Status date and time</Label>
+            <Input
+              id="applied-at"
+              type="datetime-local"
+              value={appliedAt}
+              onChange={(e) => setAppliedAt(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="status-note">Status note</Label>
+          <Textarea
+            id="status-note"
+            placeholder="e.g. Applied through referral"
+            value={statusNote}
+            onChange={(e) => setStatusNote(e.target.value)}
+            className="min-h-[72px]"
           />
         </div>
         <div className="grid gap-2">

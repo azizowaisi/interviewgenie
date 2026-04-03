@@ -116,8 +116,14 @@ async def mock_generate_questions(body: GenerateQuestionsRequest) -> JSONRespons
     prev_block = "\n".join(f"- {q}" for q in prev[:50]) if prev else "(none)"
     num = max(1, min(15, body.num_questions))
     itype = (body.interview_type or "technical").strip().lower()
-    if itype not in ("technical", "hr"):
+    if itype not in ("technical", "personality", "hr"):
         itype = "technical"
+
+    type_instructions = {
+        "technical": "Focus on technical depth, architecture, debugging, coding trade-offs, and stack-specific problem solving.",
+        "personality": "Focus on personality and behavioral dimensions: ownership, teamwork style, conflict handling, resilience, communication, and motivation.",
+        "hr": "Focus on HR screening themes: role fit, career goals, strengths/weaknesses, collaboration, culture fit, and work preferences.",
+    }
     prompt = f"""Generate exactly {num} interview questions for a {itype} job interview.
 
 Job description:
@@ -129,9 +135,15 @@ Candidate CV (optional context):
 Previous questions already asked (do NOT repeat these):
 {prev_block}
 
+Type-specific guidance:
+{type_instructions.get(itype, type_instructions['technical'])}
+
 Rules:
 - Return ONLY the questions, one per line, numbered 1. to {num}.
 - Do not repeat or rephrase the previous questions. Generate new questions testing similar skills.
+- Every question must be relevant to the provided job description and candidate CV.
+- Avoid generic filler questions unless there is no job context available.
+- Keep the selected interview type strictly (do not mix technical/HR/personality styles).
 - Keep each question to one line."""
     try:
         async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:

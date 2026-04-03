@@ -76,6 +76,7 @@ def get_interview_questions_collection():
 _companies_indexes_ready = False
 _jobs_indexes_ready = False
 _candidates_indexes_ready = False
+_candidate_jobs_indexes_ready = False
 
 
 def get_companies_collection():
@@ -108,4 +109,14 @@ def get_candidates_collection():
         col.create_index([("job_id", ASCENDING)], name="candidate_job")
         col.create_index([("job_id", ASCENDING), ("score", ASCENDING)], name="candidate_job_score")
         _candidates_indexes_ready = True
+    return col
+
+
+def get_candidate_jobs_collection():
+    global _candidate_jobs_indexes_ready
+    col = get_db().candidate_jobs
+    if not _candidate_jobs_indexes_ready:
+        col.create_index([("user_id", ASCENDING), ("created_at", ASCENDING)], name="candidate_jobs_user_date")
+        col.create_index([("user_id", ASCENDING), ("status", ASCENDING)], name="candidate_jobs_user_status")
+        _candidate_jobs_indexes_ready = True
     return col

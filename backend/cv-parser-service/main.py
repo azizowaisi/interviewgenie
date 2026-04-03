@@ -35,15 +35,68 @@ _SKILL_KEYWORDS = {
 
 
 def _extract_text_pdf(data: bytes) -> str:
+    """Extract text from PDF using a chain of libraries from most to least robust.
+    Falls back to OCR (Tesseract) for scanned/image-only PDFs.
+    """
+
+    # 1. PyMuPDF (fitz) — MuPDF engine; handles all font encodings, Word-exported PDFs
+    try:
+        import fitz
+        doc = fitz.open(stream=data, filetype="pdf")
+        parts = [page.get_text("text") for page in doc]
+        doc.close()
+        text = "\n".join(parts).strip()
+        if len(text) > 50:
+            return text
+    except Exception as exc:
+        logger.warning("PyMuPDF failed: %s", exc)
+
+    # 2. pdfplumber — good for tabular/structured CVs
     try:
         import pdfplumber
         with pdfplumber.open(io.BytesIO(data)) as pdf:
-            return "\n".join(
-                page.extract_text() or "" for page in pdf.pages
-            )
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages).strip()
+        if len(text) > 50:
+            return text
     except Exception as exc:
         logger.warning("pdfplumber failed: %s", exc)
-        return ""
+
+    # 3. pdfminer.six — better on older PDFs with unusual encodings
+    try:
+        from pdfminer.high_level import extract_text as pdfminer_extract
+        text = pdfminer_extract(io.BytesIO(data)).strip()
+        if len(text) > 50:
+            return text
+    except Exception as exc:
+        logger.warning("pdfminer.six failed: %s", exc)
+
+    # 4. pypdf — different internal parser
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+        if len(text) > 50:
+            return text
+    except Exception as exc:
+        logger.warning("pypdf failed: %s", exc)
+
+    # 5. OCR fallback — for scanned/image-only PDFs (Tesseract via pdf2image)
+    logger.info("All text extractors returned empty — attempting OCR fallback")
+    try:
+        import pytesseract
+        from pdf2image import convert_from_bytes
+        images = convert_from_bytes(data, dpi=200, fmt="jpeg")
+        ocr_parts = []
+        for img in images:
+            ocr_parts.append(pytesseract.image_to_string(img, lang="eng"))
+        text = "\n".join(ocr_parts).strip()
+        if text:
+            logger.info("OCR extracted %d chars", len(text))
+            return text
+    except Exception as exc:
+        logger.warning("OCR fallback failed: %s", exc)
+
+    return ""
 
 
 def _extract_text_docx(data: bytes) -> str:

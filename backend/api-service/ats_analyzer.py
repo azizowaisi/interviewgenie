@@ -15,6 +15,46 @@ COMMON_SKILLS = {
     "agile", "scrum", "jira", "leadership", "mentoring",
 }
 
+# Generic words that frequently appear in job descriptions but are not useful skill suggestions.
+NOISE_WORDS = {
+    "a", "an", "and", "any", "all", "also", "about", "able", "added", "accident",
+    "after", "again", "against", "along", "already", "app", "application", "appwebsite",
+    "are", "as", "at", "be", "because", "before", "being", "between", "by", "can",
+    "candidate", "company", "clients", "collaborate", "communication", "create", "day", "days",
+    "design", "develop", "do", "done", "each", "etc", "for", "from", "full", "good",
+    "great", "have", "help", "high", "if", "in", "into", "is", "it", "its", "job",
+    "knowledge", "level", "like", "must", "need", "new", "of", "on", "one", "or", "other",
+    "our", "out", "over", "people", "plus", "product", "project", "projects", "required",
+    "role", "skills", "so", "some", "strong", "team", "teams", "that", "the", "their",
+    "them", "there", "these", "this", "to", "tools", "using", "very", "we", "well", "with",
+    "work", "worked", "working", "you", "your", "ads", "agencies", "aircraft", "airlines", "airports",
+}
+
+
+def _looks_like_meaningful_skill_token(token: str) -> bool:
+    """Return True when token is likely a concrete skill keyword, not filler text."""
+    t = (token or "").strip().lower().replace("_", " ")
+    if not t:
+        return False
+    # Reject purely numeric chunks like "000".
+    if re.fullmatch(r"\d+", t):
+        return False
+    # Reject one-character noise and common filler words.
+    if len(t) <= 2 or t in NOISE_WORDS:
+        return False
+
+    base = t.replace(" ", "_")
+    if base in COMMON_SKILLS:
+        return True
+
+    # For unknown terms, require stronger signal than plain words.
+    # Accept terms that look technical (contains dot/slash/plus/hash) or multiword with decent length.
+    if any(ch in t for ch in (".", "/", "+", "#")):
+        return True
+    if " " in t and len(t) >= 6:
+        return True
+    return False
+
 
 def _normalize(text: str) -> str:
     if not text:
@@ -43,6 +83,49 @@ def _extract_phrases(text: str, max_len: int = 4) -> set:
         for i in range(len(words) - n + 1):
             out.add("_".join(words[i : i + n]))
     return out
+
+
+def _skill_label(raw: str) -> str:
+    s = (raw or "").replace("_", " ").strip()
+    return s.title() if s else ""
+
+
+def _role_hint(jd_text: str) -> str:
+    first_line = (jd_text or "").strip().splitlines()[0] if (jd_text or "").strip() else ""
+    compact = re.sub(r"\s+", " ", first_line)
+    if not compact:
+        return "the target role"
+    return compact[:80]
+
+
+def _build_professional_summary_suggestions(role_hint: str, top_skills: list[str]) -> list[str]:
+    skills_text = ", ".join(top_skills[:4]) if top_skills else "the required stack"
+    return [
+        "Use 2-3 lines with this order: years/domain + strongest stack + business impact.",
+        f"Example: Results-oriented candidate targeting {role_hint}, experienced in {skills_text}, with a track record of shipping reliable features and improving team delivery metrics.",
+        "Avoid generic text such as 'hardworking' or 'team player' without proof. Include one concrete outcome.",
+    ]
+
+
+def _build_skills_section_suggestions(missing: list[str], matched: list[str]) -> list[str]:
+    missing_text = ", ".join(missing[:8]) if missing else "job-specific tools and frameworks"
+    matched_text = ", ".join(matched[:6]) if matched else "your strongest technologies"
+    return [
+        "Split skills into groups: Languages, Frameworks, Cloud/DevOps, Data, and Testing.",
+        f"Keep matched skills visible near the top: {matched_text}.",
+        f"Add missing job keywords only when true for your profile: {missing_text}.",
+        "Use exact job-description wording for ATS (for example: 'REST APIs' instead of only 'API').",
+    ]
+
+
+def _build_experience_suggestions(top_skills: list[str]) -> list[str]:
+    skill_text = ", ".join(top_skills[:3]) if top_skills else "the required stack"
+    return [
+        "Write bullets with action + scope + metric (what you did, where, and measurable result).",
+        f"Example rewrite: 'Built backend services' -> 'Built and deployed {skill_text}-based services used by 50k+ monthly users, reducing API latency by 35%'.",
+        "Add one impact metric per bullet: latency, conversion, uptime, delivery time, revenue, or cost savings.",
+        "Prioritize recent and role-relevant bullets first; keep older unrelated details short.",
+    ]
 
 
 def compute_ats(
@@ -100,13 +183,36 @@ def compute_ats(
 
     # Missing skills: prefer known tech terms, then other JD-only tokens (short list)
     missing_skills = []
+    seen = set()
     for s in sorted(missing_tech):
-        missing_skills.append(s.replace("_", " ").title())
+        label = s.replace("_", " ").strip()
+        if not _looks_like_meaningful_skill_token(label):
+            continue
+        lower = label.lower()
+        if lower in seen:
+            continue
+        seen.add(lower)
+        missing_skills.append(label.title())
+
     for w in sorted(missing_skill_tokens):
-        if w.replace("_", " ") not in [s.lower() for s in missing_skills]:
-            missing_skills.append(w.replace("_", " ").title())
+        label = w.replace("_", " ").strip()
+        if not _looks_like_meaningful_skill_token(label):
+            continue
+        lower = label.lower()
+        if lower in seen:
+            continue
+        seen.add(lower)
+        missing_skills.append(label.title())
         if len(missing_skills) >= 15:
             break
+
+    matched_skills = sorted([_skill_label(s) for s in (jd_tech & cv_tech)])
+    suggested_skills = missing_skills[:8]
+    role_hint = _role_hint(jd_text)
+
+    professional_summary_suggestions = _build_professional_summary_suggestions(role_hint, suggested_skills)
+    skills_section_suggestions = _build_skills_section_suggestions(suggested_skills, matched_skills)
+    experience_suggestions = _build_experience_suggestions(suggested_skills)
 
     # Overall: weighted average
     overall = round(
@@ -121,4 +227,8 @@ def compute_ats(
         "experience_match": min(100, experience_match),
         "tech_match": min(100, tech_match),
         "missing_skills": missing_skills[:15],
+        "suggested_skills_to_add": suggested_skills,
+        "professional_summary_suggestions": professional_summary_suggestions,
+        "skills_section_suggestions": skills_section_suggestions,
+        "experience_suggestions": experience_suggestions,
     }

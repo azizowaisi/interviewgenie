@@ -67,7 +67,7 @@ All three modes end up executing **`scripts/ci/k8s-apply.sh`** after checkout/rs
 2. **`kubectl apply -k k8s/`** (namespace `interview-ai`: apps, ingress, mongo, ollama, HPA, …)
 3. If **`DOCKERHUB_USERNAME`** is set and this run **pushed** images: **`kubectl set image`** pins **`sha-<full-commit>`** for services that were built (path filters). If **no** images were pushed (e.g. docs-only), **`kubectl set image` is skipped** so the cluster keeps current tags—no **`:latest`** rollout. If **`DOCKERHUB_USERNAME`** is unset, only `kubectl apply` runs.
 4. **`kubectl rollout status`** on the **same deployments** as `kubectl set image` (all eight app services by default, or a partial list from CI) **in parallel** — wall time ≈ one `K8S_ROLLOUT_TIMEOUT` (default `180s`), not eight serial waits.
-5. **`kubectl get pods`** and a best-effort **`ollama pull qwen2.5:0.5b`**
+5. **`kubectl get pods`** and a best-effort **`ollama pull mistral-7b-v0`**
 
 **Manual workflow:** **Actions → Build and Deploy → Run workflow** — also **pushes images** (same as a push to `main`). Options:
 
@@ -205,7 +205,7 @@ newgrp docker
    - Uses local k3s kubeconfig from `/etc/rancher/k3s/k3s.yaml`.
    - Applies `kubectl apply -k k8s/`.
    - If `DOCKERHUB_*` are set, it also rewrites images to your Docker Hub repo and the cluster pulls them.
-   - Optionally runs a one-time `ollama pull qwen2.5:0.5b` in the cluster (non-blocking).
+  - Optionally runs a one-time `ollama pull mistral-7b-v0` in the cluster (non-blocking).
 
 5. **deploy_remote** – If **`DEPLOY_MODE` is unset, empty, or `remote`** and secret **`KUBE_CONFIG`** is set: decodes kubeconfig and runs `kubectl apply` from a GitHub-hosted runner (API 6443 must be reachable from GitHub). If **`KUBE_CONFIG` is missing**, this job is **skipped**.
 
@@ -243,7 +243,7 @@ Set repository variable **`DEPLOY_MODE`** = `ssh` **and** the SSH secrets above;
 ## 4. After first deploy
 
 - **Ingress / access**: The repo’s `k8s/ingress/` (e.g. IngressRoute) may need to match your setup. Ensure the VM’s firewall allows ports 80/443 if you use an ingress.
-- **Ollama**: The workflow tries to pull `qwen2.5:0.5b` once. You can pull other models manually:
+- **Ollama**: The workflow tries to pull `mistral-7b-v0` once. You can pull other models manually:
   ```bash
   kubectl exec -n interview-ai deploy/ollama -- ollama pull <model>
   ```

@@ -30,7 +30,7 @@ spec:
             - name: OLLAMA_HOST
               value: "http://ollama:11434"
             - name: OLLAMA_MODEL
-              value: "qwen2.5:0.5b"
+              value: "mistral-7b-v0"
           resources:
             requests:
               memory: "128Mi"
@@ -40,9 +40,9 @@ spec:
               cpu: "200m"
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: 8000
-            initialDelaySeconds: 3
+            initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3
           livenessProbe:
