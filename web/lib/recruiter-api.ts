@@ -21,6 +21,7 @@ export interface Candidate {
   experience_years: number;
   score: number;
   status: "new" | "shortlisted" | "interviewed" | "rejected";
+  interview_score?: number;
   uploaded_at: string;
 }
 
@@ -29,7 +30,17 @@ export interface AiInterviewResult {
   candidate_id: string;
   candidate_name: string;
   job_title: string;
+  interview_type?: string;
   questions: string;
+}
+
+export interface InterviewEvaluateResult {
+  candidate_id: string;
+  interview_type: string;
+  score: number;
+  summary: string;
+  cv_suggestions: string[];
+  evaluated_at: string;
 }
 
 // ── Jobs ─────────────────────────────────────────────────────────────────────
@@ -90,6 +101,15 @@ export async function updateCandidateStatus(candidateId: string, status: string)
   if (!res.ok) throw new Error(await res.text());
 }
 
+export async function deleteCandidate(candidateId: string): Promise<void> {
+  const res = await appFetch(`/recruiter/candidates/${candidateId}`, { method: "DELETE" });
+  if (!res.ok) {
+    let msg = `Delete failed (${res.status})`;
+    try { msg = await res.text(); } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+}
+
 // ── Role setup ────────────────────────────────────────────────────────────────
 
 export async function setUserRole(role: "candidate" | "recruiter", companyName?: string) {
@@ -104,11 +124,43 @@ export async function setUserRole(role: "candidate" | "recruiter", companyName?:
 
 // ── AI Interview ──────────────────────────────────────────────────────────────
 
-export async function startAiInterview(jobId: string, candidateId: string): Promise<AiInterviewResult> {
+export async function startAiInterview(
+  jobId: string,
+  candidateId: string,
+  interviewType: "technical" | "personality" | "hr",
+  numQuestions?: number,
+  previousQuestions?: string[],
+): Promise<AiInterviewResult> {
   const res = await appFetch("/recruiter/interview/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ job_id: jobId, candidate_id: candidateId }),
+    body: JSON.stringify({
+      job_id: jobId,
+      candidate_id: candidateId,
+      interview_type: interviewType,
+      num_questions: numQuestions ?? 1,
+      previous_questions: previousQuestions ?? [],
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function evaluateAiInterview(
+  jobId: string,
+  candidateId: string,
+  interviewType: "technical" | "personality" | "hr",
+  questionsAndAnswers: Array<{ question: string; answer: string }>,
+): Promise<InterviewEvaluateResult> {
+  const res = await appFetch("/recruiter/interview/evaluate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      job_id: jobId,
+      candidate_id: candidateId,
+      interview_type: interviewType,
+      questions_and_answers: questionsAndAnswers,
+    }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

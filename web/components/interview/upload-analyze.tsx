@@ -23,6 +23,10 @@ type AtsResult = {
   keyword_match?: number;
   experience_match?: number;
   tech_match?: number;
+  suggested_skills_to_add?: string[];
+  professional_summary_suggestions?: string[];
+  skills_section_suggestions?: string[];
+  experience_suggestions?: string[];
 };
 
 export function UploadAnalyze() {
@@ -131,7 +135,7 @@ export function UploadAnalyze() {
         <Card className="shadow-md">
           <CardHeader>
             <CardTitle>Results</CardTitle>
-            <CardDescription>ATS score, skill match, and gaps vs. the job description.</CardDescription>
+            <CardDescription>ATS score plus practical CV improvement guidance.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6 md:grid-cols-2">
             <div className="space-y-4">
@@ -158,6 +162,48 @@ export function UploadAnalyze() {
               <ul className="list-inside list-disc rounded-xl border border-border bg-secondary/20 p-4 text-sm">
                 {(result.missing_skills?.length ? result.missing_skills : ["None flagged"]).map((s) => (
                   <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="md:col-span-2">
+              <p className="mb-2 text-sm font-medium text-muted-foreground">Suggested skills to add (if accurate)</p>
+              <ul className="list-inside list-disc rounded-xl border border-border bg-secondary/20 p-4 text-sm">
+                {(result.suggested_skills_to_add?.length ? result.suggested_skills_to_add : ["No extra suggestions"]).map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium text-muted-foreground">Professional summary guidance</p>
+              <ul className="list-inside list-disc rounded-xl border border-border bg-secondary/20 p-4 text-sm space-y-1">
+                {(result.professional_summary_suggestions?.length
+                  ? result.professional_summary_suggestions
+                  : ["No summary suggestions yet"]).map((item, idx) => (
+                  <li key={`${item}-${idx}`}>{item}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium text-muted-foreground">Skills section guidance</p>
+              <ul className="list-inside list-disc rounded-xl border border-border bg-secondary/20 p-4 text-sm space-y-1">
+                {(result.skills_section_suggestions?.length
+                  ? result.skills_section_suggestions
+                  : ["No skills section suggestions yet"]).map((item, idx) => (
+                  <li key={`${item}-${idx}`}>{item}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="md:col-span-2">
+              <p className="mb-2 text-sm font-medium text-muted-foreground">Experience bullet rewrite guidance</p>
+              <ul className="list-inside list-disc rounded-xl border border-border bg-secondary/20 p-4 text-sm space-y-1">
+                {(result.experience_suggestions?.length
+                  ? result.experience_suggestions
+                  : ["No experience suggestions yet"]).map((item, idx) => (
+                  <li key={`${item}-${idx}`}>{item}</li>
                 ))}
               </ul>
             </div>

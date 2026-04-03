@@ -223,7 +223,7 @@ kubectl apply -k k8s/
 kubectl wait --for=condition=ready pod -l app=mongo -n interview-ai --timeout=120s
 
 # Pull LLM model (after Ollama pod is up)
-kubectl exec -n interview-ai deploy/ollama -- ollama pull qwen2.5:0.5b
+kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral-7b-v0
 ```
 
 ### Option B: Apply in order (for debugging or staged rollout)

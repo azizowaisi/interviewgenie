@@ -5,7 +5,7 @@ metadata:
   namespace: interview-ai
   labels:
     app: ollama
-    model: mistral-7b
+    model: mistral-7b-v0
 spec:
   replicas: 1
   selector:
@@ -32,6 +32,39 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
+        - name: pull-mistral-model
+          image: ollama/ollama:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              ollama serve >/tmp/ollama-init.log 2>&1 &
+              pid="$!"
+              cleanup() {
+                kill "$pid" >/dev/null 2>&1 || true
+              }
+              trap cleanup EXIT
+              i=0
+              until ollama list >/dev/null 2>&1; do
+                i=$((i + 1))
+                if [ "$i" -gt 60 ]; then
+                  echo "Ollama daemon did not become ready in time"
+                  exit 1
+                fi
+                sleep 2
+              done
+              ollama pull mistral-7b-v0
+              ollama list | grep -q "mistral-7b-v0"
+          env:
+            - name: OLLAMA_HOST
+              value: "127.0.0.1:11434"
+            - name: OLLAMA_MODELS
+              value: /root/.ollama/models
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
       containers:
         - name: ollama
           image: ollama/ollama:latest
@@ -54,11 +87,23 @@ spec:
               memory: "16Gi"
               cpu: "4000m"
           readinessProbe:
-            tcpSocket:
-              port: 11434
-            initialDelaySeconds: 15
+            exec:
+              command:
+                - sh
+                - -c
+                - ollama list | grep -q "mistral-7b-v0"
+            initialDelaySeconds: 20
             periodSeconds: 5
             failureThreshold: 6
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - ollama list | grep -q "mistral-7b-v0"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 90
           livenessProbe:
             tcpSocket:
               port: 11434

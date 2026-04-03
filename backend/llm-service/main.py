@@ -6,8 +6,8 @@ import os
 import json
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
-# Ultra-low latency: qwen2.5:0.5b (~400MB, <1GB RAM). Alternatives: llama3.2:1b, phi3
-MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+# Balanced speed + reasoning on ARM64 CPU nodes.
+MODEL_NAME = os.getenv("OLLAMA_MODEL", "mistral-7b-v0")
 OLLAMA_TIMEOUT = httpx.Timeout(60.0, connect=10.0, read=60.0, write=10.0)
 
 
@@ -25,6 +25,23 @@ app = FastAPI(title="LLM Service (Ollama client)", version="0.1.0")
 @app.get("/health")
 async def health() -> JSONResponse:
     return JSONResponse({"status": "ok"})
+
+
+@app.get("/ready")
+async def ready() -> JSONResponse:
+    """Ready only when Ollama is reachable and the configured model is available."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(f"{OLLAMA_HOST}/api/tags")
+            resp.raise_for_status()
+            data = resp.json()
+            models = data.get("models") or []
+            names = {m.get("name") for m in models if isinstance(m, dict)}
+            if MODEL_NAME in names:
+                return JSONResponse({"status": "ready", "model": MODEL_NAME})
+            return JSONResponse({"status": "not_ready", "model": MODEL_NAME}, status_code=503)
+        except Exception:
+            return JSONResponse({"status": "not_ready", "model": MODEL_NAME}, status_code=503)
 
 
 @app.get("/warmup")
@@ -58,7 +75,7 @@ async def generate(body: LlmRequest) -> LlmResponse:
             resp.raise_for_status()
             data = resp.json()
             return LlmResponse(raw_answer=data.get("response", "") or MOCK_ANSWER)
-        except (httpx.RequestError, ValueError):
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
             return LlmResponse(raw_answer=MOCK_ANSWER)
 
 

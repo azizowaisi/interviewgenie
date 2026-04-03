@@ -6,12 +6,15 @@ import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MAIN_NAV_LINKS } from "@/components/layout/nav-links";
 
+type NavLink = { readonly href: string; readonly label: string };
+
 type Props = {
   readonly loggedIn: boolean;
   readonly logoutHref: string;
+  readonly links?: readonly NavLink[];
 };
 
-export function MobileNav({ loggedIn, logoutHref }: Props) {
+export function MobileNav({ loggedIn, logoutHref, links = MAIN_NAV_LINKS }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -34,7 +37,7 @@ export function MobileNav({ loggedIn, logoutHref }: Props) {
         >
           <nav className="flex flex-col gap-1">
             {loggedIn
-              ? MAIN_NAV_LINKS.map(({ href, label }) => (
+              ? links.map(({ href, label }) => (
                   <Link
                     key={href}
                     href={href}

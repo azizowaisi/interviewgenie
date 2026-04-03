@@ -3,6 +3,7 @@ API Service: Auth0 (optional), CV upload/parsing, MongoDB (users, CVs, Q&A histo
 """
 import logging
 import os
+import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,7 @@ from db import (
     get_company_users_collection,
     get_jobs_collection,
     get_candidates_collection,
+    get_candidate_jobs_collection,
 )
 from cv_parser import parse_cv
 from ats_analyzer import compute_ats
@@ -128,6 +130,7 @@ class CandidateOut(BaseModel):
     cv_url: str
     score: float
     status: str
+    interview_score: Optional[float] = None
 
 
 class CandidateStatusUpdate(BaseModel):
@@ -137,6 +140,21 @@ class CandidateStatusUpdate(BaseModel):
 class AiInterviewStartRequest(BaseModel):
     job_id: str
     candidate_id: str
+    interview_type: Optional[str] = None  # "technical" | "personality" | "hr"
+    num_questions: Optional[int] = 5
+    previous_questions: list[str] = []
+
+
+class InterviewQAPair(BaseModel):
+    question: str
+    answer: str
+
+
+class AiInterviewEvaluateRequest(BaseModel):
+    job_id: str
+    candidate_id: str
+    interview_type: Optional[str] = None
+    questions_and_answers: list[InterviewQAPair] = []
 
 
 class UserProfileUpdate(BaseModel):
@@ -193,12 +211,12 @@ class TopicCreate(BaseModel):
     topic: str
     company_name: Optional[str] = None
     job_description: Optional[str] = None
-    interview_type: Optional[str] = None  # "technical" | "hr"; default "technical"
+    interview_type: Optional[str] = None  # "technical" | "personality" | "hr"; default "technical"
     duration_minutes: Optional[int] = None  # default 30
 
 
 class TopicUpdate(BaseModel):
-    interview_type: Optional[str] = None  # "technical" | "hr"
+    interview_type: Optional[str] = None  # "technical" | "personality" | "hr"
     duration_minutes: Optional[int] = None  # 5-120
 
 
@@ -227,6 +245,31 @@ class AtsAnalyzeRequest(BaseModel):
     topic_id: Optional[str] = None  # use topic's job_description and topic's cv_id
     cv_id: Optional[str] = None  # optional override; if topic_id has cv_id, use that
     job_description: Optional[str] = None  # raw JD if no topic_id
+
+
+class CandidateJobEventCreate(BaseModel):
+    event_type: str
+    status: Optional[str] = None
+    note: Optional[str] = None
+    occurred_at: Optional[str] = None
+
+
+class CandidateJobCreate(BaseModel):
+    job_title: str
+    company_name: Optional[str] = None
+    topic_id: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    applied_at: Optional[str] = None
+
+
+class CandidateJobUpdate(BaseModel):
+    job_title: Optional[str] = None
+    company_name: Optional[str] = None
+    topic_id: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    applied_at: Optional[str] = None
 
 
 async def get_user_id(
@@ -642,6 +685,227 @@ async def history_list(
     return JSONResponse(out)
 
 
+def _parse_datetime_or_400(raw: Optional[str], *, fallback_now: bool = False) -> datetime:
+    if raw is None:
+        if fallback_now:
+            return datetime.now(timezone.utc)
+        raise HTTPException(400, "datetime value is required")
+    try:
+        # Accept ISO strings and browser datetime-local format.
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception as exc:
+        raise HTTPException(400, "Invalid datetime format") from exc
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _job_event_to_response(event: dict) -> dict:
+    return {
+        "id": event.get("id") or uuid.uuid4().hex,
+        "event_type": event.get("event_type") or "update",
+        "status": event.get("status"),
+        "note": event.get("note"),
+        "occurred_at": event["occurred_at"].isoformat(),
+        "created_at": event["created_at"].isoformat(),
+    }
+
+
+def _candidate_job_to_response(doc: dict) -> dict:
+    events = doc.get("events") or []
+    events_sorted = sorted(events, key=lambda e: e.get("occurred_at", datetime.now(timezone.utc)), reverse=True)
+    return {
+        "id": str(doc["_id"]),
+        "job_title": doc.get("job_title") or "",
+        "company_name": doc.get("company_name"),
+        "topic_id": str(doc["topic_id"]) if doc.get("topic_id") else None,
+        "status": doc.get("status") or "applied",
+        "notes": doc.get("notes"),
+        "applied_at": doc["applied_at"].isoformat(),
+        "created_at": doc["created_at"].isoformat(),
+        "updated_at": doc["updated_at"].isoformat(),
+        "events": [_job_event_to_response(e) for e in events_sorted],
+    }
+
+
+@app.post("/candidate/jobs")
+async def candidate_job_create(
+    body: CandidateJobCreate,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    title = (body.job_title or "").strip()
+    if not title:
+        raise HTTPException(400, "job_title is required")
+    now = datetime.now(timezone.utc)
+    applied_at = _parse_datetime_or_400(body.applied_at, fallback_now=True) if body.applied_at else now
+    status = (body.status or "applied").strip() or "applied"
+    from bson import ObjectId
+    topic_oid = None
+    if body.topic_id:
+        try:
+            topic_oid = ObjectId(body.topic_id)
+        except Exception:
+            raise HTTPException(400, "Invalid topic_id")
+
+    jobs = get_candidate_jobs_collection()
+    event = {
+        "id": uuid.uuid4().hex,
+        "event_type": "applied",
+        "status": status,
+        "note": (body.notes or "").strip() or None,
+        "occurred_at": applied_at,
+        "created_at": now,
+    }
+    doc = {
+        "user_id": user_id,
+        "job_title": title,
+        "company_name": (body.company_name or "").strip() or None,
+        "topic_id": topic_oid,
+        "status": status,
+        "notes": (body.notes or "").strip() or None,
+        "applied_at": applied_at,
+        "created_at": now,
+        "updated_at": now,
+        "events": [event],
+    }
+    inserted = jobs.insert_one(doc)
+    created = jobs.find_one({"_id": inserted.inserted_id, "user_id": user_id})
+    return JSONResponse(_candidate_job_to_response(created))
+
+
+@app.get("/candidate/jobs")
+async def candidate_jobs_list(user_id: Optional[str] = Depends(get_user_id)):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    jobs = get_candidate_jobs_collection()
+    cursor = jobs.find({"user_id": user_id}).sort("updated_at", -1).limit(300)
+    return JSONResponse([_candidate_job_to_response(d) for d in cursor])
+
+
+@app.patch("/candidate/jobs/{job_id}")
+async def candidate_job_update(
+    job_id: str,
+    body: CandidateJobUpdate,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    from bson import ObjectId
+
+    jobs = get_candidate_jobs_collection()
+    try:
+        existing = jobs.find_one({"_id": ObjectId(job_id), "user_id": user_id})
+    except Exception:
+        existing = None
+    if not existing:
+        raise HTTPException(404, "Job not found")
+
+    updates: dict = {}
+    if body.job_title is not None:
+        title = (body.job_title or "").strip()
+        if not title:
+            raise HTTPException(400, "job_title cannot be empty")
+        updates["job_title"] = title
+    if body.company_name is not None:
+        updates["company_name"] = (body.company_name or "").strip() or None
+    if body.status is not None:
+        updates["status"] = (body.status or "").strip() or "applied"
+    if body.topic_id is not None:
+        if not body.topic_id:
+            updates["topic_id"] = None
+        else:
+            try:
+                updates["topic_id"] = ObjectId(body.topic_id)
+            except Exception:
+                raise HTTPException(400, "Invalid topic_id")
+    if body.notes is not None:
+        updates["notes"] = (body.notes or "").strip() or None
+    if body.applied_at is not None:
+        updates["applied_at"] = _parse_datetime_or_400(body.applied_at)
+
+    now = datetime.now(timezone.utc)
+    push_event = None
+    if "status" in updates and updates["status"] != (existing.get("status") or "applied"):
+        push_event = {
+            "id": uuid.uuid4().hex,
+            "event_type": "status_change",
+            "status": updates["status"],
+            "note": f"Status changed from '{existing.get('status') or 'applied'}' to '{updates['status']}'",
+            "occurred_at": now,
+            "created_at": now,
+        }
+
+    updates["updated_at"] = now
+    patch_doc: dict = {"$set": updates}
+    if push_event:
+        patch_doc["$push"] = {"events": push_event}
+    jobs.update_one({"_id": ObjectId(job_id), "user_id": user_id}, patch_doc)
+
+    fresh = jobs.find_one({"_id": ObjectId(job_id), "user_id": user_id})
+    return JSONResponse(_candidate_job_to_response(fresh))
+
+
+@app.post("/candidate/jobs/{job_id}/events")
+async def candidate_job_add_event(
+    job_id: str,
+    body: CandidateJobEventCreate,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    from bson import ObjectId
+
+    jobs = get_candidate_jobs_collection()
+    try:
+        existing = jobs.find_one({"_id": ObjectId(job_id), "user_id": user_id})
+    except Exception:
+        existing = None
+    if not existing:
+        raise HTTPException(404, "Job not found")
+
+    event_type = (body.event_type or "").strip()
+    if not event_type:
+        raise HTTPException(400, "event_type is required")
+    now = datetime.now(timezone.utc)
+    event = {
+        "id": uuid.uuid4().hex,
+        "event_type": event_type,
+        "status": (body.status or "").strip() or None,
+        "note": (body.note or "").strip() or None,
+        "occurred_at": _parse_datetime_or_400(body.occurred_at, fallback_now=True) if body.occurred_at else now,
+        "created_at": now,
+    }
+
+    update_payload = {
+        "$push": {"events": event},
+        "$set": {"updated_at": now},
+    }
+    if event["status"]:
+        update_payload["$set"]["status"] = event["status"]
+
+    jobs.update_one({"_id": ObjectId(job_id), "user_id": user_id}, update_payload)
+    fresh = jobs.find_one({"_id": ObjectId(job_id), "user_id": user_id})
+    return JSONResponse(_candidate_job_to_response(fresh))
+
+
+@app.delete("/candidate/jobs/{job_id}")
+async def candidate_job_delete(job_id: str, user_id: Optional[str] = Depends(get_user_id)):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    from bson import ObjectId
+
+    jobs = get_candidate_jobs_collection()
+    try:
+        result = jobs.delete_one({"_id": ObjectId(job_id), "user_id": user_id})
+    except Exception:
+        raise HTTPException(400, "Invalid job id")
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Job not found")
+    return JSONResponse({"ok": True})
+
+
 # --- Topics (interview topic + job description) ---
 @app.post("/topics")
 async def topic_create(
@@ -655,7 +919,7 @@ async def topic_create(
         raise HTTPException(400, "topic is required")
     topics = get_topics_collection()
     interview_type = (body.interview_type or "technical").strip().lower() if body.interview_type else "technical"
-    if interview_type not in ("technical", "hr"):
+    if interview_type not in ("technical", "personality", "hr"):
         interview_type = "technical"
     duration = body.duration_minutes if body.duration_minutes is not None else 30
     duration = max(5, min(120, duration))
@@ -753,7 +1017,7 @@ async def topic_update(
     updates = {}
     if body.interview_type is not None:
         it = (body.interview_type or "technical").strip().lower()
-        updates["interview_type"] = it if it in ("technical", "hr") else "technical"
+        updates["interview_type"] = it if it in ("technical", "personality", "hr") else "technical"
     if body.duration_minutes is not None:
         dur = max(5, min(120, int(body.duration_minutes)))
         updates["duration_minutes"] = dur
@@ -1100,6 +1364,10 @@ async def ats_analyze(
         "tech_match": result["tech_match"],
         "overall_score": result["overall_score"],
         "missing_skills": result["missing_skills"],
+        "suggested_skills_to_add": result.get("suggested_skills_to_add", []),
+        "professional_summary_suggestions": result.get("professional_summary_suggestions", []),
+        "skills_section_suggestions": result.get("skills_section_suggestions", []),
+        "experience_suggestions": result.get("experience_suggestions", []),
         "created_at": datetime.now(timezone.utc),
     }
     res = ats_coll.insert_one(doc)
@@ -1139,6 +1407,10 @@ async def ats_get(
             "experience_match": d.get("experience_match"),
             "tech_match": d.get("tech_match"),
             "missing_skills": d.get("missing_skills", []),
+            "suggested_skills_to_add": d.get("suggested_skills_to_add", []),
+            "professional_summary_suggestions": d.get("professional_summary_suggestions", []),
+            "skills_section_suggestions": d.get("skills_section_suggestions", []),
+            "experience_suggestions": d.get("experience_suggestions", []),
             "created_at": d["created_at"].isoformat(),
         })
     return JSONResponse(out)
@@ -1393,6 +1665,30 @@ def _score_candidate(cv_skills: list[str], job_skills: list[str], experience_yea
     return round(min(100.0, skill_score + exp_score), 1)
 
 
+def _candidate_name_from_parsed(parsed_data: dict, filename: str) -> str:
+    name = (parsed_data.get("name") or "").strip()
+    if name:
+        return name
+
+    email = (parsed_data.get("email") or "").strip().lower()
+    if email and "@" in email:
+        local = email.split("@", 1)[0]
+        parts = [p for p in re.split(r"[._\-]+", local) if p]
+        if parts:
+            return " ".join(p.capitalize() for p in parts)[:80]
+
+    raw_text = (parsed_data.get("raw_text") or "").strip()
+    if raw_text:
+        for line in raw_text.splitlines():
+            t = line.strip()
+            if not t or "@" in t:
+                continue
+            if len(t.split()) >= 2 and len(t) <= 80:
+                return t
+
+    return filename
+
+
 @app.post("/recruiter/jobs/{job_id}/candidates")
 async def recruiter_upload_candidate_cv(
     job_id: str,
@@ -1448,7 +1744,7 @@ async def recruiter_upload_candidate_cv(
     cand_doc = {
         "job_id": str(job["_id"]),
         "company_id": str(doc.get("company_id")),
-        "name": (parsed_data.get("name") or "").strip() or filename,
+        "name": _candidate_name_from_parsed(parsed_data, filename),
         "email": (parsed_data.get("email") or "").strip().lower(),
         "skills": candidate_skills,
         "experience_years": experience_years,
@@ -1468,6 +1764,7 @@ async def recruiter_upload_candidate_cv(
         "experience_years": cand_doc["experience_years"],
         "score": cand_doc["score"],
         "status": cand_doc["status"],
+        "interview_score": cand_doc.get("interview_score"),
     }, status_code=201)
 
 
@@ -1479,7 +1776,8 @@ async def recruiter_list_candidates(
     user_id: Optional[str] = Depends(get_user_id),
 ):
     doc = _require_recruiter(user_id)
-    from bson import ObjectId, DESCENDING
+    from bson import ObjectId
+    from pymongo import DESCENDING
     # Validate job belongs to company
     jobs = get_jobs_collection()
     try:
@@ -1506,6 +1804,7 @@ async def recruiter_list_candidates(
             "experience_years": d.get("experience_years", 0),
             "score": d.get("score", 0),
             "status": d.get("status", "new"),
+            "interview_score": d.get("interview_score"),
             "uploaded_at": d["uploaded_at"].isoformat(),
         })
     return JSONResponse(out)
@@ -1535,6 +1834,7 @@ async def recruiter_get_candidate(candidate_id: str, user_id: Optional[str] = De
         "cv_raw_text": cand.get("cv_raw_text", ""),
         "score": cand.get("score", 0),
         "status": cand.get("status", "new"),
+        "interview_score": cand.get("interview_score"),
         "uploaded_at": cand["uploaded_at"].isoformat(),
     })
 
@@ -1563,6 +1863,25 @@ async def recruiter_update_candidate_status(
     return JSONResponse({"status": body.status})
 
 
+@app.delete("/recruiter/candidates/{candidate_id}")
+async def recruiter_delete_candidate(
+    candidate_id: str,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    candidates = get_candidates_collection()
+    try:
+        result = candidates.delete_one(
+            {"_id": ObjectId(candidate_id), "company_id": str(doc.get("company_id"))}
+        )
+    except Exception:
+        result = None
+    if not result or result.deleted_count == 0:
+        raise HTTPException(404, "Candidate not found")
+    return JSONResponse({"deleted": True})
+
+
 # ── AI Interview (recruiter-initiated) ────────────────────────────────────────
 
 @app.post("/recruiter/interview/start")
@@ -1570,10 +1889,7 @@ async def recruiter_start_ai_interview(
     body: AiInterviewStartRequest,
     user_id: Optional[str] = Depends(get_user_id),
 ):
-    """
-    Generate 3 personalised interview questions for a candidate applying to a specific job.
-    Uses the question-service prompt engine + LLM service.
-    """
+    """Generate personalised recruiter interview questions for a candidate/job pair."""
     doc = _require_recruiter(user_id)
     from bson import ObjectId
     import httpx as _httpx
@@ -1605,12 +1921,29 @@ async def recruiter_start_ai_interview(
     jd = f"Job Title: {job['title']}\n\n{job['description']}"
     cv_text = cand.get("cv_raw_text") or f"Skills: {', '.join(cand.get('skills', []))}"
 
+    interview_type = (body.interview_type or "technical").strip().lower()
+    if interview_type not in ("technical", "personality", "hr"):
+        interview_type = "technical"
+    num_questions = max(1, min(10, int(body.num_questions or 1)))
+    previous_questions = [q.strip() for q in (body.previous_questions or []) if q.strip()][:50]
+    prev_block = "\n".join(f"- {q}" for q in previous_questions) if previous_questions else "(none)"
+
+    type_instruction = {
+        "technical": "Focus on technical depth, architecture, debugging, APIs, data, and real implementation trade-offs.",
+        "personality": "Focus on personality/behavior style: ownership, communication, teamwork, conflict handling, resilience, and motivation.",
+        "hr": "Focus on HR themes: role fit, career goals, strengths/weaknesses, collaboration, and work preferences.",
+    }[interview_type]
+
     interviewer_prompt = (
-        "You are a technical interviewer conducting a job interview.\n\n"
+        f"You are a {interview_type} interviewer conducting a job interview.\n\n"
         f"Job Description:\n{jd[:2000]}\n\n"
         f"Candidate CV Summary:\n{cv_text[:2000]}\n\n"
-        "Generate exactly 3 personalised interview questions tailored to this candidate and role. "
-        "Format as a numbered list: 1. ... 2. ... 3. ..."
+        f"Type rules: {type_instruction}\n\n"
+        f"Previous questions already asked (do not repeat/rephrase):\n{prev_block}\n\n"
+        f"Generate exactly {num_questions} personalised interview questions tailored to this candidate and this role. "
+        "Every question must be relevant to the job and CV context. "
+        "Do not repeat or rephrase previously asked questions. "
+        "Format as a numbered list: 1. ... 2. ..."
     )
 
     # Call LLM service directly with the interviewer prompt
@@ -1633,6 +1966,115 @@ async def recruiter_start_ai_interview(
         "candidate_id": str(cand["_id"]),
         "candidate_name": cand.get("name", ""),
         "job_title": job["title"],
+        "interview_type": interview_type,
         "questions": questions_text,
+    })
+
+
+@app.post("/recruiter/interview/evaluate")
+async def recruiter_evaluate_interview(
+    body: AiInterviewEvaluateRequest,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    """Evaluate recruiter interview answers and persist score/results on candidate."""
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    import httpx as _httpx
+
+    jobs = get_jobs_collection()
+    try:
+        job = jobs.find_one({"_id": ObjectId(body.job_id), "company_id": doc.get("company_id")})
+    except Exception:
+        job = None
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    candidates = get_candidates_collection()
+    try:
+        cand = candidates.find_one({"_id": ObjectId(body.candidate_id), "job_id": str(job["_id"])})
+    except Exception:
+        cand = None
+    if not cand:
+        raise HTTPException(404, "Candidate not found for this job")
+
+    qa = [{"question": q.question.strip(), "answer": q.answer.strip()} for q in (body.questions_and_answers or []) if q.question.strip()]
+    if not qa:
+        raise HTTPException(400, "questions_and_answers is required")
+
+    interview_type = (body.interview_type or "technical").strip().lower()
+    if interview_type not in ("technical", "personality", "hr"):
+        interview_type = "technical"
+
+    AUDIO_SERVICE_URL = os.getenv("AUDIO_SERVICE_URL", "http://audio-service:8000")
+    LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://llm-service:8000")
+
+    # Score + summary from evaluator
+    score = 0.0
+    summary = ""
+    try:
+        async with _httpx.AsyncClient(timeout=90) as client:
+            ev = await client.post(
+                f"{AUDIO_SERVICE_URL}/mock/evaluate-attempt",
+                json={"questions_and_answers": qa},
+            )
+            ev.raise_for_status()
+            evj = ev.json()
+            score = float(evj.get("score") or 0)
+            summary = (evj.get("evaluation_summary") or "").strip()
+    except Exception as e:
+        logger.exception("Interview evaluate call failed: %s", str(e)[:200])
+        raise HTTPException(503, "Interview evaluation service unavailable")
+
+    # CV-aware improvement suggestions
+    jd = f"Job Title: {job['title']}\n\n{job['description']}"
+    cv_text = cand.get("cv_raw_text") or f"Skills: {', '.join(cand.get('skills', []))}"
+    qa_block = "\n\n".join([f"Q: {x['question']}\nA: {x['answer'] or '(no answer)'}" for x in qa[:20]])
+
+    suggestion_prompt = (
+        f"You are an interview coach for a {interview_type} interview.\n\n"
+        f"Job description:\n{jd[:2000]}\n\n"
+        f"Candidate CV:\n{cv_text[:2500]}\n\n"
+        f"Interview Q&A:\n{qa_block[:3500]}\n\n"
+        "Return ONLY JSON with this shape:\n"
+        "{\"suggestions\":[\"...\",\"...\",\"...\",\"...\"]}\n"
+        "Rules: suggestions must be practical, role-relevant, and grounded in CV/job gaps."
+    )
+
+    suggestions: list[str] = []
+    try:
+        async with _httpx.AsyncClient(timeout=60) as client:
+            sr = await client.post(f"{LLM_SERVICE_URL}/generate", json={"prompt": suggestion_prompt})
+            sr.raise_for_status()
+            raw = (sr.json().get("raw_answer") or "").strip()
+            try:
+                sj = json.loads(raw)
+                if isinstance(sj.get("suggestions"), list):
+                    suggestions = [str(s).strip() for s in sj.get("suggestions") if str(s).strip()][:6]
+            except Exception:
+                pass
+    except Exception:
+        suggestions = []
+
+    now = datetime.now(timezone.utc)
+    candidates.update_one(
+        {"_id": cand["_id"]},
+        {"$set": {
+            "status": "interviewed",
+            "interview_type": interview_type,
+            "interview_questions_and_answers": qa,
+            "interview_score": round(max(0.0, min(10.0, score)), 1),
+            "interview_summary": summary,
+            "interview_cv_suggestions": suggestions,
+            "interview_evaluated_at": now,
+        }}
+    )
+
+    return JSONResponse({
+        "candidate_id": str(cand["_id"]),
+        "interview_type": interview_type,
+        "score": round(max(0.0, min(10.0, score)), 1),
+        "summary": summary,
+        "cv_suggestions": suggestions,
+        "evaluated_at": now.isoformat(),
     })
 

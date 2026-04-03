@@ -7,3 +7,9 @@ export const MAIN_NAV_LINKS = [
   { href: "/history", label: "History" },
   { href: "/profile", label: "Profile" },
 ] as const;
+
+/** Recruiter-specific nav links. */
+export const RECRUITER_NAV_LINKS = [
+  { href: "/recruiter", label: "Dashboard" },
+  { href: "/profile", label: "Profile" },
+] as const;

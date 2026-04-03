@@ -1,7 +1,7 @@
 # Local development: run all backend services + Ollama + API (MongoDB, CV, history).
 # Build: docker compose build
 # Run: docker compose --profile ollama up -d
-# Pull ultra-light model once: docker compose exec ollama ollama pull qwen2.5:0.5b
+# Pull model once: docker compose exec ollama ollama pull mistral-7b-v0
 # Clients: ws://localhost:8000/ws/audio (audio), http://localhost:8001 (API)
 #
 # Full stack + Next.js web UI + admin (no Kubernetes):
@@ -95,7 +95,7 @@ services:
       dockerfile: Dockerfile
     environment:
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: qwen2.5:0.5b
+      OLLAMA_MODEL: mistral-7b-v0
     # Start Ollama when needed: docker compose --profile ollama up -d
 
   formatter-service:
@@ -120,11 +120,11 @@ services:
       - ollama_models:/root/.ollama
     environment:
       OLLAMA_HOST: "0.0.0.0"
-    # Qwen 0.5B ~1GB; for larger models (llama3.2:1b, phi3) use 4–6G
+    # Mistral 7B needs significantly more memory than tiny models.
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 10G
 
 volumes:
   ollama_models: {}

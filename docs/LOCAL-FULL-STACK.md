@@ -16,10 +16,10 @@ Equivalent Docker command:
 docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama up -d --build
 ```
 
-**First time only** — pull the small LLM (inside the Ollama container):
+**First time only** — pull the default LLM (inside the Ollama container):
 
 ```bash
-docker compose --profile ollama exec ollama ollama pull qwen2.5:0.5b
+docker compose --profile ollama exec ollama ollama pull mistral-7b-v0
 ```
 
 ## URLs

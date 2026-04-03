@@ -192,6 +192,8 @@ done
     esac
   fi
 
+  OLLAMA_MODEL_NAME="${OLLAMA_MODEL:-mistral-7b-v0}"
+
   case "${K8S_SKIP_OLLAMA_PULL:-}" in
     1 | true | TRUE | yes | YES)
       echo "=== Ollama model (skipped — K8S_SKIP_OLLAMA_PULL set) ==="
@@ -199,10 +201,10 @@ done
     *)
       echo "=== Ollama model (non-fatal) ==="
       if kubectl get deploy/ollama -n "$NS" &>/dev/null; then
-        kubectl exec -n "$NS" deploy/ollama -- ollama pull qwen2.5:0.5b
+        kubectl exec -n "$NS" deploy/ollama -- ollama pull "$OLLAMA_MODEL_NAME"
         pull_rc=$?
         if [[ "$pull_rc" -ne 0 ]]; then
-          echo "WARN: ollama pull exited ${pull_rc} (ignored). Pull manually: kubectl exec -n ${NS} deploy/ollama -- ollama pull qwen2.5:0.5b" >&2
+          echo "WARN: ollama pull exited ${pull_rc} (ignored). Pull manually: kubectl exec -n ${NS} deploy/ollama -- ollama pull ${OLLAMA_MODEL_NAME}" >&2
         fi
       else
         echo "WARN: no deploy/ollama in ${NS} — skipping model pull" >&2
