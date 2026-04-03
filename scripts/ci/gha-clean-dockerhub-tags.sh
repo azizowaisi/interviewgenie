@@ -37,18 +37,14 @@ print(json.dumps({"username": os.environ["DH_USER"], "password": os.environ["DH_
 PY
 )"
 
-hub_jwt="$({
+login_response="$({
   curl -fsSL -X POST \
     -H 'Content-Type: application/json' \
     -d "${login_payload}" \
     https://hub.docker.com/v2/users/login/
-} | python3 - <<'PY'
-import json
-import sys
+})"
 
-print(json.load(sys.stdin).get("token", ""))
-PY
-)"
+hub_jwt="$(LOGIN_RESPONSE="${login_response}" python3 -c 'import json, os; print(json.loads(os.environ["LOGIN_RESPONSE"]).get("token", ""))')"
 
 if [[ -z "${hub_jwt}" ]]; then
   echo "cleanup: failed to obtain Docker Hub API token" >&2
@@ -66,24 +62,9 @@ while [[ -n "${next_url}" ]]; do
     if [[ "${tag}" == sha-* ]]; then
       sha_tags+=("${tag}")
     fi
-  done < <(printf '%s' "${response}" | python3 - <<'PY'
-import json
-import sys
+  done < <(RESPONSE_JSON="${response}" python3 -c 'import json, os; [print(item.get("name")) for item in json.loads(os.environ["RESPONSE_JSON"]).get("results", []) if item.get("name")]')
 
-for item in json.load(sys.stdin).get("results", []):
-    name = item.get("name")
-    if name:
-        print(name)
-PY
-)
-
-  next_url="$(printf '%s' "${response}" | python3 - <<'PY'
-import json
-import sys
-
-print(json.load(sys.stdin).get("next") or "")
-PY
-)"
+  next_url="$(RESPONSE_JSON="${response}" python3 -c 'import json, os; print(json.loads(os.environ["RESPONSE_JSON"]).get("next") or "")')"
 done
 
 count="${#sha_tags[@]}"
