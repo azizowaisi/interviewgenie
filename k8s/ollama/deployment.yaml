@@ -87,11 +87,8 @@ spec:
               memory: "16Gi"
               cpu: "4000m"
           readinessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - ollama list | grep -q "mistral"
+            tcpSocket:
+              port: 11434
             initialDelaySeconds: 20
             periodSeconds: 5
             failureThreshold: 6
