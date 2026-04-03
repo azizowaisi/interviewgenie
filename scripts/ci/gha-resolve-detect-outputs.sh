@@ -139,22 +139,8 @@ if [[ "${EVENT_NAME}" == "pull_request" ]] && [[ "${ci_pr_always_build_all}" == 
   exit 0
 fi
 
-# Push to main: always rebuild and redeploy all images for production.
-# This ensures the cluster gets a fresh copy of every image on each main push.
-if [[ "${EVENT_NAME}" == "push" ]] && [[ "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
-  echo "build_any=true" >>"${GITHUB_OUTPUT}"
-  write_build_flags "true"
-  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
-  tests_any=false
-  emit_test_matrix_from_filters
-  echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
-  echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
-  echo "- **Mode:** main push — force build all images" >>"${GITHUB_STEP_SUMMARY}"
-  echo "- **Tests:** ${tests_any}" >>"${GITHUB_STEP_SUMMARY}"
-  exit 0
-fi
-
-# Push to main, or manual incremental (paths-filter ran)
+# Default mode: path-based incremental build/deploy.
+# On push to main, only changed services rebuild and only those deployments get pinned to the new sha tag.
 if [[ "${FILTER_API_SERVICE:-false}" == "true" ]]; then build_any=true; fi
 if [[ "${FILTER_AUDIO_SERVICE:-false}" == "true" ]]; then build_any=true; fi
 if [[ "${FILTER_STT_SERVICE:-false}" == "true" ]]; then build_any=true; fi

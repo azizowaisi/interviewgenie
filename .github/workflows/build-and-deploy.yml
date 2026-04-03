@@ -355,6 +355,22 @@ jobs:
           chmod +x scripts/ci/gha-build-single-image.sh
           scripts/ci/gha-build-single-image.sh
 
+      - name: Clean old Docker Hub tags
+        if: steps.docker_push.outcome == 'success'
+        env:
+          IMAGE_SLUG: ${{ matrix.slug }}
+          DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          KEEP_LAST_IMAGES: 3
+        run: |
+          trim() { printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          DH_USER="$(trim "${DH_USER_SECRET}")"
+          [ -z "${DH_USER}" ] && DH_USER="$(trim "${DH_USER_VAR}")"
+          export DH_USER DH_TOKEN IMAGE_SLUG KEEP_LAST_IMAGES
+          chmod +x scripts/ci/gha-clean-dockerhub-tags.sh
+          scripts/ci/gha-clean-dockerhub-tags.sh
+
       - name: Record push result artifact
         if: always()
         run: |
