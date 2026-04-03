@@ -35,7 +35,6 @@ const PUBLIC_API_SVC = "/api/svc";
 export async function middleware(request: NextRequest) {
   const host = hostOnly(request.headers.get("host"));
   const { pathname, search } = request.nextUrl;
-  const adminInfraHash = "#/admin/infrastructure";
 
   // Auth0 mounts /auth/* endpoints and needs to run on all routes to keep session cookies in sync.
   if (pathname.startsWith("/auth")) {
@@ -102,16 +101,11 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isAdminHost) {
-    if (
-      pathname === "/" ||
-      pathname === "" ||
-      pathname === "/admin" ||
-      pathname.startsWith("/admin/")
-    ) {
-      const target = new URL("/", request.url);
-      target.search = search;
-      target.hash = adminInfraHash;
-      return NextResponse.redirect(target, 308);
+    if (pathname === "/" || pathname === "") {
+      return NextResponse.rewrite(new URL(`/admin${search}`, request.url));
+    }
+    if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+      return NextResponse.next();
     }
     return NextResponse.redirect(new URL(`${pathname}${search}`, mainAppBase));
   }
@@ -122,9 +116,9 @@ export async function middleware(request: NextRequest) {
     (mainAppHosts.includes(host) || mainAppHosts.includes(normalizedMainHost)) &&
     (pathname === "/admin" || pathname.startsWith("/admin/"))
   ) {
-    const target = new URL("/", adminSiteBase);
+    const targetPath = pathname === "/admin" ? "/admin" : pathname;
+    const target = new URL(targetPath, adminSiteBase);
     target.search = request.nextUrl.searchParams.toString();
-    target.hash = adminInfraHash;
     return NextResponse.redirect(target, 308);
   }
 
