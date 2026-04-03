@@ -14,6 +14,21 @@ function hostOnly(h: string | null) {
   return h?.split(":")[0]?.toLowerCase() ?? "";
 }
 
+function isLocalHost(host: string) {
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function stripAdminPrefix(host: string) {
+  return host.startsWith("admin.") ? host.slice("admin.".length) : host;
+}
+
+function deriveAdminSiteBase(request: NextRequest, host: string, adminSiteBaseFromEnv: string) {
+  if (adminSiteBaseFromEnv) return adminSiteBaseFromEnv;
+  const baseHost = stripAdminPrefix(host);
+  if (!baseHost || isLocalHost(baseHost)) return "";
+  return `${request.nextUrl.protocol}//admin.${baseHost}`;
+}
+
 /** FastAPI public prefix (must match k8s ingress + Traefik strip). */
 const PUBLIC_API_SVC = "/api/svc";
 
@@ -41,14 +56,16 @@ export async function middleware(request: NextRequest) {
 
   const adminHosts = getAdminHostnames();
   const mainAppBase = resolveMiddlewarePublicAppBase(request);
-  const adminSiteBase = getAdminSiteBaseFromEnv();
+  const adminSiteBase = deriveAdminSiteBase(request, host, getAdminSiteBaseFromEnv());
   const mainAppHosts = getMainAppHostnames(request);
+  const isAdminHost = adminHosts.includes(host) || host.startsWith("admin.");
+  const normalizedMainHost = stripAdminPrefix(host);
 
   // Old ingress sent these to FastAPI/audio on bare paths; redirect so / stays the Next.js app only.
   // Omit /history — that path is the Next.js interview history page, not the REST API.
   if (
-    mainAppHosts.includes(host) &&
-    !adminHosts.includes(host) &&
+    (mainAppHosts.includes(host) || (!isAdminHost && mainAppHosts.includes(normalizedMainHost))) &&
+    !isAdminHost &&
     !pathname.startsWith("/api") &&
     !pathname.startsWith("/_next") &&
     pathname !== "/favicon.ico" &&
@@ -84,7 +101,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (adminHosts.includes(host)) {
+  if (isAdminHost) {
     if (
       pathname === "/" ||
       pathname === "" ||
@@ -101,7 +118,8 @@ export async function middleware(request: NextRequest) {
 
   if (
     adminSiteBase &&
-    mainAppHosts.includes(host) &&
+    !isAdminHost &&
+    (mainAppHosts.includes(host) || mainAppHosts.includes(normalizedMainHost)) &&
     (pathname === "/admin" || pathname.startsWith("/admin/"))
   ) {
     const target = new URL("/", adminSiteBase);
