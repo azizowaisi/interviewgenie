@@ -1,6 +1,12 @@
-import { AdminDashboard } from "@/components/dashboard/admin-dashboard";
+import { redirect } from "next/navigation";
 
-// Main admin route entrypoint rendered on the dedicated admin host.
+function adminInfraTarget() {
+  const base =
+    process.env.NEXT_PUBLIC_ADMIN_SITE_URL?.trim() ||
+    "https://admin.interviewgenie.teckiz.com";
+  return `${base.replace(/\/$/, "")}/#/admin/infrastructure`;
+}
+
 export default function AdminPage() {
-  return <AdminDashboard />;
+  redirect(adminInfraTarget());
 }
