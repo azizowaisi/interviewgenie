@@ -19,7 +19,7 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 NS="${K8S_NAMESPACE:-interview-ai}"
 ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-180s}"
 # App Deployments that receive Hub images (must match set_image loop below).
-ALL_APP_DEPLOYMENTS="api-service audio-service stt-service question-service llm-service formatter-service monitoring-service web"
+ALL_APP_DEPLOYMENTS="api-service audio-service stt-service question-service llm-service formatter-service cv-parser-service monitoring-service web"
 ROLLOUT_TARGETS="${ALL_APP_DEPLOYMENTS}"
 
 SNAP_DIR=""
@@ -35,20 +35,20 @@ echo "ROOT=$ROOT"
 echo "=== Apply Traefik HelmChartConfig (kube-system) ==="
 kubectl apply -f "$ROOT/k8s/traefik/helmchartconfig.yaml"
 
-if [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
-  echo "=== Snapshot app deployment images (before apply — placeholders in git must not replace live Hub tags) ==="
-  SNAP_DIR="$(mktemp -d)"
-  for d in ${ALL_APP_DEPLOYMENTS}; do
-    if kubectl get "deployment/$d" -n "$NS" &>/dev/null; then
-      cname=$(kubectl get "deployment/$d" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].name}' 2>/dev/null || true)
-      img=$(kubectl get "deployment/$d" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
-      if [[ -n "${cname:-}" && -n "${img:-}" ]]; then
-        printf '%s' "$cname" >"${SNAP_DIR}/${d}.container"
-        printf '%s' "$img" >"${SNAP_DIR}/${d}.image"
-      fi
+# Always snapshot live images before apply so that partial builds (K8S_UPDATE_DEPLOYMENTS)
+# and skip-set-image runs do not clobber non-updated deployments with the sha-0000000 placeholder.
+echo "=== Snapshot app deployment images (before apply — placeholders in git must not replace live Hub tags) ==="
+SNAP_DIR="$(mktemp -d)"
+for d in ${ALL_APP_DEPLOYMENTS}; do
+  if kubectl get "deployment/$d" -n "$NS" &>/dev/null; then
+    cname=$(kubectl get "deployment/$d" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].name}' 2>/dev/null || true)
+    img=$(kubectl get "deployment/$d" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+    if [[ -n "${cname:-}" && -n "${img:-}" ]]; then
+      printf '%s' "$cname" >"${SNAP_DIR}/${d}.container"
+      printf '%s' "$img" >"${SNAP_DIR}/${d}.image"
     fi
-  done
-fi
+  fi
+done
 
 echo "=== kubectl apply -k ($NS) ==="
 kubectl apply -k "$ROOT/k8s/"
@@ -125,30 +125,42 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]];
       formatter-service) set_image_for formatter-service formatter-service "$DH" ;;
       monitoring-service) set_image_for monitoring-service monitoring-service "$DH" ;;
       web) set_image_for web web "$DH" ;;
+      cv-parser-service) set_image_for cv-parser-service cv-parser-service "$DH" ;;
       *) echo "WARN: unknown deployment in K8S_UPDATE_DEPLOYMENTS: $d" ;;
     esac
   done
-elif [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
-  echo "=== Skipping kubectl set image (K8S_SKIP_SET_IMAGE=1) — no new image tag pushed this run ==="
-  restored=0
-  if [[ -n "${SNAP_DIR}" && -d "${SNAP_DIR}" ]]; then
-    for d in ${ALL_APP_DEPLOYMENTS}; do
-      [[ -f "${SNAP_DIR}/${d}.image" && -f "${SNAP_DIR}/${d}.container" ]] || continue
-      cname="$(cat "${SNAP_DIR}/${d}.container")"
-      img="$(cat "${SNAP_DIR}/${d}.image")"
-      if kubectl set image "deployment/${d}" -n "$NS" "${cname}=${img}"; then
+fi
+
+# Restore snapshot for any deployment NOT updated this run (partial builds and skip-set-image).
+# This prevents kubectl apply -k from clobbering live sha-* tags with the sha-0000000 placeholder.
+echo "=== Restoring snapshots for non-updated deployments ==="
+restored=0
+if [[ -n "${SNAP_DIR}" && -d "${SNAP_DIR}" ]]; then
+  for d in ${ALL_APP_DEPLOYMENTS}; do
+    # Skip if this deployment was just updated with a new image tag
+    if echo " ${TARGETS:-} " | grep -q " ${d} "; then
+      continue
+    fi
+    [[ -f "${SNAP_DIR}/${d}.image" && -f "${SNAP_DIR}/${d}.container" ]] || continue
+    cname="$(cat "${SNAP_DIR}/${d}.container")"
+    img="$(cat "${SNAP_DIR}/${d}.image")"
+    # Only restore if the current live image is a sha-0000000 placeholder (apply clobbered it)
+    live_img=$(kubectl get "deployment/${d}" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+    if echo "${live_img:-}" | grep -q "sha-0000000"; then
+      if kubectl set image "deployment/${d}" -n "$NS" "${cname}=${img}" 2>/dev/null; then
+        echo "Restored ${d}: ${img}"
         restored=$((restored + 1))
       fi
-    done
-  fi
-  if [[ "$restored" -gt 0 ]]; then
-    echo "Restored ${restored} deployment image ref(s) from pre-apply snapshot."
-  else
-    echo "WARN: No snapshot to restore deployment image refs after apply —"
-    echo "WARN: if this run changed images to a tag that was not pushed, pods can stay ImagePullBackOff and Traefik returns 502."
-    echo "WARN: Run a workflow that builds/pushes images, or: DOCKERHUB_USERNAME=you ./scripts/deploy-k3s.sh"
-    echo "WARN: Diagnose: ./scripts/k8s-diagnose-interview-ai.sh"
-  fi
+    fi
+  done
+fi
+if [[ "$restored" -gt 0 ]]; then
+  echo "Restored ${restored} deployment image ref(s) from pre-apply snapshot."
+elif [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
+  echo "WARN: No snapshot to restore deployment image refs after apply —"
+  echo "WARN: if this run changed images to a tag that was not pushed, pods can stay ImagePullBackOff and Traefik returns 502."
+  echo "WARN: Run a workflow that builds/pushes images, or: DOCKERHUB_USERNAME=you ./scripts/deploy-k3s.sh"
+  echo "WARN: Diagnose: ./scripts/k8s-diagnose-interview-ai.sh"
 fi
 
 # Rollouts in parallel so wall time ≈ one timeout, not N × timeout (set -e: wait || true).
