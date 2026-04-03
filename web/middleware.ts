@@ -98,7 +98,8 @@ export async function middleware(request: NextRequest) {
     mainAppHosts.includes(host) &&
     (pathname === "/admin" || pathname.startsWith("/admin/"))
   ) {
-    const target = new URL("/", adminSiteBase);
+    const targetPath = pathname === "/admin" ? "/" : pathname;
+    const target = new URL(targetPath, adminSiteBase);
     target.search = request.nextUrl.searchParams.toString();
     return NextResponse.redirect(target);
   }
