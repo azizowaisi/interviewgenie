@@ -113,7 +113,6 @@ export async function middleware(request: NextRequest) {
   if (
     adminSiteBase &&
     !isAdminHost &&
-    (mainAppHosts.includes(host) || mainAppHosts.includes(normalizedMainHost)) &&
     (pathname === "/admin" || pathname.startsWith("/admin/"))
   ) {
     const targetPath = pathname === "/admin" ? "/admin" : pathname;
