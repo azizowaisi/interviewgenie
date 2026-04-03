@@ -28,6 +28,7 @@ case "${SLUG}" in
   question-service) CONTEXT_DIR="./backend/question-service" ;;
   llm-service) CONTEXT_DIR="./backend/llm-service" ;;
   formatter-service) CONTEXT_DIR="./backend/formatter-service" ;;
+  cv-parser-service) CONTEXT_DIR="./backend/cv-parser-service" ;;
   monitoring-service) CONTEXT_DIR="./backend/monitoring-service" ;;
   web) CONTEXT_DIR="./web" ;;
   *)

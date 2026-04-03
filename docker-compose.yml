@@ -20,6 +20,7 @@ services:
       MONGODB_URI: mongodb://mongo:27017
       MONGODB_DB: interviewgenie
       UPLOAD_DIR: /cv_storage
+      CV_PARSER_URL: http://cv-parser-service:8000
       # AUTH0_DOMAIN: your-tenant.auth0.com
       # AUTH0_AUDIENCE: https://your-api
       # AUTH0_CLIENT_ID: same as web app (ID tokens use aud=client_id; required with AUTH0_* above)
@@ -101,6 +102,13 @@ services:
     build:
       context: ./backend/formatter-service
       dockerfile: Dockerfile
+
+  cv-parser-service:
+    build:
+      context: ./backend/cv-parser-service
+      dockerfile: Dockerfile
+    ports:
+      - "8010:8000"
 
   ollama:
     profiles:

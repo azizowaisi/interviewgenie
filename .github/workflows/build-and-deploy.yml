@@ -110,6 +110,8 @@ jobs:
               - 'backend/llm-service/**'
             formatter_service:
               - 'backend/formatter-service/**'
+            cv_parser_service:
+              - 'backend/cv-parser-service/**'
             monitoring_service:
               - 'backend/monitoring-service/**'
             web:
@@ -151,6 +153,7 @@ jobs:
           FILTER_QUESTION_SERVICE: ${{ steps.filter.outputs.question_service }}
           FILTER_LLM_SERVICE: ${{ steps.filter.outputs.llm_service }}
           FILTER_FORMATTER_SERVICE: ${{ steps.filter.outputs.formatter_service }}
+          FILTER_CV_PARSER_SERVICE: ${{ steps.filter.outputs.cv_parser_service }}
           FILTER_MONITORING_SERVICE: ${{ steps.filter.outputs.monitoring_service }}
           FILTER_WEB: ${{ steps.filter.outputs.web }}
           FILTER_PYTHON_TESTS: ${{ steps.filter.outputs.python_tests }}

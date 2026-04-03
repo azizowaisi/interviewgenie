@@ -69,3 +69,43 @@ def get_interview_attempts_collection():
 
 def get_interview_questions_collection():
     return get_db().interview_questions
+
+
+# ── Recruiter / ATS collections ──────────────────────────────────────────────
+
+_companies_indexes_ready = False
+_jobs_indexes_ready = False
+_candidates_indexes_ready = False
+
+
+def get_companies_collection():
+    global _companies_indexes_ready
+    col = get_db().companies
+    if not _companies_indexes_ready:
+        col.create_index([("owner_id", ASCENDING)], name="company_owner")
+        _companies_indexes_ready = True
+    return col
+
+
+def get_company_users_collection():
+    return get_db().company_users
+
+
+def get_jobs_collection():
+    global _jobs_indexes_ready
+    col = get_db().jobs
+    if not _jobs_indexes_ready:
+        col.create_index([("company_id", ASCENDING)], name="job_company")
+        col.create_index([("company_id", ASCENDING), ("created_at", ASCENDING)], name="job_company_date")
+        _jobs_indexes_ready = True
+    return col
+
+
+def get_candidates_collection():
+    global _candidates_indexes_ready
+    col = get_db().candidates
+    if not _candidates_indexes_ready:
+        col.create_index([("job_id", ASCENDING)], name="candidate_job")
+        col.create_index([("job_id", ASCENDING), ("score", ASCENDING)], name="candidate_job_score")
+        _candidates_indexes_ready = True
+    return col

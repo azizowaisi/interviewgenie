@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cv-parser-service
+  namespace: interview-ai
+  labels:
+    app: cv-parser-service
+spec:
+  selector:
+    app: cv-parser-service
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http

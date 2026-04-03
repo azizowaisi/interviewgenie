@@ -50,6 +50,7 @@ emit_build_matrix_from_filters() {
   if [[ "${FILTER_QUESTION_SERVICE:-false}" == "true" ]]; then json+="${sep}\"question-service\""; sep=","; fi
   if [[ "${FILTER_LLM_SERVICE:-false}" == "true" ]]; then json+="${sep}\"llm-service\""; sep=","; fi
   if [[ "${FILTER_FORMATTER_SERVICE:-false}" == "true" ]]; then json+="${sep}\"formatter-service\""; sep=","; fi
+  if [[ "${FILTER_CV_PARSER_SERVICE:-false}" == "true" ]]; then json+="${sep}\"cv-parser-service\""; sep=","; fi
   if [[ "${FILTER_MONITORING_SERVICE:-false}" == "true" ]]; then json+="${sep}\"monitoring-service\""; sep=","; fi
   if [[ "${FILTER_WEB:-false}" == "true" ]]; then json+="${sep}\"web\""; sep=","; fi
   json+="]"
@@ -64,6 +65,7 @@ write_build_flags() {
   echo "build_question_service=${v}" >>"${GITHUB_OUTPUT}"
   echo "build_llm_service=${v}" >>"${GITHUB_OUTPUT}"
   echo "build_formatter_service=${v}" >>"${GITHUB_OUTPUT}"
+  echo "build_cv_parser_service=${v}" >>"${GITHUB_OUTPUT}"
   echo "build_monitoring_service=${v}" >>"${GITHUB_OUTPUT}"
   echo "build_web=${v}" >>"${GITHUB_OUTPUT}"
 }
@@ -95,7 +97,7 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   if [[ "${INPUT_FORCE_BUILD}" == "true" ]]; then
     echo "build_any=true" >>"${GITHUB_OUTPUT}"
     write_build_flags "true"
-    write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
+    write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","cv-parser-service","monitoring-service","web"]'
     tests_any=false
     if [[ "${INPUT_SKIP_TESTS}" != "true" ]]; then
       tests_any=true
@@ -115,7 +117,7 @@ fi
 if [[ "${EVENT_NAME}" == "push" ]] && [[ "${ci_always_build_all}" == "true" ]]; then
   echo "build_any=true" >>"${GITHUB_OUTPUT}"
   write_build_flags "true"
-  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
+  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","cv-parser-service","monitoring-service","web"]'
   tests_any=false
   emit_test_matrix_from_filters
   echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
@@ -129,7 +131,7 @@ fi
 if [[ "${EVENT_NAME}" == "pull_request" ]] && [[ "${ci_pr_always_build_all}" == "true" ]]; then
   echo "build_any=true" >>"${GITHUB_OUTPUT}"
   write_build_flags "true"
-  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","monitoring-service","web"]'
+  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","cv-parser-service","monitoring-service","web"]'
   tests_any=false
   emit_test_matrix_from_filters
   echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
@@ -147,6 +149,7 @@ if [[ "${FILTER_STT_SERVICE:-false}" == "true" ]]; then build_any=true; fi
 if [[ "${FILTER_QUESTION_SERVICE:-false}" == "true" ]]; then build_any=true; fi
 if [[ "${FILTER_LLM_SERVICE:-false}" == "true" ]]; then build_any=true; fi
 if [[ "${FILTER_FORMATTER_SERVICE:-false}" == "true" ]]; then build_any=true; fi
+if [[ "${FILTER_CV_PARSER_SERVICE:-false}" == "true" ]]; then build_any=true; fi
 if [[ "${FILTER_MONITORING_SERVICE:-false}" == "true" ]]; then build_any=true; fi
 if [[ "${FILTER_WEB:-false}" == "true" ]]; then build_any=true; fi
 
@@ -156,6 +159,7 @@ echo "build_stt_service=${FILTER_STT_SERVICE:-false}" >>"${GITHUB_OUTPUT}"
 echo "build_question_service=${FILTER_QUESTION_SERVICE:-false}" >>"${GITHUB_OUTPUT}"
 echo "build_llm_service=${FILTER_LLM_SERVICE:-false}" >>"${GITHUB_OUTPUT}"
 echo "build_formatter_service=${FILTER_FORMATTER_SERVICE:-false}" >>"${GITHUB_OUTPUT}"
+echo "build_cv_parser_service=${FILTER_CV_PARSER_SERVICE:-false}" >>"${GITHUB_OUTPUT}"
 echo "build_monitoring_service=${FILTER_MONITORING_SERVICE:-false}" >>"${GITHUB_OUTPUT}"
 echo "build_web=${FILTER_WEB:-false}" >>"${GITHUB_OUTPUT}"
 
