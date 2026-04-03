@@ -26,6 +26,8 @@ resources:
   - llm-service/service.yaml
   - formatter-service/deployment.yaml
   - formatter-service/service.yaml
+  - cv-parser-service/deployment.yaml
+  - cv-parser-service/service.yaml
   - hpa/stateless-services.yaml
   - ollama/pvc.yaml
   - ollama/deployment.yaml

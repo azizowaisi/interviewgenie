@@ -23,6 +23,10 @@ from db import (
     get_ats_analysis_collection,
     get_interview_attempts_collection,
     get_interview_questions_collection,
+    get_companies_collection,
+    get_company_users_collection,
+    get_jobs_collection,
+    get_candidates_collection,
 )
 from cv_parser import parse_cv
 from ats_analyzer import compute_ats
@@ -76,6 +80,63 @@ class UserMe(BaseModel):
     email: Optional[str] = None
     language: Optional[str] = None
     name: Optional[str] = None
+    role: Optional[str] = None
+    company_id: Optional[str] = None
+
+
+# ── Recruiter models ──────────────────────────────────────────────────────────
+
+class RoleSetRequest(BaseModel):
+    role: str  # "candidate" | "recruiter"
+    company_name: Optional[str] = None  # required when role == "recruiter"
+
+
+class CompanyOut(BaseModel):
+    id: str
+    name: str
+    owner_id: str
+
+
+class JobCreate(BaseModel):
+    title: str
+    description: str
+    skills: list[str] = []
+
+
+class JobUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    skills: Optional[list[str]] = None
+
+
+class JobOut(BaseModel):
+    id: str
+    company_id: str
+    title: str
+    description: str
+    skills: list[str]
+    created_at: str
+
+
+class CandidateOut(BaseModel):
+    id: str
+    job_id: str
+    name: str
+    email: str
+    skills: list[str]
+    experience_years: float
+    cv_url: str
+    score: float
+    status: str
+
+
+class CandidateStatusUpdate(BaseModel):
+    status: str  # "new" | "shortlisted" | "interviewed" | "rejected"
+
+
+class AiInterviewStartRequest(BaseModel):
+    job_id: str
+    candidate_id: str
 
 
 class UserProfileUpdate(BaseModel):
@@ -304,6 +365,8 @@ async def users_me(user_id: Optional[str] = Depends(get_user_id)):
         email=doc.get("email"),
         language=doc.get("language"),
         name=doc.get("name"),
+        role=doc.get("role", "candidate"),
+        company_id=str(doc["company_id"]) if doc.get("company_id") else None,
     )
 
 
@@ -357,6 +420,8 @@ async def users_me_update(body: UserProfileUpdate, user_id: Optional[str] = Depe
         email=fresh.get("email"),
         language=fresh.get("language"),
         name=fresh.get("name"),
+        role=fresh.get("role", "candidate"),
+        company_id=str(fresh["company_id"]) if fresh.get("company_id") else None,
     )
 
 
@@ -1077,3 +1142,497 @@ async def ats_get(
             "created_at": d["created_at"].isoformat(),
         })
     return JSONResponse(out)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECRUITER / ATS ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CV_PARSER_URL = os.getenv("CV_PARSER_URL", "http://cv-parser-service:8000")
+
+
+def _resolve_user_doc(user_id: str):
+    """Return Mongo user doc by string _id (ObjectId or plain string)."""
+    from bson import ObjectId
+    users = get_users_collection()
+    doc = users.find_one({"_id": user_id})
+    if not doc:
+        try:
+            doc = users.find_one({"_id": ObjectId(user_id)})
+        except Exception:
+            pass
+    return doc
+
+
+def _require_recruiter(user_id: Optional[str]):
+    """Raise 403 unless the user has role==recruiter."""
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    doc = _resolve_user_doc(user_id)
+    if not doc or doc.get("role") != "recruiter":
+        raise HTTPException(403, "Recruiter role required")
+    return doc
+
+
+# ── Role setup ────────────────────────────────────────────────────────────────
+
+@app.post("/users/me/role", response_model=UserMe)
+async def set_user_role(
+    body: RoleSetRequest,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    """Set role to 'candidate' or 'recruiter'. On first recruiter signup, creates the company."""
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    if body.role not in ("candidate", "recruiter"):
+        raise HTTPException(400, "role must be 'candidate' or 'recruiter'")
+
+    from bson import ObjectId
+    users = get_users_collection()
+    doc = _resolve_user_doc(user_id)
+    if not doc:
+        raise HTTPException(404, "User not found")
+
+    updates: dict = {"role": body.role}
+
+    if body.role == "recruiter":
+        # If already a recruiter with a company, don't create another one
+        if not doc.get("company_id"):
+            company_name = (body.company_name or "").strip()
+            if not company_name:
+                raise HTTPException(400, "company_name is required when setting role to recruiter")
+            companies = get_companies_collection()
+            comp_doc = {
+                "name": company_name,
+                "owner_id": user_id,
+                "created_at": datetime.now(timezone.utc),
+            }
+            comp_res = companies.insert_one(comp_doc)
+            comp_id = comp_res.inserted_id
+            # Add owner as admin member
+            get_company_users_collection().insert_one({
+                "user_id": user_id,
+                "company_id": comp_id,
+                "role": "admin",
+                "joined_at": datetime.now(timezone.utc),
+            })
+            updates["company_id"] = comp_id
+
+    users.update_one({"_id": doc["_id"]}, {"$set": updates})
+    fresh = users.find_one({"_id": doc["_id"]})
+    return UserMe(
+        id=str(fresh["_id"]),
+        auth0_id=fresh.get("auth0_id"),
+        email=fresh.get("email"),
+        language=fresh.get("language"),
+        name=fresh.get("name"),
+        role=fresh.get("role", "candidate"),
+        company_id=str(fresh["company_id"]) if fresh.get("company_id") else None,
+    )
+
+
+# ── Company ───────────────────────────────────────────────────────────────────
+
+@app.get("/recruiter/company", response_model=CompanyOut)
+async def recruiter_get_company(user_id: Optional[str] = Depends(get_user_id)):
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    companies = get_companies_collection()
+    comp = None
+    comp_id = doc.get("company_id")
+    if comp_id:
+        try:
+            comp = companies.find_one({"_id": ObjectId(comp_id) if not isinstance(comp_id, ObjectId) else comp_id})
+        except Exception:
+            pass
+    if not comp:
+        raise HTTPException(404, "Company not found")
+    return CompanyOut(id=str(comp["_id"]), name=comp["name"], owner_id=str(comp["owner_id"]))
+
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+
+@app.post("/recruiter/jobs", response_model=JobOut)
+async def recruiter_create_job(
+    body: JobCreate,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    doc = _require_recruiter(user_id)
+    if not doc.get("company_id"):
+        raise HTTPException(400, "Recruiter has no company")
+    jobs = get_jobs_collection()
+    job_doc = {
+        "company_id": doc["company_id"],
+        "title": body.title.strip(),
+        "description": body.description.strip(),
+        "skills": [s.strip().lower() for s in body.skills if s.strip()],
+        "created_at": datetime.now(timezone.utc),
+        "created_by": user_id,
+    }
+    res = jobs.insert_one(job_doc)
+    return JobOut(
+        id=str(res.inserted_id),
+        company_id=str(job_doc["company_id"]),
+        title=job_doc["title"],
+        description=job_doc["description"],
+        skills=job_doc["skills"],
+        created_at=job_doc["created_at"].isoformat(),
+    )
+
+
+@app.get("/recruiter/jobs")
+async def recruiter_list_jobs(user_id: Optional[str] = Depends(get_user_id)):
+    doc = _require_recruiter(user_id)
+    if not doc.get("company_id"):
+        return JSONResponse([])
+    from bson import ObjectId
+    jobs = get_jobs_collection()
+    comp_id = doc["company_id"]
+    cursor = jobs.find({"company_id": comp_id}).sort("created_at", -1)
+    out = []
+    for d in cursor:
+        out.append({
+            "id": str(d["_id"]),
+            "company_id": str(d["company_id"]),
+            "title": d["title"],
+            "description": d["description"],
+            "skills": d.get("skills", []),
+            "created_at": d["created_at"].isoformat(),
+            "candidate_count": get_candidates_collection().count_documents({"job_id": str(d["_id"])}),
+        })
+    return JSONResponse(out)
+
+
+@app.get("/recruiter/jobs/{job_id}")
+async def recruiter_get_job(job_id: str, user_id: Optional[str] = Depends(get_user_id)):
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    jobs = get_jobs_collection()
+    try:
+        job = jobs.find_one({"_id": ObjectId(job_id), "company_id": doc.get("company_id")})
+    except Exception:
+        job = None
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return JSONResponse({
+        "id": str(job["_id"]),
+        "company_id": str(job["company_id"]),
+        "title": job["title"],
+        "description": job["description"],
+        "skills": job.get("skills", []),
+        "created_at": job["created_at"].isoformat(),
+    })
+
+
+@app.put("/recruiter/jobs/{job_id}")
+async def recruiter_update_job(
+    job_id: str,
+    body: JobUpdate,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    jobs = get_jobs_collection()
+    try:
+        job = jobs.find_one({"_id": ObjectId(job_id), "company_id": doc.get("company_id")})
+    except Exception:
+        job = None
+    if not job:
+        raise HTTPException(404, "Job not found")
+    updates = {}
+    if body.title is not None:
+        updates["title"] = body.title.strip()
+    if body.description is not None:
+        updates["description"] = body.description.strip()
+    if body.skills is not None:
+        updates["skills"] = [s.strip().lower() for s in body.skills if s.strip()]
+    if updates:
+        jobs.update_one({"_id": job["_id"]}, {"$set": updates})
+    fresh = jobs.find_one({"_id": job["_id"]})
+    return JSONResponse({
+        "id": str(fresh["_id"]),
+        "company_id": str(fresh["company_id"]),
+        "title": fresh["title"],
+        "description": fresh["description"],
+        "skills": fresh.get("skills", []),
+        "created_at": fresh["created_at"].isoformat(),
+    })
+
+
+@app.delete("/recruiter/jobs/{job_id}", status_code=204)
+async def recruiter_delete_job(job_id: str, user_id: Optional[str] = Depends(get_user_id)):
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    jobs = get_jobs_collection()
+    try:
+        result = jobs.delete_one({"_id": ObjectId(job_id), "company_id": doc.get("company_id")})
+    except Exception:
+        result = None
+    if not result or result.deleted_count == 0:
+        raise HTTPException(404, "Job not found")
+
+
+# ── Candidates ────────────────────────────────────────────────────────────────
+
+def _score_candidate(cv_skills: list[str], job_skills: list[str], experience_years: float) -> float:
+    """
+    Simple scoring: skill_match (0-60) + experience_match (0-30) + keyword bonus (0-10).
+    Returns 0–100.
+    """
+    if not job_skills:
+        skill_score = 30.0
+    else:
+        cv_set = {s.lower() for s in cv_skills}
+        job_set = {s.lower() for s in job_skills}
+        matched = cv_set & job_set
+        skill_score = (len(matched) / len(job_set)) * 60.0
+
+    # experience: 2yr baseline = 20pts, every extra year +5 up to 30
+    exp_score = min(30.0, 10.0 + experience_years * 5.0)
+
+    return round(min(100.0, skill_score + exp_score), 1)
+
+
+@app.post("/recruiter/jobs/{job_id}/candidates")
+async def recruiter_upload_candidate_cv(
+    job_id: str,
+    file: UploadFile = File(...),
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    """Upload a CV PDF/DOCX for a job. Parses via cv-parser-service, scores against job skills."""
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    import httpx as _httpx
+
+    # Validate job belongs to this recruiter's company
+    jobs = get_jobs_collection()
+    try:
+        job = jobs.find_one({"_id": ObjectId(job_id), "company_id": doc.get("company_id")})
+    except Exception:
+        job = None
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file")
+    filename = file.filename or "cv.pdf"
+
+    # Parse via cv-parser-service; fall back to built-in parser if unreachable
+    parsed_data: dict = {}
+    try:
+        async with _httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{CV_PARSER_URL}/parse-cv",
+                files={"file": (filename, data, file.content_type or "application/octet-stream")},
+            )
+            resp.raise_for_status()
+            parsed_data = resp.json()
+    except Exception:
+        # Fallback: use built-in cv_parser for text; structured data will be minimal
+        from cv_parser import parse_cv as _parse_cv
+        raw_text = _parse_cv(data, filename) or ""
+        parsed_data = {"name": "", "email": "", "skills": [], "experience_years": 0, "raw_text": raw_text}
+
+    # Store CV file
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    file_path = os.path.join(UPLOAD_DIR, f"cand_{job_id}_{uuid.uuid4().hex}_{filename}")
+    with open(file_path, "wb") as fh:
+        fh.write(data)
+
+    candidate_skills = parsed_data.get("skills", [])
+    experience_years = float(parsed_data.get("experience_years", 0) or 0)
+    score = _score_candidate(candidate_skills, job.get("skills", []), experience_years)
+
+    candidates = get_candidates_collection()
+    cand_doc = {
+        "job_id": str(job["_id"]),
+        "company_id": str(doc.get("company_id")),
+        "name": (parsed_data.get("name") or "").strip() or filename,
+        "email": (parsed_data.get("email") or "").strip().lower(),
+        "skills": candidate_skills,
+        "experience_years": experience_years,
+        "cv_url": file_path,
+        "cv_raw_text": parsed_data.get("raw_text", ""),
+        "score": score,
+        "status": "new",
+        "uploaded_at": datetime.now(timezone.utc),
+        "uploaded_by": user_id,
+    }
+    res = candidates.insert_one(cand_doc)
+    return JSONResponse({
+        "id": str(res.inserted_id),
+        "name": cand_doc["name"],
+        "email": cand_doc["email"],
+        "skills": cand_doc["skills"],
+        "experience_years": cand_doc["experience_years"],
+        "score": cand_doc["score"],
+        "status": cand_doc["status"],
+    }, status_code=201)
+
+
+@app.get("/recruiter/jobs/{job_id}/candidates")
+async def recruiter_list_candidates(
+    job_id: str,
+    status: Optional[str] = None,
+    sort_by: str = "score",
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId, DESCENDING
+    # Validate job belongs to company
+    jobs = get_jobs_collection()
+    try:
+        job = jobs.find_one({"_id": ObjectId(job_id), "company_id": doc.get("company_id")})
+    except Exception:
+        job = None
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    candidates = get_candidates_collection()
+    q: dict = {"job_id": str(job["_id"])}
+    if status:
+        q["status"] = status
+    sort_field = "score" if sort_by == "score" else "uploaded_at"
+    cursor = candidates.find(q).sort(sort_field, DESCENDING)
+    out = []
+    for d in cursor:
+        out.append({
+            "id": str(d["_id"]),
+            "job_id": d["job_id"],
+            "name": d.get("name", ""),
+            "email": d.get("email", ""),
+            "skills": d.get("skills", []),
+            "experience_years": d.get("experience_years", 0),
+            "score": d.get("score", 0),
+            "status": d.get("status", "new"),
+            "uploaded_at": d["uploaded_at"].isoformat(),
+        })
+    return JSONResponse(out)
+
+
+@app.get("/recruiter/candidates/{candidate_id}")
+async def recruiter_get_candidate(candidate_id: str, user_id: Optional[str] = Depends(get_user_id)):
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    candidates = get_candidates_collection()
+    try:
+        cand = candidates.find_one({
+            "_id": ObjectId(candidate_id),
+            "company_id": str(doc.get("company_id")),
+        })
+    except Exception:
+        cand = None
+    if not cand:
+        raise HTTPException(404, "Candidate not found")
+    return JSONResponse({
+        "id": str(cand["_id"]),
+        "job_id": cand["job_id"],
+        "name": cand.get("name", ""),
+        "email": cand.get("email", ""),
+        "skills": cand.get("skills", []),
+        "experience_years": cand.get("experience_years", 0),
+        "cv_raw_text": cand.get("cv_raw_text", ""),
+        "score": cand.get("score", 0),
+        "status": cand.get("status", "new"),
+        "uploaded_at": cand["uploaded_at"].isoformat(),
+    })
+
+
+@app.patch("/recruiter/candidates/{candidate_id}/status")
+async def recruiter_update_candidate_status(
+    candidate_id: str,
+    body: CandidateStatusUpdate,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    doc = _require_recruiter(user_id)
+    valid_statuses = {"new", "shortlisted", "interviewed", "rejected"}
+    if body.status not in valid_statuses:
+        raise HTTPException(400, f"status must be one of: {', '.join(sorted(valid_statuses))}")
+    from bson import ObjectId
+    candidates = get_candidates_collection()
+    try:
+        result = candidates.update_one(
+            {"_id": ObjectId(candidate_id), "company_id": str(doc.get("company_id"))},
+            {"$set": {"status": body.status}},
+        )
+    except Exception:
+        result = None
+    if not result or result.matched_count == 0:
+        raise HTTPException(404, "Candidate not found")
+    return JSONResponse({"status": body.status})
+
+
+# ── AI Interview (recruiter-initiated) ────────────────────────────────────────
+
+@app.post("/recruiter/interview/start")
+async def recruiter_start_ai_interview(
+    body: AiInterviewStartRequest,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    """
+    Generate 3 personalised interview questions for a candidate applying to a specific job.
+    Uses the question-service prompt engine + LLM service.
+    """
+    doc = _require_recruiter(user_id)
+    from bson import ObjectId
+    import httpx as _httpx
+
+    # Load job
+    jobs = get_jobs_collection()
+    try:
+        job = jobs.find_one({"_id": ObjectId(body.job_id), "company_id": doc.get("company_id")})
+    except Exception:
+        job = None
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    # Load candidate
+    candidates = get_candidates_collection()
+    try:
+        cand = candidates.find_one({
+            "_id": ObjectId(body.candidate_id),
+            "job_id": str(job["_id"]),
+        })
+    except Exception:
+        cand = None
+    if not cand:
+        raise HTTPException(404, "Candidate not found for this job")
+
+    QUESTION_SERVICE_URL = os.getenv("QUESTION_SERVICE_URL", "http://question-service:8000")
+    LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://llm-service:8000")
+
+    jd = f"Job Title: {job['title']}\n\n{job['description']}"
+    cv_text = cand.get("cv_raw_text") or f"Skills: {', '.join(cand.get('skills', []))}"
+
+    interviewer_prompt = (
+        "You are a technical interviewer conducting a job interview.\n\n"
+        f"Job Description:\n{jd[:2000]}\n\n"
+        f"Candidate CV Summary:\n{cv_text[:2000]}\n\n"
+        "Generate exactly 3 personalised interview questions tailored to this candidate and role. "
+        "Format as a numbered list: 1. ... 2. ... 3. ..."
+    )
+
+    # Call LLM service directly with the interviewer prompt
+    try:
+        async with _httpx.AsyncClient(timeout=60) as client:
+            llm_resp = await client.post(
+                f"{LLM_SERVICE_URL}/generate",
+                json={"prompt": interviewer_prompt},
+                timeout=60,
+            )
+            llm_resp.raise_for_status()
+            llm_data = llm_resp.json()
+            questions_text = llm_data.get("raw_answer") or llm_data.get("text") or llm_data.get("answer") or ""
+    except Exception as e:
+        logger.exception("LLM call failed during AI interview start: %s", str(e)[:200])
+        raise HTTPException(503, "LLM service unavailable — ensure Ollama is running")
+
+    return JSONResponse({
+        "job_id": str(job["_id"]),
+        "candidate_id": str(cand["_id"]),
+        "candidate_name": cand.get("name", ""),
+        "job_title": job["title"],
+        "questions": questions_text,
+    })
+
