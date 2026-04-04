@@ -5,7 +5,7 @@ pymongo==4.16.0
 python-multipart==0.0.22
 httpx==0.28.1
 pypdf==6.9.2
-pdfminer.six==20260107
+pdfminer.six==20251230
 python-docx==1.2.0
 PyJWT[crypto]==2.12.1
 PyMuPDF==1.25.5
