@@ -146,7 +146,7 @@ jobs:
           INPUT_DEPLOY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_only == true && 'true' || 'false' }}
           INPUT_FORCE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build == true && 'true' || 'false' }}
           INPUT_SKIP_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests == true && 'true' || 'false' }}
-          CI_ALWAYS_BUILD_ALL: ${{ vars.CI_ALWAYS_BUILD_ALL }}
+          CI_ALWAYS_BUILD_ALL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || vars.CI_ALWAYS_BUILD_ALL }}
           FILTER_API_SERVICE: ${{ steps.filter.outputs.api_service }}
           FILTER_AUDIO_SERVICE: ${{ steps.filter.outputs.audio_service }}
           FILTER_STT_SERVICE: ${{ steps.filter.outputs.stt_service }}
@@ -546,6 +546,12 @@ jobs:
           fi
           scripts/ci/k8s-apply.sh
 
+      - name: Verify inter-service communication
+        run: |
+          chmod +x scripts/ci/k8s-verify-communication.sh
+          export KUBECONFIG="$HOME/.kube/config"
+          scripts/ci/k8s-verify-communication.sh
+
       - name: Rollback hint on failure
         if: failure()
         run: |
@@ -615,6 +621,12 @@ jobs:
             echo "No image push this run — skipping kubectl set image (cluster keeps current image tags)."
           fi
           scripts/ci/k8s-apply.sh
+
+      - name: Verify inter-service communication
+        run: |
+          chmod +x scripts/ci/k8s-verify-communication.sh
+          export KUBECONFIG="$HOME/.kube/config"
+          scripts/ci/k8s-verify-communication.sh
 
       - name: Rollback hint on failure
         if: failure()
@@ -744,5 +756,7 @@ jobs:
             fi
 
             chmod +x \$HOME/interviewgenie-k8s/scripts/ci/k8s-apply.sh
+            chmod +x \$HOME/interviewgenie-k8s/scripts/ci/k8s-verify-communication.sh
             bash \$HOME/interviewgenie-k8s/scripts/ci/k8s-apply.sh
+            bash \$HOME/interviewgenie-k8s/scripts/ci/k8s-verify-communication.sh
           "
