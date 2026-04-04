@@ -51,7 +51,20 @@ for d in ${ALL_APP_DEPLOYMENTS}; do
 done
 
 echo "=== kubectl apply -k ($NS) ==="
-kubectl apply -k "$ROOT/k8s/"
+if ! apply_out="$(kubectl apply -k "$ROOT/k8s/" 2>&1)"; then
+  echo "$apply_out" >&2
+  # Some Kubernetes versions can fail strategic-merge patch when a probe handler
+  # type changed in-place (e.g. readiness exec -> tcpSocket) on an existing Deployment.
+  if echo "$apply_out" | grep -q 'Deployment "ollama" is invalid:.*may not specify more than 1 handler type'; then
+    echo "WARN: ollama probe handler transition conflict detected; recreating ollama deployment." >&2
+    kubectl delete deployment/ollama -n "$NS" --ignore-not-found
+    kubectl apply -f "$ROOT/k8s/ollama/deployment.yaml" -n "$NS"
+  else
+    exit 1
+  fi
+else
+  echo "$apply_out"
+fi
 
 # Ensure production Mongo data is never garbage-collected when PVC/StatefulSet changes.
 # local-path defaults to PV reclaimPolicy=Delete on many k3s installs.
