@@ -113,8 +113,10 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   fi
 fi
 
-# On push: optionally force full-system build (all images) via repository variable.
-if [[ "${EVENT_NAME}" == "push" ]] && [[ "${ci_always_build_all}" == "true" ]]; then
+# On push to main: ALWAYS build all images with a unified sha-<commit> tag.
+# This guarantees every service is fresh, consistently tagged, and no stale image
+# can persist on production from a prior partial build.
+if [[ "${EVENT_NAME}" == "push" ]]; then
   echo "build_any=true" >>"${GITHUB_OUTPUT}"
   write_build_flags "true"
   write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","cv-parser-service","monitoring-service","web"]'
@@ -122,7 +124,7 @@ if [[ "${EVENT_NAME}" == "push" ]] && [[ "${ci_always_build_all}" == "true" ]]; 
   emit_test_matrix_from_filters
   echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
   echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
-  echo "- **Mode:** push force — build all images (CI_ALWAYS_BUILD_ALL)" >>"${GITHUB_STEP_SUMMARY}"
+  echo "- **Mode:** push — build ALL images (unified sha tag)" >>"${GITHUB_STEP_SUMMARY}"
   echo "- **Tests:** ${tests_any}" >>"${GITHUB_STEP_SUMMARY}"
   exit 0
 fi
