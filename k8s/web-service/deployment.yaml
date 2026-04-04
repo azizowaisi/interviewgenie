@@ -7,14 +7,14 @@ metadata:
     app: web
 spec:
   replicas: 1
-  # New pod must become Ready before old is terminated (maxSurge 1, maxUnavailable 0).
-  # Traefik only sends traffic to Ready endpoints, so shift happens first; old pod exits after scale-down + grace period.
+  # Old pod is terminated first on constrained single-node clusters (maxSurge 0, maxUnavailable 1)
+  # to avoid extra Pending pods during image rollouts.
   progressDeadlineSeconds: 600
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app: web
