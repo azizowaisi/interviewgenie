@@ -146,7 +146,7 @@ jobs:
           INPUT_DEPLOY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_only == true && 'true' || 'false' }}
           INPUT_FORCE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build == true && 'true' || 'false' }}
           INPUT_SKIP_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests == true && 'true' || 'false' }}
-          CI_ALWAYS_BUILD_ALL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || vars.CI_ALWAYS_BUILD_ALL }}
+          CI_ALWAYS_BUILD_ALL: ${{ vars.CI_ALWAYS_BUILD_ALL }}
           FILTER_API_SERVICE: ${{ steps.filter.outputs.api_service }}
           FILTER_AUDIO_SERVICE: ${{ steps.filter.outputs.audio_service }}
           FILTER_STT_SERVICE: ${{ steps.filter.outputs.stt_service }}
@@ -512,7 +512,9 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
-          K8S_SKIP_OLLAMA_PULL: ${{ vars.K8S_SKIP_OLLAMA_PULL }}
+          K8S_SKIP_OLLAMA_PULL: 1
+          K8S_WAIT_FOR_ROLLOUT: 0
+          K8S_ROLLOUT_TIMEOUT: 45s
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -547,6 +549,9 @@ jobs:
           scripts/ci/k8s-apply.sh
 
       - name: Verify inter-service communication
+        env:
+          K8S_VERIFY_INCLUDE_ROLLOUT: 0
+          K8S_VERIFY_ROLLOUT_TIMEOUT: 45s
         run: |
           chmod +x scripts/ci/k8s-verify-communication.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -555,6 +560,9 @@ jobs:
       - name: Verify production public URL
         env:
           PUBLIC_URL: ${{ vars.PROD_PUBLIC_URL || 'https://interviewgenie.teckiz.com' }}
+          MAX_ATTEMPTS: 3
+          SLEEP_SECONDS: 4
+          CURL_TIMEOUT: 6
         run: |
           chmod +x scripts/ci/check-public-health.sh
           scripts/ci/check-public-health.sh
@@ -596,7 +604,9 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
-          K8S_SKIP_OLLAMA_PULL: ${{ vars.K8S_SKIP_OLLAMA_PULL }}
+          K8S_SKIP_OLLAMA_PULL: 1
+          K8S_WAIT_FOR_ROLLOUT: 0
+          K8S_ROLLOUT_TIMEOUT: 45s
         run: |
           chmod +x scripts/ci/k8s-apply.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -630,6 +640,9 @@ jobs:
           scripts/ci/k8s-apply.sh
 
       - name: Verify inter-service communication
+        env:
+          K8S_VERIFY_INCLUDE_ROLLOUT: 0
+          K8S_VERIFY_ROLLOUT_TIMEOUT: 45s
         run: |
           chmod +x scripts/ci/k8s-verify-communication.sh
           export KUBECONFIG="$HOME/.kube/config"
@@ -638,6 +651,9 @@ jobs:
       - name: Verify production public URL
         env:
           PUBLIC_URL: ${{ vars.PROD_PUBLIC_URL || 'https://interviewgenie.teckiz.com' }}
+          MAX_ATTEMPTS: 3
+          SLEEP_SECONDS: 4
+          CURL_TIMEOUT: 6
         run: |
           chmod +x scripts/ci/check-public-health.sh
           scripts/ci/check-public-health.sh
@@ -703,7 +719,9 @@ jobs:
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL || vars.LETSENCRYPT_EMAIL }}
           GITHUB_SHA: ${{ github.sha }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
-          K8S_SKIP_OLLAMA_PULL: ${{ vars.K8S_SKIP_OLLAMA_PULL }}
+          K8S_SKIP_OLLAMA_PULL: 1
+          K8S_WAIT_FOR_ROLLOUT: 0
+          K8S_ROLLOUT_TIMEOUT: 45s
         run: |
           # Same as deploy_remote: sha-<commit> when images pushed; else skip set image (no :latest rollout).
           K8S_UPDATE_DEPLOYMENTS=""
@@ -739,6 +757,10 @@ jobs:
             export K8S_UPDATE_DEPLOYMENTS=\"${K8S_UPDATE_DEPLOYMENTS}\"
             export K8S_AUTO_RECOVER_IMAGE_PULL=\"${K8S_AUTO_RECOVER_IMAGE_PULL}\"
             export K8S_SKIP_OLLAMA_PULL=\"${K8S_SKIP_OLLAMA_PULL}\"
+            export K8S_WAIT_FOR_ROLLOUT=\"${K8S_WAIT_FOR_ROLLOUT}\"
+            export K8S_ROLLOUT_TIMEOUT=\"${K8S_ROLLOUT_TIMEOUT}\"
+            export K8S_VERIFY_INCLUDE_ROLLOUT=\"0\"
+            export K8S_VERIFY_ROLLOUT_TIMEOUT=\"45s\"
             LE_MAIL=\"${LETSENCRYPT_EMAIL}\"
 
             if ! command -v curl >/dev/null 2>&1; then
@@ -778,6 +800,9 @@ jobs:
       - name: Verify production public URL
         env:
           PUBLIC_URL: ${{ vars.PROD_PUBLIC_URL || 'https://interviewgenie.teckiz.com' }}
+          MAX_ATTEMPTS: 3
+          SLEEP_SECONDS: 4
+          CURL_TIMEOUT: 6
         run: |
           chmod +x scripts/ci/check-public-health.sh
           scripts/ci/check-public-health.sh

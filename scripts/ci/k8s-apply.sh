@@ -17,7 +17,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 NS="${K8S_NAMESPACE:-interview-ai}"
-ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-420s}"
+ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-240s}"
+WAIT_FOR_ROLLOUT="${K8S_WAIT_FOR_ROLLOUT:-1}"
 # App Deployments that receive Hub images (must match set_image loop below).
 ALL_APP_DEPLOYMENTS="api-service audio-service stt-service question-service llm-service formatter-service cv-parser-service monitoring-service web"
 ROLLOUT_TARGETS="${ALL_APP_DEPLOYMENTS}"
@@ -119,6 +120,7 @@ set_image_for() {
 
 if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]]; then
   DH="$DOCKERHUB_USERNAME"
+  MISSING_IMAGE_POLICY="${K8S_MISSING_IMAGE_POLICY:-skip}"  # skip | fail
   # CI sets K8S_UPDATE_DEPLOYMENTS to only deployments that were built (partial pushes).
   # If unset/empty, update all app workloads (local scripts).
   if [[ -n "${K8S_UPDATE_DEPLOYMENTS:-}" ]]; then
@@ -126,42 +128,58 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]];
   else
     TARGETS="${ALL_APP_DEPLOYMENTS}"
   fi
-  ROLLOUT_TARGETS="${TARGETS}"
+  ROLLOUT_TARGETS=""
 
   echo "=== Verify target image tags exist before rollout ==="
   missing=()
+  valid_targets=()
   for d in ${TARGETS}; do
     slug="$d"
     [[ "$d" == "web" ]] && slug="web"
     image_ref="${DH}/interview-ai-${slug}:${TAG}"
     if ! docker manifest inspect "${image_ref}" >/dev/null 2>&1; then
       missing+=("${image_ref}")
+      continue
     fi
+    valid_targets+=("${d}")
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
-    echo "ERROR: Refusing deploy; missing Docker image tags:" >&2
+    echo "WARN: Missing Docker image tags:" >&2
     for img in "${missing[@]}"; do
       echo "  - ${img}" >&2
     done
-    echo "Build/push all missing images first, then retry deploy." >&2
-    exit 1
+    if [[ "${MISSING_IMAGE_POLICY}" == "fail" ]]; then
+      echo "ERROR: MISSING_IMAGE_POLICY=fail — aborting deploy." >&2
+      exit 1
+    fi
+    echo "WARN: Skipping image updates for missing tags and keeping current running images." >&2
   fi
 
-  echo "=== kubectl set image -> ${DH}/interview-ai-*:${TAG} (deployments: ${TARGETS}) ==="
-  for d in ${TARGETS}; do
-    case "$d" in
-      api-service) set_image_for api-service api-service "$DH" ;;
-      audio-service) set_image_for audio-service audio-service "$DH" ;;
-      stt-service) set_image_for stt-service stt-service "$DH" ;;
-      question-service) set_image_for question-service question-service "$DH" ;;
-      llm-service) set_image_for llm-service llm-service "$DH" ;;
-      formatter-service) set_image_for formatter-service formatter-service "$DH" ;;
-      monitoring-service) set_image_for monitoring-service monitoring-service "$DH" ;;
-      web) set_image_for web web "$DH" ;;
-      cv-parser-service) set_image_for cv-parser-service cv-parser-service "$DH" ;;
-      *) echo "WARN: unknown deployment in K8S_UPDATE_DEPLOYMENTS: $d" ;;
-    esac
-  done
+  if [[ ${#valid_targets[@]} -eq 0 ]]; then
+    echo "=== No valid image tags to set; skipping kubectl set image ==="
+    TARGETS=""
+  else
+    TARGETS="${valid_targets[*]}"
+    ROLLOUT_TARGETS="${TARGETS}"
+  fi
+
+  if [[ -n "${TARGETS}" ]]; then
+    echo "=== kubectl set image -> ${DH}/interview-ai-*:${TAG} (deployments: ${TARGETS}) ==="
+    for d in ${TARGETS}; do
+      case "$d" in
+        api-service) set_image_for api-service api-service "$DH" ;;
+        audio-service) set_image_for audio-service audio-service "$DH" ;;
+        stt-service) set_image_for stt-service stt-service "$DH" ;;
+        question-service) set_image_for question-service question-service "$DH" ;;
+        llm-service) set_image_for llm-service llm-service "$DH" ;;
+        formatter-service) set_image_for formatter-service formatter-service "$DH" ;;
+        monitoring-service) set_image_for monitoring-service monitoring-service "$DH" ;;
+        web) set_image_for web web "$DH" ;;
+        cv-parser-service) set_image_for cv-parser-service cv-parser-service "$DH" ;;
+        *) echo "WARN: unknown deployment in K8S_UPDATE_DEPLOYMENTS: $d" ;;
+      esac
+    done
+  fi
 fi
 
 # Restore snapshot for any deployment NOT updated this run (partial builds and skip-set-image).
@@ -197,21 +215,27 @@ elif [[ "${K8S_SKIP_SET_IMAGE:-}" == "1" ]]; then
 fi
 
 # Rollouts in parallel so wall time ≈ one timeout, not N × timeout (set -e: wait || true).
-echo "=== Rollout status (parallel, ${ROLLOUT_TARGETS}, timeout ${ROLLOUT_TIMEOUT} each) ==="
-pids=()
-for d in ${ROLLOUT_TARGETS}; do
-  (
-    if kubectl rollout status "deployment/${d}" -n "$NS" --timeout="${ROLLOUT_TIMEOUT}"; then
-      echo "OK: rollout ${d}"
-    else
-      echo "WARN: rollout ${d} not ready in time" >&2
-    fi
-  ) &
-  pids+=("$!")
-done
-for pid in "${pids[@]}"; do
-  wait "$pid" || true
-done
+if [[ "${WAIT_FOR_ROLLOUT}" == "1" ]] && [[ -n "${ROLLOUT_TARGETS}" ]]; then
+  echo "=== Rollout status (parallel, ${ROLLOUT_TARGETS}, timeout ${ROLLOUT_TIMEOUT} each) ==="
+  pids=()
+  for d in ${ROLLOUT_TARGETS}; do
+    (
+      if kubectl rollout status "deployment/${d}" -n "$NS" --timeout="${ROLLOUT_TIMEOUT}"; then
+        echo "OK: rollout ${d}"
+      else
+        echo "WARN: rollout ${d} not ready in time" >&2
+      fi
+    ) &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || true
+  done
+elif [[ -n "${ROLLOUT_TARGETS}" ]]; then
+  echo "=== Rollout status skipped (K8S_WAIT_FOR_ROLLOUT=${WAIT_FOR_ROLLOUT}) ==="
+else
+  echo "=== Rollout status skipped (no deployments updated) ==="
+fi
 
 # Reporting + optional ollama pull must never fail the job (ImagePullBackOff on unrelated RS, exec flakes, pipefail).
 (

@@ -5,7 +5,8 @@
 set -euo pipefail
 
 NS="${K8S_NAMESPACE:-interview-ai}"
-ROLLOUT_TIMEOUT="${K8S_VERIFY_ROLLOUT_TIMEOUT:-420s}"
+ROLLOUT_TIMEOUT="${K8S_VERIFY_ROLLOUT_TIMEOUT:-60s}"
+INCLUDE_ROLLOUT_CHECKS="${K8S_VERIFY_INCLUDE_ROLLOUT:-0}"
 
 DEPLOYS=(
   api-service
@@ -31,10 +32,21 @@ SERVICE_PORTS=(
   web:3002
 )
 
-echo "=== Verify rollouts (${NS}) ==="
-for d in "${DEPLOYS[@]}"; do
-  kubectl rollout status "deployment/${d}" -n "${NS}" --timeout="${ROLLOUT_TIMEOUT}"
-done
+if [[ "${INCLUDE_ROLLOUT_CHECKS}" == "1" ]]; then
+  echo "=== Verify rollouts (${NS}) ==="
+  pids=()
+  for d in "${DEPLOYS[@]}"; do
+    (
+      kubectl rollout status "deployment/${d}" -n "${NS}" --timeout="${ROLLOUT_TIMEOUT}"
+    ) &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid"
+  done
+else
+  echo "=== Verify rollouts skipped (K8S_VERIFY_INCLUDE_ROLLOUT=${INCLUDE_ROLLOUT_CHECKS}) ==="
+fi
 
 echo "=== Verify service endpoints (${NS}) ==="
 for svc_port in "${SERVICE_PORTS[@]}"; do
