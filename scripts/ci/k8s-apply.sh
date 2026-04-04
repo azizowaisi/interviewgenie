@@ -8,8 +8,9 @@
 # Optional: K8S_SKIP_SET_IMAGE=1 — no new tag this run (CI skips set image). We snapshot live images before
 #   `kubectl apply -k` and restore them after, so apply does not clobber currently pinned sha-* tags.
 # Optional: K8S_SKIP_OLLAMA_PULL — if 1/true/yes, skip `ollama pull` at end (faster deploys when model is already on disk).
-# Optional: K8S_AUTO_RECOVER_IMAGE_PULL — if 1/true/yes and pods show ImagePullBackOff/ErrImagePull after apply,
-#   run scripts/k8s-recover-stuck-rollouts.sh --apply (GitHub: set repository Variable of the same name).
+# Optional: K8S_AUTO_RECOVER_IMAGE_PULL — defaults to enabled. When enabled and pods show
+#   ImagePullBackOff/ErrImagePull after apply, run scripts/k8s-recover-stuck-rollouts.sh --apply.
+#   Disable explicitly with: 0/false/no.
 # Optional: K8S_UPDATE_DEPLOYMENTS — space-separated deployment names to pin (partial CI builds).
 #   If unset/empty, all app deployments get `kubectl set image` (CI uses this when pinning :latest).
 # Rollout: same deployments as set image (all app workloads in parallel; one timeout window wall time).
@@ -247,15 +248,19 @@ fi
     echo "WARN: Some pods cannot pull images. If CI only updated part of the stack, other deployments may still reference a Hub tag that was never pushed for this commit." >&2
     echo "WARN: Fix: push the missing images, or on the node run: ./scripts/k8s-recover-stuck-rollouts.sh --apply" >&2
     echo "WARN: (dry-run first without --apply). Also: ./scripts/k8s-diagnose-interview-ai.sh" >&2
-    case "${K8S_AUTO_RECOVER_IMAGE_PULL:-}" in
-      1 | true | TRUE | yes | YES)
+    auto_recover="${K8S_AUTO_RECOVER_IMAGE_PULL:-true}"
+    case "${auto_recover}" in
+      0 | false | FALSE | no | NO)
+        echo "=== Auto-recover disabled (K8S_AUTO_RECOVER_IMAGE_PULL=${auto_recover}) ===" >&2
+        ;;
+      *)
         rec="${ROOT}/scripts/k8s-recover-stuck-rollouts.sh"
         # Use bash + -f (not -x): script must run after git checkout even if +x was stripped (e.g. some FS/CI).
         if [[ -f "$rec" ]]; then
-          echo "=== Auto-recover (K8S_AUTO_RECOVER_IMAGE_PULL) — rollout undo for stuck deployments ===" >&2
+          echo "=== Auto-recover (K8S_AUTO_RECOVER_IMAGE_PULL=${auto_recover}) — rollout undo for stuck deployments ===" >&2
           bash "$rec" --apply || echo "WARN: auto-recover script failed (ignored)." >&2
         else
-          echo "WARN: K8S_AUTO_RECOVER_IMAGE_PULL set but missing ${rec}; skipping auto-recover." >&2
+          echo "WARN: auto-recover requested but missing ${rec}; skipping auto-recover." >&2
         fi
         ;;
     esac
