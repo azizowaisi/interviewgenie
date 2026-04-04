@@ -64,6 +64,16 @@ def test_extract_experience_explicit_statement():
     assert _extract_experience_years(text) == 7.0
 
 
+def test_extract_experience_label_then_years():
+    text = "Experience: 6 years"
+    assert _extract_experience_years(text) == 6.0
+
+
+def test_extract_experience_yrs_variant():
+    text = "Total experience - 3.5 yrs"
+    assert _extract_experience_years(text) == 3.5
+
+
 def test_parse_plain_text():
     data = CV_TEXT.encode("utf-8")
     result = _parse(data, "cv.txt")

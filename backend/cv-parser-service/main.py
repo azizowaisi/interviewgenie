@@ -161,8 +161,21 @@ def _extract_experience_years(text: str) -> float:
     if total > 0:
         return round(min(total, 40.0), 1)
 
-    # Pattern 2: explicit statement "X years of experience"
-    m = re.search(r"(\d+)\s+years?\s+(?:of\s+)?experience", text, re.IGNORECASE)
+    # Pattern 2a: "X years of experience", "X+ years experience", "X yrs experience"
+    m = re.search(
+        r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?experience\b",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return float(m.group(1))
+
+    # Pattern 2b: "Experience: X years", "Total experience 3.5 yrs"
+    m = re.search(
+        r"\b(?:total\s+)?experience\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b",
+        text,
+        re.IGNORECASE,
+    )
     if m:
         return float(m.group(1))
 
