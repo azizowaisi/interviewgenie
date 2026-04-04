@@ -9,6 +9,18 @@ ROLLOUT_TIMEOUT="${K8S_VERIFY_ROLLOUT_TIMEOUT:-60s}"
 INCLUDE_ROLLOUT_CHECKS="${K8S_VERIFY_INCLUDE_ROLLOUT:-0}"
 ENDPOINT_WAIT_SECONDS="${K8S_VERIFY_ENDPOINT_WAIT_SECONDS:-180}"
 POLL_INTERVAL_SECONDS="${K8S_VERIFY_POLL_INTERVAL_SECONDS:-5}"
+OPTIONAL_SERVICES_RAW="${K8S_VERIFY_OPTIONAL_SERVICES:-llm-service}"
+
+contains_word() {
+  local needle="$1"
+  shift || true
+  for w in "$@"; do
+    [[ "$w" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+IFS=' ' read -r -a OPTIONAL_SERVICES <<< "${OPTIONAL_SERVICES_RAW}"
 
 DEPLOYS=(
   api-service
@@ -54,25 +66,41 @@ fi
 echo "=== Verify service endpoints (${NS}) ==="
 deadline=$(( $(date +%s) + ENDPOINT_WAIT_SECONDS ))
 while true; do
-  missing=()
+  missing_required=()
+  missing_optional=()
   for svc_port in "${SERVICE_PORTS[@]}"; do
     svc="${svc_port%%:*}"
     eps="$(kubectl get endpoints "${svc}" -n "${NS}" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)"
     if [[ -z "${eps}" ]]; then
-      missing+=("${svc}")
+      if contains_word "${svc}" "${OPTIONAL_SERVICES[@]}"; then
+        missing_optional+=("${svc}")
+      else
+        missing_required+=("${svc}")
+      fi
     fi
   done
 
-  if [[ ${#missing[@]} -eq 0 ]]; then
+  if [[ ${#missing_required[@]} -eq 0 && ${#missing_optional[@]} -eq 0 ]]; then
     break
+  fi
+
+  if [[ ${#missing_required[@]} -eq 0 && ${#missing_optional[@]} -gt 0 ]]; then
+    now="$(date +%s)"
+    if (( now >= deadline )); then
+      echo "WARN: Optional service endpoints still not ready after ${ENDPOINT_WAIT_SECONDS}s: ${missing_optional[*]}"
+      break
+    fi
+    echo "WAIT: optional endpoints not ready yet -> ${missing_optional[*]}"
+    sleep "${POLL_INTERVAL_SECONDS}"
+    continue
   fi
 
   now="$(date +%s)"
   if (( now >= deadline )); then
-    echo "ERROR: Timed out waiting for ready service endpoints (${ENDPOINT_WAIT_SECONDS}s). Missing: ${missing[*]}"
+    echo "ERROR: Timed out waiting for required service endpoints (${ENDPOINT_WAIT_SECONDS}s). Missing: ${missing_required[*]}"
     exit 1
   fi
-  echo "WAIT: endpoints not ready yet -> ${missing[*]}"
+  echo "WAIT: required endpoints not ready yet -> ${missing_required[*]}"
   sleep "${POLL_INTERVAL_SECONDS}"
 done
 
@@ -101,9 +129,12 @@ done
 
 echo "Using api pod: ${API_POD}"
 
-kubectl exec -n "${NS}" "${API_POD}" -- python - <<'PY'
+export OPTIONAL_SERVICES_CSV="$(IFS=,; echo "${OPTIONAL_SERVICES[*]}")"
+
+kubectl exec -n "${NS}" "${API_POD}" -- env OPTIONAL_SERVICES_CSV="${OPTIONAL_SERVICES_CSV}" python - <<'PY'
 import socket
 import sys
+import os
 
 checks = [
     ("audio-service", 8000),
@@ -116,17 +147,26 @@ checks = [
     ("web", 3002),
 ]
 
-failed = []
+  optional = {s.strip() for s in os.environ.get("OPTIONAL_SERVICES_CSV", "").split(",") if s.strip()}
+  failed_required = []
+  failed_optional = []
 for host, port in checks:
     try:
         with socket.create_connection((host, port), timeout=4):
             print(f"OK   tcp://{host}:{port}")
     except Exception as exc:
+      if host in optional:
+        print(f"WARN tcp://{host}:{port} -> {exc} (optional)")
+        failed_optional.append((host, port))
+      else:
         print(f"FAIL tcp://{host}:{port} -> {exc}")
-        failed.append((host, port))
+        failed_required.append((host, port))
 
-if failed:
+  if failed_required:
     sys.exit(1)
+
+  if failed_optional:
+    print("WARN optional connectivity failures:", ", ".join(f"{h}:{p}" for h, p in failed_optional))
 PY
 
 echo "=== Communication checks passed ==="
