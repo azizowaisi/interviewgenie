@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,25 @@ import {
   CheckCircle2,
   ChevronRight,
 } from "lucide-react";
+
+export const metadata: Metadata = {
+  title: "AI Interview Coach for Candidates and Recruiters",
+  description:
+    "Use InterviewGenie to practice mock interviews, improve your ATS resume score, and get STAR-based feedback. Recruiters can parse CVs, score candidates, and generate interview questions with AI.",
+  keywords: [
+    "AI mock interview",
+    "AI interview coach",
+    "ATS resume scanner",
+    "resume keyword optimization",
+    "technical interview simulator",
+    "recruiter candidate ranking",
+    "AI hiring platform",
+    "CV screening software",
+  ],
+  alternates: {
+    canonical: "/",
+  },
+};
 
 // ── Shared social proof ───────────────────────────────────────────────────────
 
@@ -140,11 +160,77 @@ const testimonials = [
   },
 ];
 
+const faqItems = [
+  {
+    q: "What is InterviewGenie?",
+    a: "InterviewGenie is an AI interview platform for both candidates and recruiters. Candidates can run mock interviews, improve ATS resume match, and get STAR feedback. Recruiters can parse CVs, score candidates, and generate interview questions.",
+  },
+  {
+    q: "How does InterviewGenie help candidates pass interviews?",
+    a: "InterviewGenie analyzes your resume against a target job description, identifies missing keywords, and lets you practice role-specific HR and technical interview questions with actionable feedback.",
+  },
+  {
+    q: "How does InterviewGenie help recruiters hire faster?",
+    a: "Recruiters can upload CVs in bulk, extract candidate data automatically, rank candidates by job fit, and generate personalized interview questions, reducing manual screening time.",
+  },
+  {
+    q: "Does InterviewGenie support ATS resume optimization?",
+    a: "Yes. InterviewGenie provides ATS score analysis, missing keyword suggestions, and resume improvement guidance for professional summary, skills, and experience sections.",
+  },
+];
+
+const homeJsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      name: "InterviewGenie",
+      url: "https://interviewgenie.ai",
+      sameAs: ["https://github.com/azizowaisi/interviewgenie"],
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: "InterviewGenie",
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      description:
+        "AI interview and hiring platform with mock interview practice, ATS resume checker, candidate scoring, and interview question generation.",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+      featureList: [
+        "AI mock interviews",
+        "ATS resume score analysis",
+        "STAR feedback and answer coaching",
+        "Recruiter candidate ranking",
+        "Automated CV parsing",
+      ],
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: faqItems.map((item) => ({
+        "@type": "Question",
+        name: item.q,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: item.a,
+        },
+      })),
+    },
+  ],
+};
+
 // ═════════════════════════════════════════════════════════════════════════════
 
 export default function LandingPage() {
   return (
     <div className="overflow-x-hidden">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(homeJsonLd) }}
+      />
 
       {/* ── HERO ─────────────────────────────────────────────────────────────── */}
       <section className="relative border-b bg-gradient-to-b from-background to-secondary/20 px-4 py-20 md:py-28 text-center">
@@ -362,6 +448,26 @@ export default function LandingPage() {
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── SEO FAQ ─────────────────────────────────────────────────────────── */}
+      <section className="border-t bg-muted/20 px-4 py-20 md:py-24">
+        <div className="mx-auto max-w-4xl space-y-10">
+          <div className="space-y-2 text-center">
+            <h2 className="text-3xl font-bold tracking-tight">InterviewGenie FAQ</h2>
+            <p className="text-muted-foreground">
+              Common questions about AI interview practice, ATS resume scoring, and recruiter workflows.
+            </p>
+          </div>
+          <div className="space-y-4">
+            {faqItems.map((item) => (
+              <article key={item.q} className="rounded-xl border bg-card p-5">
+                <h3 className="text-base font-semibold">{item.q}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.a}</p>
+              </article>
             ))}
           </div>
         </div>

@@ -20,13 +20,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/live",
     "/history",
     "/result",
+    "/recruiter",
+    "/recruiter/setup",
+    "/recruiter/jobs/new",
   ];
 
   return routes.map((p) => ({
     url: `${origin}${p}`,
     lastModified: now,
-    changeFrequency: p === "/" ? "weekly" : "monthly",
-    priority: p === "/" ? 1 : 0.7,
+    changeFrequency: p === "/" ? "daily" : "weekly",
+    priority: p === "/" ? 1 : p === "/recruiter" ? 0.9 : 0.8,
   }));
 }
 
