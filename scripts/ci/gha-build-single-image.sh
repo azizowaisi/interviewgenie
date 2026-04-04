@@ -14,7 +14,7 @@
 set -euo pipefail
 
 SLUG="${IMAGE_SLUG:?IMAGE_SLUG is required}"
-PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+PLATFORMS="${PLATFORMS:-linux/arm64}"
 if [[ "${SLUG}" == "web" ]] && [[ -n "${WEB_DOCKER_PLATFORMS:-}" ]]; then
   PLATFORMS="${WEB_DOCKER_PLATFORMS}"
   echo "Web build: using WEB_DOCKER_PLATFORMS=${PLATFORMS} (overrides global PLATFORMS)"

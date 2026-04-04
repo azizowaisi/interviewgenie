@@ -16,9 +16,8 @@
 # Manual dispatch:
 #   deploy_only    — apply k8s only (skip tests & Docker; cluster keeps current images)
 #   force_build    — build & push all eight images (default off: use path filter like push-to-main)
-#   amd64_only     — Docker build/push linux/amd64 only (UNSAFE for this cluster — all nodes are arm64)
 #   skip_tests / skip_deploy — unchanged
-# Optional repo Variable CI_DOCKER_PLATFORMS (e.g. linux/amd64) — default multi-arch if unset; manual amd64_only wins.
+# Optional repo Variable CI_DOCKER_PLATFORMS is constrained to arm64 for production safety.
 #
 # See docs/DEPLOY-GIT-K8S.md, docs/GITHUB-ACTIONS-K8S-OIDC.md
 #
@@ -48,10 +47,6 @@ on:
         default: false
       skip_deploy:
         description: "Push images only; do not run deploy jobs"
-        type: boolean
-        default: false
-      amd64_only:
-        description: "Faster Docker: linux/amd64 only (UNSAFE — cluster nodes are arm64)"
         type: boolean
         default: false
 
@@ -208,16 +203,19 @@ jobs:
       - name: Configure Docker platforms
         id: plat
         env:
-          AMD64_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.amd64_only == true && 'true' || 'false' }}
           CI_DOCKER_PLATFORMS: ${{ vars.CI_DOCKER_PLATFORMS }}
         run: |
           set -euo pipefail
-          if [ "${AMD64_ONLY}" = "true" ]; then
-            P="linux/amd64"
-          elif [ -n "${CI_DOCKER_PLATFORMS:-}" ]; then
-            P="${CI_DOCKER_PLATFORMS}"
+          if [ -n "${CI_DOCKER_PLATFORMS:-}" ]; then
+            case ",${CI_DOCKER_PLATFORMS}," in
+              *,linux/arm64,*|*,arm64,*) P="linux/arm64" ;;
+              *)
+                echo "WARN: CI_DOCKER_PLATFORMS='${CI_DOCKER_PLATFORMS}' is not arm64; forcing linux/arm64 for production safety."
+                P="linux/arm64"
+                ;;
+            esac
           else
-            P="linux/amd64,linux/arm64"
+            P="linux/arm64"
           fi
           echo "platforms=${P}" >> "$GITHUB_OUTPUT"
           case ",${P}," in
