@@ -1801,7 +1801,7 @@ async def recruiter_upload_candidate_cv(
     data = await file.read()
     if not data:
         raise HTTPException(400, "Empty file")
-    filename = file.filename or "cv.pdf"
+    filename = os.path.basename(file.filename or "cv.pdf")
 
     # Parse via cv-parser-service; fall back to built-in parser if unreachable
     parsed_data: dict = {}
@@ -1827,7 +1827,10 @@ async def recruiter_upload_candidate_cv(
     with open(file_path, "wb") as fh:
         fh.write(data)
 
-    candidate_skills = parsed_data.get("skills", [])
+    candidate_skills = parsed_data.get("skills") or []
+    if not isinstance(candidate_skills, list):
+        candidate_skills = [str(candidate_skills)]
+    candidate_skills = [str(s).strip().lower() for s in candidate_skills if str(s).strip()]
     experience_years = float(parsed_data.get("experience_years", 0) or 0)
     score = _score_candidate(candidate_skills, job.get("skills", []), experience_years)
 
@@ -1846,9 +1849,59 @@ async def recruiter_upload_candidate_cv(
         "uploaded_at": datetime.now(timezone.utc),
         "uploaded_by": user_id,
     }
-    res = candidates.insert_one(cand_doc)
+
+    # If we can identify candidate by email, update existing record for same job/company
+    # instead of creating duplicates or surfacing a DB conflict as 500.
+    existing = None
+    if cand_doc["email"]:
+        existing = candidates.find_one({
+            "job_id": cand_doc["job_id"],
+            "company_id": cand_doc["company_id"],
+            "email": cand_doc["email"],
+        })
+
+    if existing:
+        candidates.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {
+                "name": cand_doc["name"],
+                "skills": cand_doc["skills"],
+                "experience_years": cand_doc["experience_years"],
+                "cv_url": cand_doc["cv_url"],
+                "cv_raw_text": cand_doc["cv_raw_text"],
+                "score": cand_doc["score"],
+                "status": existing.get("status", "new"),
+                "uploaded_at": cand_doc["uploaded_at"],
+                "uploaded_by": cand_doc["uploaded_by"],
+            }},
+        )
+        result_id = str(existing["_id"])
+        status_code = 200
+    else:
+        try:
+            res = candidates.insert_one(cand_doc)
+            result_id = str(res.inserted_id)
+            status_code = 201
+        except DuplicateKeyError:
+            # Backstop for legacy/cluster-specific unique indexes.
+            conflict = None
+            if cand_doc["email"]:
+                conflict = candidates.find_one({
+                    "job_id": cand_doc["job_id"],
+                    "company_id": cand_doc["company_id"],
+                    "email": cand_doc["email"],
+                })
+            if conflict:
+                result_id = str(conflict["_id"])
+                status_code = 200
+            else:
+                raise HTTPException(409, "Candidate already exists for this job")
+        except Exception:
+            logger.exception("Candidate CV upload failed for job_id=%s filename=%s", job_id, filename)
+            raise HTTPException(500, "Failed to upload candidate CV")
+
     return JSONResponse({
-        "id": str(res.inserted_id),
+        "id": result_id,
         "name": cand_doc["name"],
         "email": cand_doc["email"],
         "skills": cand_doc["skills"],
@@ -1856,7 +1909,7 @@ async def recruiter_upload_candidate_cv(
         "score": cand_doc["score"],
         "status": cand_doc["status"],
         "interview_score": cand_doc.get("interview_score"),
-    }, status_code=201)
+    }, status_code=status_code)
 
 
 @app.get("/recruiter/jobs/{job_id}/candidates")
