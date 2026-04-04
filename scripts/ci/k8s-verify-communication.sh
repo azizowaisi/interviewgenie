@@ -5,7 +5,7 @@
 set -euo pipefail
 
 NS="${K8S_NAMESPACE:-interview-ai}"
-ROLLOUT_TIMEOUT="${K8S_VERIFY_ROLLOUT_TIMEOUT:-180s}"
+ROLLOUT_TIMEOUT="${K8S_VERIFY_ROLLOUT_TIMEOUT:-420s}"
 
 DEPLOYS=(
   api-service

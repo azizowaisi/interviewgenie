@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 NS="${K8S_NAMESPACE:-interview-ai}"
-ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-180s}"
+ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-420s}"
 # App Deployments that receive Hub images (must match set_image loop below).
 ALL_APP_DEPLOYMENTS="api-service audio-service stt-service question-service llm-service formatter-service cv-parser-service monitoring-service web"
 ROLLOUT_TARGETS="${ALL_APP_DEPLOYMENTS}"
@@ -127,6 +127,26 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]];
     TARGETS="${ALL_APP_DEPLOYMENTS}"
   fi
   ROLLOUT_TARGETS="${TARGETS}"
+
+  echo "=== Verify target image tags exist before rollout ==="
+  missing=()
+  for d in ${TARGETS}; do
+    slug="$d"
+    [[ "$d" == "web" ]] && slug="web"
+    image_ref="${DH}/interview-ai-${slug}:${TAG}"
+    if ! docker manifest inspect "${image_ref}" >/dev/null 2>&1; then
+      missing+=("${image_ref}")
+    fi
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "ERROR: Refusing deploy; missing Docker image tags:" >&2
+    for img in "${missing[@]}"; do
+      echo "  - ${img}" >&2
+    done
+    echo "Build/push all missing images first, then retry deploy." >&2
+    exit 1
+  fi
+
   echo "=== kubectl set image -> ${DH}/interview-ai-*:${TAG} (deployments: ${TARGETS}) ==="
   for d in ${TARGETS}; do
     case "$d" in
