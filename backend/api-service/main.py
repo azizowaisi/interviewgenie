@@ -31,7 +31,7 @@ from db import (
     get_candidate_jobs_collection,
 )
 from cv_parser import parse_cv
-from ats_analyzer import compute_ats
+from ats_analyzer import compute_ats, COMMON_SKILLS
 
 # When exposed behind a reverse proxy under a prefix (e.g. /api/svc), set PUBLIC_API_PATH_PREFIX=/api/svc
 # so OpenAPI/Swagger and JSON root links use the public URL. Leave unset for local http://localhost:8001.
@@ -1665,6 +1665,95 @@ def _score_candidate(cv_skills: list[str], job_skills: list[str], experience_yea
     return round(min(100.0, skill_score + exp_score), 1)
 
 
+def _derive_skills_from_raw_text(raw_text: str, job_skills: list[str]) -> list[str]:
+    text_lower = (raw_text or "").lower()
+    if not text_lower:
+        return []
+
+    found: set[str] = set()
+
+    # Prefer concrete vocabulary from ATS/common tech skill list.
+    for skill in COMMON_SKILLS:
+        token = skill.replace("_", " ").strip().lower()
+        if not token:
+            continue
+        pattern = r"(?<![a-z0-9])" + re.escape(token) + r"(?![a-z0-9])"
+        if re.search(pattern, text_lower):
+            found.add(token)
+
+    # Also detect job-required skills from raw CV text.
+    for skill in job_skills or []:
+        token = (skill or "").strip().lower()
+        if not token:
+            continue
+        pattern = r"(?<![a-z0-9])" + re.escape(token) + r"(?![a-z0-9])"
+        if re.search(pattern, text_lower):
+            found.add(token)
+
+    return sorted(found)
+
+
+def _derive_experience_years_from_raw_text(raw_text: str) -> float:
+    import datetime
+
+    text = raw_text or ""
+    if not text:
+        return 0.0
+
+    current_year = datetime.datetime.now().year
+    total = 0.0
+
+    # Date ranges like 2018-2021 or 2020-Present.
+    ranges = re.findall(r"\b(20\d{2}|19\d{2})\s*[-–—]\s*(20\d{2}|19\d{2}|[Pp]resent|[Cc]urrent)\b", text)
+    for start_s, end_s in ranges:
+        start = int(start_s)
+        end = current_year if re.match(r"[Pp]resent|[Cc]urrent", end_s) else int(end_s)
+        if end >= start:
+            total += end - start
+
+    if total > 0:
+        return round(min(total, 40.0), 1)
+
+    m = re.search(
+        r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?experience\b",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return float(m.group(1))
+
+    m = re.search(
+        r"\b(?:total\s+)?experience\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return float(m.group(1))
+
+    return 0.0
+
+
+def _enrich_candidate_parsed_data(parsed_data: dict, job_skills: list[str]) -> dict:
+    enriched = dict(parsed_data or {})
+    raw_text = (enriched.get("raw_text") or "").strip()
+
+    parsed_skills = enriched.get("skills") or []
+    normalized_skills = sorted({str(s).strip().lower() for s in parsed_skills if str(s).strip()})
+    if not normalized_skills and raw_text:
+        normalized_skills = _derive_skills_from_raw_text(raw_text, job_skills)
+    enriched["skills"] = normalized_skills
+
+    try:
+        experience_years = float(enriched.get("experience_years", 0) or 0)
+    except (TypeError, ValueError):
+        experience_years = 0.0
+    if experience_years <= 0 and raw_text:
+        experience_years = _derive_experience_years_from_raw_text(raw_text)
+    enriched["experience_years"] = experience_years
+
+    return enriched
+
+
 def _candidate_name_from_parsed(parsed_data: dict, filename: str) -> str:
     name = (parsed_data.get("name") or "").strip()
     if name:
@@ -1729,6 +1818,8 @@ async def recruiter_upload_candidate_cv(
         from cv_parser import parse_cv as _parse_cv
         raw_text = _parse_cv(data, filename) or ""
         parsed_data = {"name": "", "email": "", "skills": [], "experience_years": 0, "raw_text": raw_text}
+
+    parsed_data = _enrich_candidate_parsed_data(parsed_data, job.get("skills", []))
 
     # Store CV file
     os.makedirs(UPLOAD_DIR, exist_ok=True)

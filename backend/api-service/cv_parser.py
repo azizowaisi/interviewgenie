@@ -84,10 +84,11 @@ def parse_txt(data: bytes) -> Optional[str]:
 
 def parse_cv(data: bytes, filename: str) -> Optional[str]:
     lower = filename.lower()
-    if lower.endswith(".pdf"):
+    if lower.endswith(".pdf") or data.startswith(b"%PDF"):
         return parse_pdf(data)
     if lower.endswith(".docx") or lower.endswith(".doc"):
         return parse_docx(data)
     if lower.endswith(".txt"):
         return parse_txt(data)
-    return None
+    # Last resort for unknown extensions/content types.
+    return parse_txt(data)
