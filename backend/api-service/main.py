@@ -4,6 +4,7 @@ API Service: Auth0 (optional), CV upload/parsing, MongoDB (users, CVs, Q&A histo
 import logging
 import os
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
