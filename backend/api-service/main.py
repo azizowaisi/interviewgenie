@@ -1734,6 +1734,26 @@ def _derive_experience_years_from_raw_text(raw_text: str) -> float:
     return 0.0
 
 
+def _derive_email_from_raw_text(raw_text: str) -> str:
+    text = raw_text or ""
+    if not text:
+        return ""
+
+    match = re.search(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", text)
+    if match:
+        return match.group(0).lower()
+
+    normalized = text
+    normalized = re.sub(r"[\u200b\u200c\u200d\u2060]", "", normalized)
+    normalized = re.sub(r"(?i)(\(|\[)?\s*at\s*(\)|\])?", "@", normalized)
+    normalized = re.sub(r"(?i)(\(|\[)?\s*dot\s*(\)|\])?", ".", normalized)
+    normalized = re.sub(r"\s*@\s*", "@", normalized)
+    normalized = re.sub(r"\s*\.\s*", ".", normalized)
+
+    match = re.search(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", normalized)
+    return match.group(0).lower() if match else ""
+
+
 def _enrich_candidate_parsed_data(parsed_data: dict, job_skills: list[str]) -> dict:
     enriched = dict(parsed_data or {})
     raw_text = (enriched.get("raw_text") or "").strip()
@@ -1751,6 +1771,11 @@ def _enrich_candidate_parsed_data(parsed_data: dict, job_skills: list[str]) -> d
     if experience_years <= 0 and raw_text:
         experience_years = _derive_experience_years_from_raw_text(raw_text)
     enriched["experience_years"] = experience_years
+
+    email = (enriched.get("email") or "").strip().lower()
+    if not email and raw_text:
+        email = _derive_email_from_raw_text(raw_text)
+    enriched["email"] = email
 
     return enriched
 

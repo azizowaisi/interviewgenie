@@ -6,7 +6,7 @@ metadata:
   labels:
     app: cv-parser-service
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -24,15 +24,20 @@ spec:
         - name: cv-parser-service
           image: azizowaisi/interview-ai-cv-parser-service:sha-0000000
           imagePullPolicy: IfNotPresent
+          env:
+            - name: PDF_PARSE_MAX_PAGES
+              value: "4"
+            - name: PDF_OCR_ENABLED
+              value: "false"
           ports:
             - containerPort: 8000
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
               memory: "512Mi"
-              cpu: "400m"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1500m"
           readinessProbe:
             httpGet:
               path: /health

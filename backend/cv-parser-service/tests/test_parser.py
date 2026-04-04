@@ -36,6 +36,16 @@ def test_extract_email_none():
     assert _extract_email("No email here") == ""
 
 
+def test_extract_email_obfuscated_at_dot():
+    text = "Contact: john.smith (at) example dot com"
+    assert _extract_email(text) == "john.smith@example.com"
+
+
+def test_extract_email_with_spaces_around_symbols():
+    text = "Email: john.smith @ example . com"
+    assert _extract_email(text) == "john.smith@example.com"
+
+
 def test_extract_name():
     name = _extract_name(CV_TEXT)
     assert name == "John Smith"

@@ -6,6 +6,7 @@ POST /parse-cv  multipart file  →  JSON {name, email, skills, experience_years
 import io
 import re
 import logging
+import os
 from typing import Optional
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -13,6 +14,27 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="CV Parser Service", version="0.1.0")
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int, min_value: int = 1) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(min_value, int(raw))
+    except ValueError:
+        return default
+
+
+PDF_PARSE_MAX_PAGES = _env_int("PDF_PARSE_MAX_PAGES", 4, 1)
+PDF_OCR_ENABLED = _env_bool("PDF_OCR_ENABLED", False)
 
 # ── Common tech/soft skills keyword list ─────────────────────────────────────
 _SKILL_KEYWORDS = {
@@ -43,7 +65,8 @@ def _extract_text_pdf(data: bytes) -> str:
     try:
         import fitz
         doc = fitz.open(stream=data, filetype="pdf")
-        parts = [page.get_text("text") for page in doc]
+        page_count = min(len(doc), PDF_PARSE_MAX_PAGES)
+        parts = [doc[i].get_text("text") for i in range(page_count)]
         doc.close()
         text = "\n".join(parts).strip()
         if text:
@@ -55,7 +78,8 @@ def _extract_text_pdf(data: bytes) -> str:
     try:
         import pdfplumber
         with pdfplumber.open(io.BytesIO(data)) as pdf:
-            text = "\n".join(page.extract_text() or "" for page in pdf.pages).strip()
+            pages = pdf.pages[:PDF_PARSE_MAX_PAGES]
+            text = "\n".join(page.extract_text() or "" for page in pages).strip()
         if text:
             return text
     except Exception as exc:
@@ -64,7 +88,7 @@ def _extract_text_pdf(data: bytes) -> str:
     # 3. pdfminer.six — better on older PDFs with unusual encodings
     try:
         from pdfminer.high_level import extract_text as pdfminer_extract
-        text = pdfminer_extract(io.BytesIO(data)).strip()
+        text = pdfminer_extract(io.BytesIO(data), page_numbers=list(range(PDF_PARSE_MAX_PAGES))).strip()
         if text:
             return text
     except Exception as exc:
@@ -74,13 +98,17 @@ def _extract_text_pdf(data: bytes) -> str:
     try:
         from pypdf import PdfReader
         reader = PdfReader(io.BytesIO(data))
-        text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+        text = "\n".join(page.extract_text() or "" for page in reader.pages[:PDF_PARSE_MAX_PAGES]).strip()
         if text:
             return text
     except Exception as exc:
         logger.warning("pypdf failed: %s", exc)
 
     # 5. OCR fallback — for scanned/image-only PDFs (Tesseract via pdf2image)
+    if not PDF_OCR_ENABLED:
+        logger.info("Skipping OCR fallback (PDF_OCR_ENABLED=false)")
+        return ""
+
     logger.info("All text extractors returned empty — attempting OCR fallback")
     try:
         import pytesseract
@@ -126,8 +154,38 @@ def _extract_name(text: str) -> str:
 
 
 def _extract_email(text: str) -> str:
+    if not text:
+        return ""
+
+    # 1) Fast path: standard email format.
     match = re.search(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", text)
-    return match.group(0).lower() if match else ""
+    if match:
+        return match.group(0).lower()
+
+    # 2) Normalize common obfuscation and spacing artifacts from PDF extraction.
+    normalized = text
+    normalized = re.sub(r"[\u200b\u200c\u200d\u2060]", "", normalized)
+    normalized = re.sub(r"(?i)(\(|\[)?\s*at\s*(\)|\])?", "@", normalized)
+    normalized = re.sub(r"(?i)(\(|\[)?\s*dot\s*(\)|\])?", ".", normalized)
+    normalized = re.sub(r"\s*@\s*", "@", normalized)
+    normalized = re.sub(r"\s*\.\s*", ".", normalized)
+
+    match = re.search(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", normalized)
+    if match:
+        return match.group(0).lower()
+
+    # 3) Last resort: tolerate spaces around separators and rebuild.
+    spaced = re.search(
+        r"([a-zA-Z0-9._%+\-]+)\s*@\s*([a-zA-Z0-9\-]+(?:\s*\.\s*[a-zA-Z0-9\-]+)*)\s*\.\s*([a-zA-Z]{2,})",
+        text,
+    )
+    if spaced:
+        local = spaced.group(1)
+        domain = re.sub(r"\s*\.\s*", ".", spaced.group(2))
+        tld = spaced.group(3)
+        return f"{local}@{domain}.{tld}".lower()
+
+    return ""
 
 
 def _extract_skills(text: str) -> list[str]:
