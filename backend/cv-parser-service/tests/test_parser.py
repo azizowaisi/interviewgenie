@@ -83,6 +83,22 @@ def test_parse_plain_text():
     assert result["experience_years"] == 6.0
 
 
+def test_parse_pdf_by_magic_bytes_without_extension(monkeypatch):
+    # Client can upload PDF bytes with a non-pdf filename; parser should still treat it as PDF.
+    monkeypatch.setattr("main._extract_text_pdf", lambda _d: "Abdul Aziz\nExperience: 6 years\n")
+    data = b"%PDF-1.7\n..."
+    result = _parse(data, "resume-upload")
+    assert result["name"] == "Abdul Aziz"
+    assert result["experience_years"] == 6.0
+
+
+def test_parse_pdf_accepts_short_text(monkeypatch):
+    # Very short CV text should still be accepted and parsed for fields.
+    monkeypatch.setattr("main._extract_text_pdf", lambda _d: "Abdul Aziz\n")
+    result = _parse(b"%PDF-1.4\n...", "short.pdf")
+    assert result["name"] == "Abdul Aziz"
+
+
 def test_scoring_integration():
     """Test the scoring formula used in api-service."""
     # Import scorer from api-service

@@ -46,7 +46,7 @@ def _extract_text_pdf(data: bytes) -> str:
         parts = [page.get_text("text") for page in doc]
         doc.close()
         text = "\n".join(parts).strip()
-        if len(text) > 50:
+        if text:
             return text
     except Exception as exc:
         logger.warning("PyMuPDF failed: %s", exc)
@@ -56,7 +56,7 @@ def _extract_text_pdf(data: bytes) -> str:
         import pdfplumber
         with pdfplumber.open(io.BytesIO(data)) as pdf:
             text = "\n".join(page.extract_text() or "" for page in pdf.pages).strip()
-        if len(text) > 50:
+        if text:
             return text
     except Exception as exc:
         logger.warning("pdfplumber failed: %s", exc)
@@ -65,7 +65,7 @@ def _extract_text_pdf(data: bytes) -> str:
     try:
         from pdfminer.high_level import extract_text as pdfminer_extract
         text = pdfminer_extract(io.BytesIO(data)).strip()
-        if len(text) > 50:
+        if text:
             return text
     except Exception as exc:
         logger.warning("pdfminer.six failed: %s", exc)
@@ -75,7 +75,7 @@ def _extract_text_pdf(data: bytes) -> str:
         from pypdf import PdfReader
         reader = PdfReader(io.BytesIO(data))
         text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
-        if len(text) > 50:
+        if text:
             return text
     except Exception as exc:
         logger.warning("pypdf failed: %s", exc)
@@ -184,7 +184,8 @@ def _extract_experience_years(text: str) -> float:
 
 def _parse(data: bytes, filename: str) -> dict:
     fname = (filename or "").lower()
-    if fname.endswith(".pdf"):
+    # Detect PDF by extension OR content magic bytes in case clients upload without extension.
+    if fname.endswith(".pdf") or data.startswith(b"%PDF"):
         raw = _extract_text_pdf(data)
     elif fname.endswith(".docx"):
         raw = _extract_text_docx(data)
