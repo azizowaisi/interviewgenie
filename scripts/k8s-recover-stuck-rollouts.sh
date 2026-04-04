@@ -16,6 +16,7 @@ APPLY=false
 DEPS=(
   api-service
   audio-service
+  cv-parser-service
   stt-service
   question-service
   llm-service
@@ -23,17 +24,16 @@ DEPS=(
   monitoring-service
   web
 )
-  DEPS=(
-    api-service
-    audio-service
-    cv-parser-service
-    stt-service
-    question-service
-    llm-service
-    formatter-service
-    monitoring-service
-    web
-  )
+
+need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing: $1" >&2; exit 1; }; }
+need kubectl
+
+should_undo() {
+  local dep="$1"
+  local lines statuses
+  lines="$(kubectl get pods -n "$NS" -l "app=$dep" --no-headers 2>/dev/null || true)"
+  echo "$lines" | grep -q '[^[:space:]]' || return 1
+
   local n
   n="$(echo "$lines" | wc -l | tr -d ' ')"
   statuses="$(echo "$lines" | awk '{print $3}')"
