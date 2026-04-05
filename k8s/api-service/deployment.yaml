@@ -91,4 +91,4 @@ spec:
       volumes:
         - name: cv-storage
           persistentVolumeClaim:
-            claimName: cv-uploads
+            claimName: cv-uploads-10g
