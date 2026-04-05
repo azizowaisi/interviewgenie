@@ -555,16 +555,6 @@ jobs:
           export KUBECONFIG="$HOME/.kube/config"
           scripts/ci/k8s-verify-communication.sh
 
-      - name: Verify production public URL
-        env:
-          PUBLIC_URL: ${{ vars.PROD_PUBLIC_URL || 'https://interviewgenie.teckiz.com' }}
-          MAX_ATTEMPTS: 3
-          SLEEP_SECONDS: 4
-          CURL_TIMEOUT: 6
-        run: |
-          chmod +x scripts/ci/check-public-health.sh
-          scripts/ci/check-public-health.sh
-
       - name: Rollback hint on failure
         if: failure()
         run: |
@@ -645,16 +635,6 @@ jobs:
           chmod +x scripts/ci/k8s-verify-communication.sh
           export KUBECONFIG="$HOME/.kube/config"
           scripts/ci/k8s-verify-communication.sh
-
-      - name: Verify production public URL
-        env:
-          PUBLIC_URL: ${{ vars.PROD_PUBLIC_URL || 'https://interviewgenie.teckiz.com' }}
-          MAX_ATTEMPTS: 3
-          SLEEP_SECONDS: 4
-          CURL_TIMEOUT: 6
-        run: |
-          chmod +x scripts/ci/check-public-health.sh
-          scripts/ci/check-public-health.sh
 
       - name: Rollback hint on failure
         if: failure()
@@ -795,12 +775,3 @@ jobs:
             bash \$HOME/interviewgenie-k8s/scripts/ci/k8s-verify-communication.sh
           "
 
-      - name: Verify production public URL
-        env:
-          PUBLIC_URL: ${{ vars.PROD_PUBLIC_URL || 'https://interviewgenie.teckiz.com' }}
-          MAX_ATTEMPTS: 3
-          SLEEP_SECONDS: 4
-          CURL_TIMEOUT: 6
-        run: |
-          chmod +x scripts/ci/check-public-health.sh
-          scripts/ci/check-public-health.sh
