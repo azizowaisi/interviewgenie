@@ -84,6 +84,7 @@ export function InterviewPrep() {
   const [replaceError, setReplaceError] = useState<string | null>(null);
   const [replaceSuccess, setReplaceSuccess] = useState<string | null>(null);
   const [compare, setCompare] = useState<{ before: AtsResult | null; after: AtsResult | null } | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
 
   async function loadTopics() {
     setLoadingTopics(true);
@@ -196,6 +197,7 @@ export function InterviewPrep() {
         return local.toISOString().slice(0, 16);
       });
       setFile(null);
+      setShowAddForm(false);
       await loadTopics();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start interview");
@@ -283,99 +285,17 @@ export function InterviewPrep() {
     <div className="mx-auto grid max-w-4xl gap-6">
       <Card className="shadow-md">
         <CardHeader>
-          <CardTitle>Start</CardTitle>
-          <CardDescription>Create a new job with title, company, description, and CV.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-        <div className="grid gap-2">
-          <Label htmlFor="job-title">Job title</Label>
-          <Input
-            id="job-title"
-            placeholder="e.g. Senior Backend Engineer"
-            value={jobTitle}
-            onChange={(e) => setJobTitle(e.target.value)}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="company-name">Company name</Label>
-          <Input
-            id="company-name"
-            placeholder="e.g. Stripe"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-          />
-        </div>
-        <div className="grid gap-2 md:grid-cols-2 md:gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="initial-status">Initial status</Label>
-            <div className="flex flex-wrap gap-2">
-              {STATUS_PRESETS.map((status) => (
-                <Button
-                  key={status}
-                  type="button"
-                  size="sm"
-                  variant={initialStatus === status ? "default" : "outline"}
-                  onClick={() => setInitialStatus(status)}
-                >
-                  {status}
-                </Button>
-              ))}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Start</CardTitle>
+              <CardDescription>
+                See all saved jobs. Add a new job, or update an existing job by uploading a new CV.
+              </CardDescription>
             </div>
-            <Input
-              id="initial-status"
-              placeholder="e.g. Applied"
-              value={initialStatus}
-              onChange={(e) => setInitialStatus(e.target.value)}
-            />
+            <Button type="button" onClick={() => setShowAddForm((v) => !v)} className="w-fit">
+              {showAddForm ? "Close add form" : "Add job"}
+            </Button>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="applied-at">Status date and time</Label>
-            <Input
-              id="applied-at"
-              type="datetime-local"
-              value={appliedAt}
-              onChange={(e) => setAppliedAt(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="status-note">Status note</Label>
-          <Textarea
-            id="status-note"
-            placeholder="e.g. Applied through referral"
-            value={statusNote}
-            onChange={(e) => setStatusNote(e.target.value)}
-            className="min-h-[72px]"
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="jd">Job description</Label>
-          <Textarea
-            id="jd"
-            placeholder="Paste the job description (helps ATS and question generation)"
-            value={jobDescription}
-            onChange={(e) => setJobDescription(e.target.value)}
-            className="min-h-[120px]"
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="cv">CV (PDF / DOCX)</Label>
-          <Input id="cv" type="file" accept=".pdf,.doc,.docx,.txt,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-        </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          {success && <p className="text-sm text-emerald-400">{success}</p>}
-          <Button onClick={onSave} disabled={loading} className="w-fit">
-            {loading ? "Saving..." : "Save Job"}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-md">
-        <CardHeader>
-          <CardTitle>Saved jobs</CardTitle>
-          <CardDescription>
-            Select any old job, replace CV, then re-run ATS to compare old vs new score.
-          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           {loadingTopics ? (
@@ -385,15 +305,131 @@ export function InterviewPrep() {
           ) : (
             <div className="rounded-xl border border-border bg-secondary/20">
               {topics.map((t) => (
-                <div key={t.id} className="flex flex-col gap-1 border-b border-border px-3 py-2 last:border-b-0 md:flex-row md:items-center md:justify-between">
+                <div key={t.id} className="flex flex-col gap-2 border-b border-border px-3 py-2 last:border-b-0 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="font-medium">{t.topic}{t.company_name ? ` - ${t.company_name}` : ""}</p>
                     <p className="text-xs text-muted-foreground">Current CV: {t.cv_filename || "Not uploaded"}</p>
                   </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={replaceTopicId === t.id ? "default" : "outline"}
+                    onClick={() => setReplaceTopicId(t.id)}
+                    className="w-fit"
+                  >
+                    {replaceTopicId === t.id ? "Selected for CV update" : "Update CV"}
+                  </Button>
                 </div>
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {showAddForm && (
+        <Card className="shadow-md">
+          <CardHeader>
+            <CardTitle>Add job</CardTitle>
+            <CardDescription>Use the same form to create a new job with CV.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="job-title">Job title</Label>
+              <Input
+                id="job-title"
+                placeholder="e.g. Senior Backend Engineer"
+                value={jobTitle}
+                onChange={(e) => setJobTitle(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="company-name">Company name</Label>
+              <Input
+                id="company-name"
+                placeholder="e.g. Stripe"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="initial-status">Initial status</Label>
+                <div className="flex flex-wrap gap-2">
+                  {STATUS_PRESETS.map((status) => (
+                    <Button
+                      key={status}
+                      type="button"
+                      size="sm"
+                      variant={initialStatus === status ? "default" : "outline"}
+                      onClick={() => setInitialStatus(status)}
+                    >
+                      {status}
+                    </Button>
+                  ))}
+                </div>
+                <Input
+                  id="initial-status"
+                  placeholder="e.g. Applied"
+                  value={initialStatus}
+                  onChange={(e) => setInitialStatus(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="applied-at">Status date and time</Label>
+                <Input
+                  id="applied-at"
+                  type="datetime-local"
+                  value={appliedAt}
+                  onChange={(e) => setAppliedAt(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="status-note">Status note</Label>
+              <Textarea
+                id="status-note"
+                placeholder="e.g. Applied through referral"
+                value={statusNote}
+                onChange={(e) => setStatusNote(e.target.value)}
+                className="min-h-[72px]"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="jd">Job description</Label>
+              <Textarea
+                id="jd"
+                placeholder="Paste the job description (helps ATS and question generation)"
+                value={jobDescription}
+                onChange={(e) => setJobDescription(e.target.value)}
+                className="min-h-[120px]"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="cv">CV (PDF / DOCX)</Label>
+              <Input id="cv" type="file" accept=".pdf,.doc,.docx,.txt,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            </div>
+            {error && <p className="text-sm text-red-400">{error}</p>}
+            {success && <p className="text-sm text-emerald-400">{success}</p>}
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={onSave} disabled={loading} className="w-fit">
+                {loading ? "Saving..." : "Save Job"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowAddForm(false)} className="w-fit">
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="shadow-md">
+        <CardHeader>
+          <CardTitle>Update existing job CV</CardTitle>
+          <CardDescription>
+            Select an existing job above, upload a new CV for the same job, and compare ATS old vs new.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
 
           <div className="grid gap-2">
             <Label htmlFor="replace-topic">Job to update</Label>
