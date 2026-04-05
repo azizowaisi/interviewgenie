@@ -1830,6 +1830,7 @@ async def recruiter_upload_candidate_cv(
     filename = os.path.basename(file.filename or "cv.pdf")
 
     # Parse via cv-parser-service; fall back to built-in parser if unreachable
+    # or when parser returns an empty body (common for scanned/image PDFs if OCR is off).
     parsed_data: dict = {}
     try:
         async with _httpx.AsyncClient(timeout=30) as client:
@@ -1840,10 +1841,22 @@ async def recruiter_upload_candidate_cv(
             resp.raise_for_status()
             parsed_data = resp.json()
     except Exception:
-        # Fallback: use built-in cv_parser for text; structured data will be minimal
+        parsed_data = {}
+
+    if not isinstance(parsed_data, dict):
+        parsed_data = {}
+
+    if not (parsed_data.get("raw_text") or "").strip():
+        # Fallback: use built-in cv_parser for text; keep any structured fields if present.
         from cv_parser import parse_cv as _parse_cv
         raw_text = _parse_cv(data, filename) or ""
-        parsed_data = {"name": "", "email": "", "skills": [], "experience_years": 0, "raw_text": raw_text}
+        parsed_data = {
+            "name": parsed_data.get("name") or "",
+            "email": parsed_data.get("email") or "",
+            "skills": parsed_data.get("skills") or [],
+            "experience_years": parsed_data.get("experience_years") or 0,
+            "raw_text": raw_text,
+        }
 
     parsed_data = _enrich_candidate_parsed_data(parsed_data, job.get("skills", []))
 
