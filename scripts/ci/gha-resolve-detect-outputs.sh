@@ -111,6 +111,23 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
     echo "- **Tests:** ${tests_any}" >>"${GITHUB_STEP_SUMMARY}"
     exit 0
   fi
+  # Manual deploys must also use a unified commit tag across all services.
+  # Build every image so production can be pinned consistently to sha-${GITHUB_SHA}.
+  echo "build_any=true" >>"${GITHUB_OUTPUT}"
+  write_build_flags "true"
+  write_matrix_to_output '["api-service","audio-service","stt-service","question-service","llm-service","formatter-service","cv-parser-service","monitoring-service","web"]'
+  tests_any=false
+  if [[ "${INPUT_SKIP_TESTS}" != "true" ]]; then
+    tests_any=true
+    write_test_matrix_to_output '["question-service","formatter-service","llm-service","stt-service","audio-service"]'
+  else
+    write_test_matrix_to_output "[]"
+  fi
+  echo "tests_any=${tests_any}" >>"${GITHUB_OUTPUT}"
+  echo "### Detect" >>"${GITHUB_STEP_SUMMARY}"
+  echo "- **Mode:** manual deploy — build ALL images (unified sha tag)" >>"${GITHUB_STEP_SUMMARY}"
+  echo "- **Tests:** ${tests_any}" >>"${GITHUB_STEP_SUMMARY}"
+  exit 0
 fi
 
 # On push to main: ALWAYS build all images with a unified sha-<commit> tag.

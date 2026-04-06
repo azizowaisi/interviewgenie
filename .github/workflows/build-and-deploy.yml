@@ -34,11 +34,11 @@ on:
   workflow_dispatch:
     inputs:
       deploy_only:
-        description: "Only kubectl apply (skip tests & Docker builds)"
+        description: "Only kubectl apply (skip tests & Docker builds) — not eligible for production deploy"
         type: boolean
         default: false
       force_build:
-        description: "Build & push all images (ignored if deploy_only; leave off for path-based incremental builds)"
+        description: "Build & push all images (optional; manual deploy already builds all by default)"
         type: boolean
         default: false
       skip_tests:
@@ -76,6 +76,7 @@ jobs:
       build_question_service: ${{ steps.resolve.outputs.build_question_service }}
       build_llm_service: ${{ steps.resolve.outputs.build_llm_service }}
       build_formatter_service: ${{ steps.resolve.outputs.build_formatter_service }}
+      build_cv_parser_service: ${{ steps.resolve.outputs.build_cv_parser_service }}
       build_monitoring_service: ${{ steps.resolve.outputs.build_monitoring_service }}
       build_web: ${{ steps.resolve.outputs.build_web }}
       test_matrix_services: ${{ steps.resolve.outputs.test_matrix_services }}
@@ -153,6 +154,12 @@ jobs:
           FILTER_WEB: ${{ steps.filter.outputs.web }}
           FILTER_PYTHON_TESTS: ${{ steps.filter.outputs.python_tests }}
         run: bash scripts/ci/gha-resolve-detect-outputs.sh
+
+      - name: Enforce image-tag deploy policy
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy_only == true
+        run: |
+          echo "::error::deploy_only is disabled by policy. Every deployment must build and push sha-${GITHUB_SHA} images first."
+          exit 1
 
   test:
     needs: detect
@@ -459,6 +466,7 @@ jobs:
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != 'true') &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.build-meta.result == 'success' || needs.build-meta.result == 'skipped') &&
+      needs.build-meta.outputs.images_pushed == 'true' &&
       needs.detect.outputs.deploy_mode != 'none' &&
       needs.detect.outputs.deploy_mode != 'off' &&
       needs.detect.outputs.deploy_mode != 'false'
