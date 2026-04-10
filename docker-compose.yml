@@ -10,6 +10,17 @@
 # Or: npm run local:up  (see root package.json)
 
 services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   api-service:
     build:
       context: ./backend/api-service
@@ -21,6 +32,11 @@ services:
       MONGODB_DB: interviewgenie
       UPLOAD_DIR: /cv_storage
       CV_PARSER_URL: http://cv-parser-service:8000
+      LLM_SERVICE_URL: http://llm-service:8000
+      LLM_OPTIMIZE_TIMEOUT_SECONDS: "1200"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_HEARTBEAT_SECONDS: "600"
+      RABBITMQ_BLOCKED_TIMEOUT_SECONDS: "600"
       # AUTH0_DOMAIN: your-tenant.auth0.com
       # AUTH0_AUDIENCE: https://your-api
       # AUTH0_CLIENT_ID: same as web app (ID tokens use aud=client_id; required with AUTH0_* above)
@@ -29,6 +45,35 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  cv-optimize-worker:
+    build:
+      context: ./backend/api-service
+      dockerfile: Dockerfile
+    command: ["python", "/app/cv_optimize_worker.py"]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: interviewgenie
+      UPLOAD_DIR: /cv_storage
+      LLM_SERVICE_URL: http://llm-service:8000
+      CV_RENDERER_URL: http://cv-renderer-service:8000
+      LLM_OPTIMIZE_TIMEOUT_SECONDS: "1200"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_HEARTBEAT_SECONDS: "600"
+      RABBITMQ_BLOCKED_TIMEOUT_SECONDS: "600"
+    volumes:
+      - cv_uploads:/cv_storage
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      llm-service:
+        condition: service_started
+      cv-renderer-service:
+        condition: service_started
 
   # Align major with k8s/mongo/statefulset.yaml (8.0.x line avoids jumping straight to 8.2+ on older FCV data).
   mongo:
@@ -96,7 +141,16 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
       OLLAMA_MODEL: mistral
+      # Safety: don't return MOCK_ANSWER on errors (breaks JSON callers).
+      LLM_ALLOW_MOCK: "0"
+      OLLAMA_TIMEOUT_SECONDS: "1200"
+      OLLAMA_NUM_PREDICT: "1200"
     # Start Ollama when needed: docker compose --profile ollama up -d
+
+  cv-renderer-service:
+    build:
+      context: ./backend/cv-renderer-service
+      dockerfile: Dockerfile
 
   formatter-service:
     build:

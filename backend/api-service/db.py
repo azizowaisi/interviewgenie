@@ -120,3 +120,11 @@ def get_candidate_jobs_collection():
         col.create_index([("user_id", ASCENDING), ("status", ASCENDING)], name="candidate_jobs_user_status")
         _candidate_jobs_indexes_ready = True
     return col
+
+
+def get_cv_optimize_jobs_collection():
+    return get_db().cv_optimize_jobs
+
+
+def get_generated_downloads_collection():
+    return get_db().generated_downloads

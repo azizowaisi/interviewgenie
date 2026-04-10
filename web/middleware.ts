@@ -84,7 +84,11 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith("/assets") || pathname === "/static" || pathname.startsWith("/static/")) {
       return NextResponse.redirect(new URL(`${PUBLIC_API_SVC}${pathname}${search}`, request.url), perm);
     }
-    const svcPrefixes = ["/cv", "/sessions", "/topics", "/attempts", "/ats", "/users"];
+    // Next.js serves the ATS UI at /ats; proxy only API-style subpaths (e.g. /ats/analyze).
+    if (pathname.startsWith("/ats/")) {
+      return NextResponse.redirect(new URL(`${PUBLIC_API_SVC}${pathname}${search}`, request.url), perm);
+    }
+    const svcPrefixes = ["/cv", "/sessions", "/topics", "/attempts", "/users"];
     if (svcPrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
       return NextResponse.redirect(new URL(`${PUBLIC_API_SVC}${pathname}${search}`, request.url), perm);
     }

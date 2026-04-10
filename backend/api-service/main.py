@@ -4,13 +4,14 @@ API Service: Auth0 (optional), CV upload/parsing, MongoDB (users, CVs, Q&A histo
 import logging
 import os
 import json
+import tempfile
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Header
+from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Header, Form, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from pymongo.errors import DuplicateKeyError, PyMongoError
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +24,8 @@ from db import (
     get_sessions_collection,
     get_topics_collection,
     get_ats_analysis_collection,
+    get_cv_optimize_jobs_collection,
+    get_generated_downloads_collection,
     get_interview_attempts_collection,
     get_interview_questions_collection,
     get_companies_collection,
@@ -33,6 +36,19 @@ from db import (
 )
 from cv_parser import parse_cv
 from ats_analyzer import compute_ats, COMMON_SKILLS
+from cv_docx_optimizer import (
+    DOCX_CT,
+    build_optimize_prompt,
+    call_llm_generate,
+    docx_bytes_to_structure,
+    normalize_llm_output,
+    parse_llm_json_object,
+    plaintext_cv_to_structure,
+    register_download,
+    take_download_path,
+    validate_docx_only,
+    write_structure_to_docx,
+)
 
 # When exposed behind a reverse proxy under a prefix (e.g. /api/svc), set PUBLIC_API_PATH_PREFIX=/api/svc
 # so OpenAPI/Swagger and JSON root links use the public URL. Leave unset for local http://localhost:8001.
@@ -75,6 +91,36 @@ if STATIC_DIR.is_dir():
 # Auth: if AUTH0_DOMAIN not set, use X-User-Id header for local dev
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "").rstrip("/")
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/tmp/uploads")
+LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://llm-service:8000")
+LLM_JSON_DEBUG = os.getenv("LLM_JSON_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+LLM_OPTIMIZE_TIMEOUT_SECONDS = float(os.getenv("LLM_OPTIMIZE_TIMEOUT_SECONDS", "600"))
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+CV_OPTIMIZE_QUEUE = os.getenv("CV_OPTIMIZE_QUEUE", "cv.optimize.requested")
+
+
+def _publish_cv_optimize_job(message: dict) -> None:
+    import pika
+
+    params = pika.URLParameters(RABBITMQ_URL)
+    params.socket_timeout = 5
+    params.heartbeat = int(os.getenv("RABBITMQ_HEARTBEAT_SECONDS", "600"))
+    params.blocked_connection_timeout = int(os.getenv("RABBITMQ_BLOCKED_TIMEOUT_SECONDS", "600"))
+    conn = pika.BlockingConnection(params)
+    try:
+        ch = conn.channel()
+        ch.queue_declare(queue=CV_OPTIMIZE_QUEUE, durable=True)
+        body = json.dumps(message).encode("utf-8")
+        ch.basic_publish(
+            exchange="",
+            routing_key=CV_OPTIMIZE_QUEUE,
+            body=body,
+            properties=pika.BasicProperties(delivery_mode=2),
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 class UserMe(BaseModel):
@@ -531,6 +577,255 @@ async def cv_list(user_id: Optional[str] = Depends(get_user_id)):
             "uploaded_at": d["uploaded_at"].isoformat(),
         })
     return JSONResponse(out)
+
+
+@app.post("/cv/optimize")
+async def cv_optimize(
+    background_tasks: BackgroundTasks,
+    file: Optional[UploadFile] = File(None),
+    job_description: str = Form(""),
+    topic_id: Optional[str] = Form(None),
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    """ATS-style DOCX optimization via llm-service (Ollama).
+
+    Provide **topic_id** to use the CV already linked to that job (from Start page), or **file** (.docx) to upload one.
+    """
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    from bson import ObjectId
+
+    structure: dict
+    fallback_name: str
+
+    tid = (topic_id or "").strip()
+    if tid:
+        topics = get_topics_collection()
+        cvs = get_cvs_collection()
+        try:
+            topic_doc = topics.find_one({"_id": ObjectId(tid), "user_id": user_id})
+        except Exception:
+            topic_doc = None
+        if not topic_doc:
+            raise HTTPException(404, "Topic not found")
+        jd = (job_description or "").strip() or (topic_doc.get("job_description") or "").strip()
+        if not jd:
+            raise HTTPException(
+                400,
+                detail="job_description is required — add it to the job or paste it in the form.",
+            )
+        cv_oid = topic_doc.get("cv_id")
+        if not cv_oid:
+            raise HTTPException(400, detail="No CV uploaded for this job yet. Upload a CV on the Start page first.")
+        cv_doc = cvs.find_one({"_id": cv_oid, "user_id": user_id})
+        if not cv_doc:
+            raise HTTPException(404, "CV not found for this topic")
+        fn = (cv_doc.get("filename") or "").lower()
+        path = cv_doc.get("original_file_path")
+        parsed = (cv_doc.get("parsed_text") or "").strip()
+        if fn.endswith(".docx") and path and os.path.isfile(path):
+            with open(path, "rb") as f:
+                data = f.read()
+            if not data:
+                raise HTTPException(400, detail="Saved CV file is empty.")
+            validate_docx_only(cv_doc.get("filename"), None, data)
+            structure = docx_bytes_to_structure(data)
+        else:
+            if not parsed:
+                raise HTTPException(
+                    400,
+                    detail="Could not read your saved CV text. Re-upload your CV on the Start page.",
+                )
+            structure = plaintext_cv_to_structure(parsed)
+        fallback_name = (structure.get("name") or "").strip()
+    elif file is not None and (file.filename or "").strip():
+        jd = (job_description or "").strip()
+        if not jd:
+            raise HTTPException(400, detail="job_description is required")
+        data = await file.read()
+        if not data:
+            raise HTTPException(400, detail="Empty file")
+        validate_docx_only(file.filename, file.content_type, data)
+        structure = docx_bytes_to_structure(data)
+        fallback_name = (structure.get("name") or "").strip()
+    else:
+        raise HTTPException(
+            400,
+            detail="Provide topic_id (recommended — uses CV from Start) or upload a .docx file.",
+        )
+
+    cv_for_llm = {
+        "name": (structure.get("name") or "").strip(),
+        "summary": structure.get("summary") or "",
+        "experience": structure.get("experience") or [],
+        "skills": structure.get("skills") or [],
+    }
+    prompt = build_optimize_prompt(cv_for_llm, jd)
+    try:
+        raw = await call_llm_generate(prompt, LLM_SERVICE_URL, timeout=LLM_OPTIMIZE_TIMEOUT_SECONDS)
+    except Exception as e:
+        logger.exception("LLM optimize failed: %s", str(e)[:200])
+        raise HTTPException(503, detail="LLM service unavailable — ensure llm-service and Ollama are running") from e
+    if not raw:
+        raise HTTPException(502, detail="Empty response from LLM service")
+    try:
+        llm_obj = parse_llm_json_object(raw)
+    except HTTPException as e:
+        # Help diagnose LLM formatting issues without dumping full CV/JD into the response.
+        logger.warning("LLM optimize returned non-JSON (len=%s) preview=%r", len(raw), raw[:800])
+        if LLM_JSON_DEBUG:
+            raise HTTPException(
+                status_code=e.status_code,
+                detail=f"{e.detail} (len={len(raw)} preview={raw[:300]!r})",
+            ) from e
+        raise
+    normalized = normalize_llm_output(llm_obj, fallback_name, original=structure)
+
+    file_id = uuid.uuid4().hex
+    out_name = f"optimized_{user_id}_{file_id}.docx"
+    out_path = os.path.join(tempfile.gettempdir(), out_name)
+    try:
+        write_structure_to_docx(out_path, normalized)
+    except OSError as e:
+        logger.exception("Could not write optimized DOCX: %s", out_path)
+        raise HTTPException(503, detail="Could not write optimized file") from e
+
+    register_download(user_id, os.path.abspath(out_path), file_id)
+
+    # Relative to API root; Next.js BFF uses /api/app/... to reach api-service.
+    download_url = f"/cv/download/{file_id}"
+
+    return JSONResponse({
+        "suggestions": normalized.get("suggestions") or [],
+        "download_url": download_url,
+    })
+
+
+class CvOptimizeJobCreate(BaseModel):
+    topic_id: str
+    job_description: Optional[str] = None
+
+
+@app.post("/cv/optimize/jobs")
+async def cv_optimize_job_create(
+    body: CvOptimizeJobCreate,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+
+    tid = (body.topic_id or "").strip()
+    if not tid:
+        raise HTTPException(400, detail="topic_id is required")
+
+    job_id = uuid.uuid4().hex
+    jobs = get_cv_optimize_jobs_collection()
+    now = datetime.now(timezone.utc)
+    jobs.insert_one(
+        {
+            "_id": job_id,
+            "user_id": user_id,
+            "topic_id": tid,
+            "job_description": (body.job_description or "").strip(),
+            "status": "queued",
+            "stage": "queued",
+            "progress": 0,
+            "message": "Queued",
+            "events": [{"ts": now, "stage": "queued", "progress": 0, "message": "Queued"}],
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    msg = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "topic_id": tid,
+        "job_description": (body.job_description or "").strip(),
+    }
+    try:
+        import asyncio
+
+        await asyncio.to_thread(_publish_cv_optimize_job, msg)
+    except Exception as e:
+        jobs.update_one(
+            {"_id": job_id},
+            {"$set": {"status": "failed", "updated_at": datetime.now(timezone.utc), "error": str(e)[:500]}},
+        )
+        raise HTTPException(503, detail="Queue unavailable — ensure RabbitMQ is running") from e
+
+    return JSONResponse({"job_id": job_id, "status": "queued"})
+
+
+@app.get("/cv/optimize/jobs/{job_id}")
+async def cv_optimize_job_get(
+    job_id: str,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    jobs = get_cv_optimize_jobs_collection()
+    doc = jobs.find_one({"_id": job_id, "user_id": user_id})
+    if not doc:
+        raise HTTPException(404, detail="Job not found")
+    out = {
+        "job_id": job_id,
+        "status": doc.get("status"),
+        "stage": doc.get("stage"),
+        "progress": doc.get("progress"),
+        "message": doc.get("message"),
+        "events": [
+            {
+                "ts": e.get("ts").isoformat() if e.get("ts") else None,
+                "stage": e.get("stage"),
+                "progress": e.get("progress"),
+                "message": e.get("message"),
+            }
+            for e in (doc.get("events") or [])
+            if isinstance(e, dict)
+        ],
+        "error": doc.get("error"),
+        "download_url": doc.get("download_url"),
+        "suggestions": doc.get("suggestions") or [],
+        "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
+        "updated_at": doc.get("updated_at").isoformat() if doc.get("updated_at") else None,
+    }
+    return JSONResponse(out)
+
+
+def _unlink_quiet(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+@app.get("/cv/download/{file_id}")
+async def cv_download(
+    file_id: str,
+    background_tasks: BackgroundTasks,
+    user_id: Optional[str] = Depends(get_user_id),
+):
+    if not user_id:
+        raise HTTPException(401, "Not authenticated")
+    path = take_download_path(user_id, file_id)
+    if (not path) or (not os.path.isfile(path)):
+        downloads = get_generated_downloads_collection()
+        row = downloads.find_one({"_id": file_id, "user_id": user_id})
+        if row:
+            path = row.get("abs_path")
+            try:
+                downloads.delete_one({"_id": file_id, "user_id": user_id})
+            except Exception:
+                pass
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, detail="Download not found or expired")
+    background_tasks.add_task(_unlink_quiet, path)
+    return FileResponse(
+        path,
+        media_type=DOCX_CT,
+        filename="optimized_cv.docx",
+    )
 
 
 @app.get("/cv/{cv_id}")
@@ -2099,7 +2394,6 @@ async def recruiter_start_ai_interview(
         raise HTTPException(404, "Candidate not found for this job")
 
     QUESTION_SERVICE_URL = os.getenv("QUESTION_SERVICE_URL", "http://question-service:8000")
-    LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://llm-service:8000")
 
     jd = f"Job Title: {job['title']}\n\n{job['description']}"
     cv_text = cand.get("cv_raw_text") or f"Skills: {', '.join(cand.get('skills', []))}"
@@ -2189,7 +2483,6 @@ async def recruiter_evaluate_interview(
         interview_type = "technical"
 
     AUDIO_SERVICE_URL = os.getenv("AUDIO_SERVICE_URL", "http://audio-service:8000")
-    LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://llm-service:8000")
 
     # Score + summary from evaluator
     score = 0.0

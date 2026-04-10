@@ -55,13 +55,11 @@ Microphone
 
 ```bash
 # From project root
-docker compose build
-docker compose --profile ollama up -d
-
-docker compose exec ollama ollama pull mistral
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama up -d --build
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama exec ollama ollama pull mistral
 ```
 
-Starts **MongoDB** (27017), **api-service** (8001), **audio-service** (8000), **whisper**, **stt**, **question**, **llm**, **formatter**, and **Ollama** (11434).
+Starts **MongoDB** (27017), **RabbitMQ** (5672/15672), **api-service** (8001), **cv-optimize-worker**, **cv-renderer-service**, **audio-service** (8000), **whisper**, **stt**, **question**, **llm-service**, **formatter**, and **Ollama** (11434).
 
 - **WebSocket:** `ws://localhost:8000/ws/audio`
 - After ~1 s of silence, the question is sent to the LLM and the answer **streams** back.
@@ -72,7 +70,7 @@ Starts **MongoDB** (27017), **api-service** (8001), **audio-service** (8000), **
 
 ```bash
 npm run local:up
-docker compose --profile ollama exec ollama ollama pull mistral
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama exec ollama ollama pull mistral
 ```
 
 - **Web:** http://localhost:3002  
@@ -89,13 +87,29 @@ Removed from this project. This repository focuses on the **website**.
 
 | Step | What to do | Expected |
 |------|------------|----------|
-| Backend up | `docker compose --profile ollama ps` | Core services running |
+| Backend up | `docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ollama ps` | Core services running |
 | Audio health | `curl -s http://localhost:8000/health` | `{"status":"ok"}` |
 | API health | `curl -s http://localhost:8001/health` | `{"status":"ok"}` |
 | Voice Q&A | Electron or web → record → ask a question | Transcript, then streamed STAR answer |
 | No-login API | `curl -s -X POST http://localhost:8001/cv/upload -H "X-User-Id: default" -F "file=@/path/to/cv.pdf"` | JSON with `id`, `filename` |
+| ATS CV optimizer | Open **`/ats`** → click **Generate ATS CV (.docx)** | Progress updates, then **Download ATS CV (.docx)** |
 
 For **no-login** mode, send **`X-User-Id: default`** on API requests and `user_id: "default"` in the first WebSocket message where the protocol expects it.
+
+---
+
+## ATS CV optimizer (local-only)
+
+The ATS optimizer runs **locally** (Ollama + worker queue):
+
+- **UI**: `http://localhost:3002/ats`
+- **Generate flow**: click **Generate ATS CV (.docx)** → UI polls a background job until it’s done → download appears.
+- **Refresh-safe**: if you refresh the page mid-generation, the UI **resumes the same job** and continues polling (so you don’t generate twice).
+
+Notes:
+- `llm-service` is **internal-only** (no host port published). Other containers call it via `http://llm-service:8000`.
+- `cv-renderer-service` is **internal-only** and deterministically renders CV JSON → DOCX (no LLM).
+- Ollama is available on the host at `http://localhost:11434`.
 
 ---
 
@@ -195,6 +209,7 @@ Details: **[docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md)**, **[docs/BRANCH-PR
 
 - **`llm_failed:`** — Ollama not running, model not pulled, or `OLLAMA_HOST` unreachable. Check `docker compose logs llm-service` and `ollama`.
 - **No speech** — Ensure **`WHISPER_URL`** is set for STT and Whisper is running.
+- **`curl http://localhost:8000/ready` is 404** — that port is **audio-service**. `llm-service` is internal-only; check readiness via `docker compose exec llm-service python3 -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/ready').read().decode())"`.
 
 ---
 

@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse, StreamingResponse
 import httpx
@@ -8,7 +8,10 @@ import json
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
 # Balanced speed + reasoning on ARM64 CPU nodes.
 MODEL_NAME = os.getenv("OLLAMA_MODEL", "mistral")
-OLLAMA_TIMEOUT = httpx.Timeout(60.0, connect=10.0, read=60.0, write=10.0)
+_OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
+OLLAMA_TIMEOUT = httpx.Timeout(_OLLAMA_TIMEOUT_S, connect=10.0, read=_OLLAMA_TIMEOUT_S, write=10.0)
+ALLOW_MOCK = os.getenv("LLM_ALLOW_MOCK", "").strip().lower() in ("1", "true", "yes", "on")
+MAX_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "1200"))
 
 
 class LlmRequest(BaseModel):
@@ -37,7 +40,8 @@ async def ready() -> JSONResponse:
             data = resp.json()
             models = data.get("models") or []
             names = {m.get("name") for m in models if isinstance(m, dict)}
-            if MODEL_NAME in names:
+            # Ollama tags often include ":latest" (e.g. "mistral:latest").
+            if MODEL_NAME in names or any(isinstance(n, str) and n.split(":", 1)[0] == MODEL_NAME for n in names):
                 return JSONResponse({"status": "ready", "model": MODEL_NAME})
             return JSONResponse({"status": "not_ready", "model": MODEL_NAME}, status_code=503)
         except Exception:
@@ -70,13 +74,38 @@ async def generate(body: LlmRequest) -> LlmResponse:
         try:
             resp = await client.post(
                 f"{OLLAMA_HOST}/api/generate",
-                json={"model": MODEL_NAME, "prompt": body.prompt, "stream": False},
+                json={
+                    "model": MODEL_NAME,
+                    "prompt": body.prompt,
+                    "stream": False,
+                    # Ask Ollama to emit strict JSON when supported.
+                    "format": "json",
+                    "options": {"num_predict": MAX_PREDICT},
+                },
             )
+            if resp.status_code == 404:
+                # Common: model not pulled yet; Ollama replies 404 with {"error":"model ... not found"}.
+                detail = "LLM model not found in Ollama. Pull it (e.g. `ollama pull mistral`)."
+                try:
+                    j = resp.json()
+                    err = j.get("error")
+                    if err:
+                        detail = f"LLM model not found in Ollama: {err}"
+                except Exception:
+                    pass
+                raise HTTPException(status_code=503, detail=detail)
             resp.raise_for_status()
             data = resp.json()
-            return LlmResponse(raw_answer=data.get("response", "") or MOCK_ANSWER)
-        except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
-            return LlmResponse(raw_answer=MOCK_ANSWER)
+            answer = (data.get("response", "") or "").strip()
+            if answer:
+                return LlmResponse(raw_answer=answer)
+            if ALLOW_MOCK:
+                return LlmResponse(raw_answer=MOCK_ANSWER)
+            raise HTTPException(status_code=503, detail="LLM returned an empty response")
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as e:
+            if ALLOW_MOCK:
+                return LlmResponse(raw_answer=MOCK_ANSWER)
+            raise HTTPException(status_code=503, detail="LLM backend unavailable") from e
 
 
 @app.post("/generate/stream")
@@ -106,10 +135,12 @@ async def generate_stream(body: LlmRequest):
                                 break
                         except json.JSONDecodeError:
                             pass
-                    if not full:
+                    if not full and ALLOW_MOCK:
                         yield json.dumps({"token": MOCK_ANSWER}) + "\n"
             except Exception:
-                yield json.dumps({"token": MOCK_ANSWER}) + "\n"
+                if ALLOW_MOCK:
+                    yield json.dumps({"token": MOCK_ANSWER}) + "\n"
+                return
 
     return StreamingResponse(
         stream_tokens(),

@@ -8,7 +8,7 @@ Production-style frontend: **Next.js 15 (App Router)**, **Tailwind CSS**, **shad
 |------|---------|
 | `/` | Landing (marketing) |
 | `/interview` | Dashboard: CV, JD, type, duration → start mock |
-| `/upload` | CV + JD → ATS analysis + simple charts |
+| `/ats` | CV + JD → ATS analysis + simple charts |
 | `/mock` | Timed mock interview (text answers; voice later) |
 | `/result` | Scores & feedback (`?attempt=` loads from API) |
 | `/history` | Topics & attempts |

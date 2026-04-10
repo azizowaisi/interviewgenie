@@ -33,7 +33,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir -r requirements.txt
-COPY db.py cv_parser.py auth.py ats_analyzer.py main.py ./
+COPY db.py cv_parser.py cv_docx_optimizer.py auth.py ats_analyzer.py main.py cv_optimize_worker.py cv_optimize_pipeline.py ./
 COPY static ./static/
 COPY --from=web /app/static/dist ./static/dist
 EXPOSE 8001

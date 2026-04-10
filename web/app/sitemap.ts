@@ -15,7 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/",
     "/login",
     "/interview",
-    "/upload",
+    "/ats",
     "/mock",
     "/live",
     "/history",
