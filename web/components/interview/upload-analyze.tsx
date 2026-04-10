@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { appFetch } from "@/lib/api-fetch";
 import { ScoreBars } from "@/components/charts/score-bars";
+import { CvDocxOptimizer } from "@/components/interview/cv-docx-optimizer";
 
 type Topic = {
   id: string;
@@ -36,6 +37,8 @@ export function UploadAnalyze() {
   const [loadingTopics, setLoadingTopics] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<AtsResult[]>([]);
+  const [showOptimizer, setShowOptimizer] = useState(false);
+  const [jobDescription, setJobDescription] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -46,6 +49,7 @@ export function UploadAnalyze() {
         setTopics(list);
         if (list.length) {
           setTopicId(list[0].id);
+          await loadJobDescription(list[0].id);
           const ar = await appFetch(`/ats?topic_id=${encodeURIComponent(list[0].id)}&limit=10`);
           if (ar.ok) setResults((await ar.json()) as AtsResult[]);
         }
@@ -62,6 +66,18 @@ export function UploadAnalyze() {
     const r = await appFetch(`/ats?topic_id=${encodeURIComponent(nextTopicId)}&limit=10`);
     if (!r.ok) throw new Error(await r.text());
     setResults((await r.json()) as AtsResult[]);
+  }
+
+  async function loadJobDescription(nextTopicId: string) {
+    if (!nextTopicId) return;
+    try {
+      const tr = await appFetch(`/topics/${encodeURIComponent(nextTopicId)}`);
+      if (!tr.ok) return;
+      const tj = (await tr.json()) as { job_description?: string | null };
+      setJobDescription((tj.job_description || "").trim());
+    } catch {
+      // ignore
+    }
   }
 
   async function onAnalyze() {
@@ -108,8 +124,10 @@ export function UploadAnalyze() {
                 const next = e.target.value;
                 setTopicId(next);
                 setError(null);
+                setShowOptimizer(false);
                 try {
                   await loadResultsForTopic(next);
+                  await loadJobDescription(next);
                 } catch (err) {
                   setError(err instanceof Error ? err.message : "Failed to load ATS results.");
                 }
@@ -207,6 +225,28 @@ export function UploadAnalyze() {
                 ))}
               </ul>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {result && (
+        <Card className="shadow-md">
+          <CardHeader>
+            <CardTitle>Download ATS CV</CardTitle>
+            <CardDescription>
+              After the results above, you can generate a DOCX file with an ATS-updated version of the CV you already
+              uploaded for this job — no file picker needed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <Button
+              variant="secondary"
+              className="w-fit"
+              onClick={() => setShowOptimizer((v) => !v)}
+            >
+              {showOptimizer ? "Hide" : "Show download ATS CV"}
+            </Button>
+            {showOptimizer && <CvDocxOptimizer topicId={topicId} initialJobDescription={jobDescription} />}
           </CardContent>
         </Card>
       )}

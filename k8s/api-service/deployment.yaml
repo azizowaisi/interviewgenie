@@ -38,6 +38,8 @@ spec:
               value: "interview_ai"
             - name: UPLOAD_DIR
               value: "/cv_storage"
+            - name: LLM_SERVICE_URL
+              value: "http://llm-service:8000"
             # Traefik strips /api/svc before traffic reaches this pod; OpenAPI + root JSON use public paths.
             - name: PUBLIC_API_PATH_PREFIX
               value: "/api/svc"
