@@ -519,6 +519,7 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
           K8S_SKIP_OLLAMA_PULL: 1
+          K8S_ROLLOUT_RESTART: 1
           K8S_WAIT_FOR_ROLLOUT: 0
           K8S_ROLLOUT_TIMEOUT: 45s
         run: |
@@ -601,6 +602,8 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
           K8S_SKIP_OLLAMA_PULL: 1
+          K8S_ROLLOUT_RESTART: 1
+          K8S_PRUNE_NODE_IMAGE_CACHE: 1
           K8S_WAIT_FOR_ROLLOUT: 0
           K8S_ROLLOUT_TIMEOUT: 45s
         run: |
@@ -706,6 +709,8 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           K8S_AUTO_RECOVER_IMAGE_PULL: ${{ vars.K8S_AUTO_RECOVER_IMAGE_PULL }}
           K8S_SKIP_OLLAMA_PULL: 1
+          K8S_ROLLOUT_RESTART: 1
+          K8S_PRUNE_NODE_IMAGE_CACHE: 1
           K8S_WAIT_FOR_ROLLOUT: 0
           K8S_ROLLOUT_TIMEOUT: 45s
         run: |
@@ -743,6 +748,8 @@ jobs:
             export K8S_UPDATE_DEPLOYMENTS=\"${K8S_UPDATE_DEPLOYMENTS}\"
             export K8S_AUTO_RECOVER_IMAGE_PULL=\"${K8S_AUTO_RECOVER_IMAGE_PULL}\"
             export K8S_SKIP_OLLAMA_PULL=\"${K8S_SKIP_OLLAMA_PULL}\"
+            export K8S_ROLLOUT_RESTART=\"${K8S_ROLLOUT_RESTART}\"
+            export K8S_PRUNE_NODE_IMAGE_CACHE=\"${K8S_PRUNE_NODE_IMAGE_CACHE}\"
             export K8S_WAIT_FOR_ROLLOUT=\"${K8S_WAIT_FOR_ROLLOUT}\"
             export K8S_ROLLOUT_TIMEOUT=\"${K8S_ROLLOUT_TIMEOUT}\"
             export K8S_VERIFY_INCLUDE_ROLLOUT=\"0\"
