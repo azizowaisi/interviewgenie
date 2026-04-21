@@ -31,13 +31,14 @@ spec:
               value: "http://ollama:11434"
             - name: OLLAMA_MODEL
               value: "mistral"
+          # HPA can scale replicas under load; each replica stays small vs Ollama.
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "50m"
-            limits:
               memory: "256Mi"
               cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "2000m"
           readinessProbe:
             httpGet:
               path: /ready

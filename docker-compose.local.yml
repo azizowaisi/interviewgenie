@@ -20,15 +20,29 @@ services:
       LLM_JSON_DEBUG: "1"
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       LLM_OPTIMIZE_TIMEOUT_SECONDS: "1200"
+      # Keep the coordinator "rules" step bounded; if Ollama hangs, fail fast and show error.
+      CV_OPTIMIZE_RULES_TIMEOUT_SECONDS: "180"
+      CV_OPTIMIZE_RULES_NUM_PREDICT: "240"
+      # Keep summary + bullets bounded (Ollama on CPU can be slow).
+      CV_OPTIMIZE_SUMMARY_TIMEOUT_SECONDS: "180"
+      CV_OPTIMIZE_SUMMARY_NUM_PREDICT: "120"
+      CV_OPTIMIZE_BULLETS_TIMEOUT_SECONDS: "240"
+      CV_OPTIMIZE_BULLETS_NUM_PREDICT: "200"
       RABBITMQ_HEARTBEAT_SECONDS: "600"
       RABBITMQ_BLOCKED_TIMEOUT_SECONDS: "600"
+      CV_RENDERER_URL: http://cv-renderer-service:8000
+      # Avoid "Queued forever" when cv-optimize-worker is not running (still use worker in production if you prefer).
+      CV_OPTIMIZE_EXECUTION_MODE: inline
+      # Same for modular CV engine: set to queue + run cv-engine-worker + cv-engine-aggregator for Rabbit flow.
+      CV_ENGINE_EXECUTION_MODE: inline
 
   llm-service:
     environment:
       # Safety: don't return MOCK_ANSWER on errors (breaks JSON callers).
       LLM_ALLOW_MOCK: "0"
       OLLAMA_TIMEOUT_SECONDS: "1200"
-      OLLAMA_NUM_PREDICT: "1200"
+      # Keep generations bounded so /generate doesn't run for minutes on CPU.
+      OLLAMA_NUM_PREDICT: "320"
 
   monitoring-local:
     build:

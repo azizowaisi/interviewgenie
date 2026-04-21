@@ -6,12 +6,19 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import re
 import threading
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+try:
+    _DOCX_MAX_LINES = int(os.getenv("CV_DOCX_MAX_EXTRACT_LINES", "100000"))
+except Exception:
+    _DOCX_MAX_LINES = 100000
+_DOCX_MAX_LINES = max(1000, min(_DOCX_MAX_LINES, 500000))
 
 DOCX_SUFFIXES = (".docx",)
 DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -59,17 +66,29 @@ def _match_section(line: str) -> str | None:
 
 def _collect_paragraph_lines(doc) -> list[str]:
     lines: list[str] = []
+    cap = _DOCX_MAX_LINES
+
+    def push(t: str) -> bool:
+        if not t:
+            return True
+        lines.append(t)
+        if len(lines) >= cap:
+            logger.warning(
+                "DOCX extract hit CV_DOCX_MAX_EXTRACT_LINES=%s; truncating (pathological or very large document).",
+                cap,
+            )
+            return False
+        return True
+
     for p in doc.paragraphs:
-        t = (p.text or "").strip()
-        if t:
-            lines.append(t)
+        if not push((p.text or "").strip()):
+            return lines
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
-                    t = (p.text or "").strip()
-                    if t:
-                        lines.append(t)
+                    if not push((p.text or "").strip()):
+                        return lines
     return lines
 
 
@@ -116,13 +135,13 @@ def _parse_experience_lines(exp_lines: list[str]) -> list[dict[str, Any]]:
 
 
 def docx_bytes_to_structure(data: bytes) -> dict[str, Any]:
-    """Extract {name, summary, experience, skills} from DOCX bytes."""
+    """Extract structured CV fields from DOCX bytes."""
     from docx import Document
 
     doc = Document(io.BytesIO(data))
     lines = _collect_paragraph_lines(doc)
     if not lines:
-        return {"name": "", "summary": "", "experience": [], "skills": []}
+        return {"name": "", "contact": [], "summary": "", "experience": [], "skills": []}
 
     name = lines[0]
     section_map: dict[str, tuple[int, int]] = {}
@@ -151,6 +170,16 @@ def docx_bytes_to_structure(data: bytes) -> dict[str, Any]:
     summary_lines = slice_sec("summary")
     exp_lines = slice_sec("experience")
     skill_lines = slice_sec("skills")
+
+    # Contact block: lines directly under the name until the first detected section heading.
+    first_section_start = None
+    if section_map:
+        first_section_start = min(a for (a, _b) in section_map.values())
+    if first_section_start is None:
+        first_section_start = min(len(lines), 8)
+    contact_lines = [ln.strip() for ln in lines[1:first_section_start] if (ln or "").strip()]
+    # Keep it short and ATS-friendly; renderer can combine it into a single line.
+    contact_lines = contact_lines[:4]
 
     summary = " ".join(summary_lines).strip()
     experience = _parse_experience_lines(exp_lines)
@@ -181,6 +210,7 @@ def docx_bytes_to_structure(data: bytes) -> dict[str, Any]:
 
     return {
         "name": name.strip(),
+        "contact": contact_lines,
         "summary": summary,
         "experience": experience,
         "skills": skills_flat,
@@ -476,12 +506,30 @@ def _prune_unlocked(keep: int) -> None:
         del _downloads[k]
 
 
-async def call_llm_generate(prompt: str, llm_service_url: str, timeout: float = 120.0) -> str:
+async def call_llm_generate(
+    prompt: str,
+    llm_service_url: str,
+    timeout: float = 120.0,
+    *,
+    num_predict: int | None = None,
+) -> str:
     import httpx
 
     base = llm_service_url.rstrip("/")
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{base}/generate", json={"prompt": prompt})
+        payload: dict[str, Any] = {"prompt": prompt}
+        if num_predict is not None:
+            try:
+                payload["num_predict"] = int(num_predict)
+            except Exception:
+                pass
+        # Keep the server-side LLM call bounded as well (llm-service will enforce this if provided).
+        # Use a slightly smaller value than the client timeout to avoid racey client-side ReadTimeouts.
+        try:
+            payload["timeout_s"] = max(1.0, float(timeout) - 1.0)
+        except Exception:
+            pass
+        resp = await client.post(f"{base}/generate", json=payload)
         resp.raise_for_status()
         data = resp.json()
         return (data.get("raw_answer") or data.get("text") or data.get("answer") or "").strip()

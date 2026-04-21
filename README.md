@@ -125,7 +125,7 @@ kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral
 
 Manifests under **`k8s/`** define routing: web BFF, WebSocket to audio, API paths to **api-service**, optional admin host. STT expects a **Whisper** endpoint (`WHISPER_URL`); add a Whisper workload or an external URL as needed.
 
-**Further reading:** [docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md), [docs/DEPLOY-WEB-ADMIN-GIT.md](docs/DEPLOY-WEB-ADMIN-GIT.md), [docs/AUTH0-WEBSITE.md](docs/AUTH0-WEBSITE.md), [docs/MONITORING-ADMIN.md](docs/MONITORING-ADMIN.md), [docs/VUE-FRONTENDS.md](docs/VUE-FRONTENDS.md), [docs/K8S-SCALING-AND-ROLLING.md](docs/K8S-SCALING-AND-ROLLING.md).
+**Further reading:** [docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md), [docs/DEPLOY-WEB-ADMIN-GIT.md](docs/DEPLOY-WEB-ADMIN-GIT.md), [docs/AUTH0-WEBSITE.md](docs/AUTH0-WEBSITE.md), [docs/MONITORING-ADMIN.md](docs/MONITORING-ADMIN.md), [docs/VUE-FRONTENDS.md](docs/VUE-FRONTENDS.md), [docs/K8S-SCALING-AND-ROLLING.md](docs/K8S-SCALING-AND-ROLLING.md), [docs/K8S-LLM-FULL-ARCHITECTURE.md](docs/K8S-LLM-FULL-ARCHITECTURE.md) (LLM/Ollama resource path on one node).
 
 ---
 

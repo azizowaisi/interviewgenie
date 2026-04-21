@@ -26,11 +26,108 @@ class OptimizeRules(TypedDict, total=False):
     summary_rules: SummaryRules
     bullet_rules: BulletRules
     skills_rules: SkillsRules
+    # Optional incremental rewrite hints (if absent, pipeline rewrites everything like before).
+    rewrite_summary: bool
+    rewrite_experience_indices: list[int]
 
 
-def build_rules_prompt(base_cv: dict[str, Any], job_description: str) -> str:
-    cv_s = json.dumps(base_cv, ensure_ascii=False, indent=2)
+def format_ats_hints_for_prompt(ats_hints: Any) -> str:
+    """Human-readable block from stored /ats/analyze output (same content as ATS page)."""
+    if not isinstance(ats_hints, dict):
+        return ""
+    lines: list[str] = []
+    sk = ats_hints.get("suggested_skills_to_add")
+    if isinstance(sk, list):
+        flat = [str(x).strip() for x in sk if str(x).strip()]
+        if flat:
+            lines.append("Suggested skills to add (if accurate): " + ", ".join(flat[:24]))
+    for key, title in (
+        ("professional_summary_suggestions", "Professional summary guidance"),
+        ("skills_section_suggestions", "Skills section guidance"),
+        ("experience_suggestions", "Experience bullet rewrite guidance"),
+    ):
+        v = ats_hints.get(key)
+        if not isinstance(v, list):
+            continue
+        bullets = [str(item).strip() for item in v if str(item).strip()]
+        if bullets:
+            lines.append(title + ":\n" + "\n".join(f"- {b}" for b in bullets))
+
+    # Targeted per-entry guidance (preferred, reusable for partial rewrites).
+    ees = ats_hints.get("experience_entry_suggestions") if isinstance(ats_hints, dict) else None
+    if isinstance(ees, list) and ees:
+        blocks: list[str] = []
+        for it in ees[:8]:
+            if not isinstance(it, dict):
+                continue
+            idx = it.get("index")
+            try:
+                idx_i = int(idx)
+            except Exception:
+                continue
+            role = str(it.get("role") or "").strip()
+            company = str(it.get("company") or "").strip()
+            header = f"Experience entry #{idx_i}" + (f" — {role}" if role else "") + (f" @ {company}" if company else "")
+            reasons = it.get("reasons")
+            guidance = it.get("guidance")
+            r_lines = [str(x).strip() for x in (reasons or []) if str(x).strip()] if isinstance(reasons, list) else []
+            g_lines = [str(x).strip() for x in (guidance or []) if str(x).strip()] if isinstance(guidance, list) else []
+            body_parts: list[str] = []
+            if r_lines:
+                body_parts.append("Reasons:\n" + "\n".join(f"- {x}" for x in r_lines[:6]))
+            if g_lines:
+                body_parts.append("How to rewrite:\n" + "\n".join(f"- {x}" for x in g_lines[:6]))
+            if body_parts:
+                blocks.append(header + ":\n" + "\n".join(body_parts))
+        if blocks:
+            lines.append("Targeted experience entry guidance:\n" + "\n\n".join(blocks))
+    if not lines:
+        return ""
+    return (
+        "\n\n---\nPrior ATS analysis for this job (same as on the ATS page). "
+        "Your JSON rules and implied rewrites MUST reflect this guidance wherever the CV already supports it. "
+        "Do not invent employers, dates, or skills with no evidence in the CV.\n\n"
+        + "\n\n".join(lines)
+    )
+
+
+def build_rules_prompt(base_cv: dict[str, Any], job_description: str, ats_hints: Any | None = None) -> str:
+    def _compact_cv_for_rules_prompt(cv: dict[str, Any]) -> dict[str, Any]:
+        exp_in = cv.get("experience") if isinstance(cv.get("experience"), list) else []
+        exp_out: list[dict[str, Any]] = []
+        for i, e in enumerate(exp_in):
+            if i >= 12:
+                break
+            if not isinstance(e, dict):
+                continue
+            bullets = e.get("bullets") if isinstance(e.get("bullets"), list) else []
+            b_out: list[str] = []
+            for b in bullets[:6]:
+                if not isinstance(b, str):
+                    continue
+                s = b.strip()
+                if not s:
+                    continue
+                b_out.append(s[:220])
+            exp_out.append(
+                {
+                    "role": str(e.get("role") or "")[:120],
+                    "company": str(e.get("company") or "")[:120],
+                    "bullets": b_out,
+                }
+            )
+        skills = cv.get("skills") if isinstance(cv.get("skills"), list) else []
+        skills_out = [str(s).strip()[:60] for s in skills if str(s).strip()][:60]
+        return {
+            "name": (cv.get("name") or "")[:120],
+            "summary": (cv.get("summary") or "")[:900],
+            "skills": skills_out,
+            "experience": exp_out,
+        }
+
+    cv_s = json.dumps(_compact_cv_for_rules_prompt(base_cv), ensure_ascii=False)
     jd = (job_description or "").strip()
+    ats_block = format_ats_hints_for_prompt(ats_hints)
     return f"""You are an ATS resume optimizer.
 
 Job description:
@@ -38,23 +135,38 @@ Job description:
 {jd}
 ---
 
-Base CV (structured JSON):
+Base CV (structured JSON; compacted for speed):
 ---
 {cv_s}
 ---
+{ats_block}
 
 Task:
-Return ONLY valid JSON (no markdown, no prose) with ATS optimization rules.
+Return ONLY valid JSON (no markdown, no prose) with ATS optimization rules AND incremental rewrite hints.
 
-Rules MUST be conservative and truthful:
-- Do NOT invent companies, dates, degrees, certifications, projects, or skills not supported by the CV.
-- "missing_skills" should be skills that plausibly exist in the CV but are not explicitly listed in the skills section.
-- "keyword_phrases" should be short ATS phrases from the job description that the CV could reasonably support.
+Incremental rewrite hints (critical):
+- Your goal is to MINIMIZE LLM rewrites to save time.
+- Set "rewrite_summary" to false if the current summary already meets the summary_rules format and is already ATS-aligned with the job description and prior ATS analysis guidance (without inventing facts).
+- Set "rewrite_experience_indices" to ONLY the experience entries that truly need bullet rewrites. If an entry is already concise, action-led, tech-specific, and aligned to the JD, DO NOT include its index.
+- Only include an experience index if at least one of these is true:
+  - bullets are too long / multi-sentence / not one-line
+  - bullets are vague (no action + scope) or generic
+  - important technologies/tools already present in that entry are not surfaced clearly in bullets (ATS match risk)
+  - prior ATS analysis experience guidance indicates a fix applicable to that entry
+  - the entry contains relevant capability but wording is mismatched vs the job description (synonym/phrase alignment), WITHOUT inventing anything
+- Do NOT include indices just because they exist. Prefer 0–3 indices when possible.
+
+Rules MUST be truthful:
+- Do NOT invent companies, dates, degrees, certifications, or employers.
+- **missing_skills (critical):** Exhaustively scan summary, every experience bullet, role titles, and company context. List every notable **tool, language, framework, database, cloud product, protocol, or platform** that is clearly used or implied in the CV text but is **missing, abbreviated, or only buried in bullets** and not reflected in the skills array. Prefer wording that appears in the CV (e.g. if bullets say "Postgres", include "PostgreSQL" only if that capability is clearly the same thing described in the CV). **Do not omit** a skill the candidate clearly has in the narrative just because it is not in the skills list today. **When the prior ATS analysis lists a suggested skill and the CV text supports it, include it in missing_skills or keyword_phrases.**
+- **keyword_phrases:** Short ATS phrases (2–5 words) aligned with the job description **only when** the CV already demonstrates that capability (same rules as skills). Use for synonyms (e.g. job says "CI/CD" and CV says "pipelines/GitHub Actions"). Prefer exact job-description wording when the CV supports it (e.g. "REST APIs").
 
 Return JSON with this exact shape:
 {{
   "missing_skills": ["..."],
   "keyword_phrases": ["..."],
+  "rewrite_summary": true,
+  "rewrite_experience_indices": [0,2,5],
   "summary_rules": {{
     "format": "years + strongest stack + business impact",
     "max_lines": 3
@@ -123,7 +235,28 @@ def _dedupe_skills(skills_in: Any) -> tuple[list[str], set[str]]:
     return skills, seen
 
 
-def _add_missing_skills_conservative(
+_TOKEN_RE = re.compile(r"[a-z0-9]+", re.I)
+
+
+def _skill_supported_by_cv_text(skill_norm: str, cv_blob_lower: str) -> bool:
+    """True if the skill is evidenced in the CV (substring or all significant tokens)."""
+    key = skill_norm.lower()
+    if not key:
+        return False
+    if key in cv_blob_lower:
+        return True
+    # Slash/stack names: "ci/cd", "node.js"
+    flat = re.sub(r"[^a-z0-9]+", "", key)
+    if len(flat) >= 3 and flat in re.sub(r"[^a-z0-9]+", "", cv_blob_lower):
+        return True
+    tokens = [t.lower() for t in _TOKEN_RE.findall(skill_norm)]
+    tokens = [t for t in tokens if len(t) >= 2]
+    if not tokens:
+        return False
+    return all(t in cv_blob_lower for t in tokens)
+
+
+def _add_missing_skills_from_rules(
     *,
     skills: list[str],
     seen: set[str],
@@ -139,7 +272,31 @@ def _add_missing_skills_conservative(
         key = ns.lower()
         if key in seen:
             continue
-        if key and key in cv_blob_lower:
+        if _skill_supported_by_cv_text(ns, cv_blob_lower):
+            seen.add(key)
+            skills.append(ns)
+
+
+def _merge_keyword_phrases_as_skills(
+    *,
+    skills: list[str],
+    seen: set[str],
+    keyword_phrases: Any,
+    cv_blob_lower: str,
+    max_phrases: int = 12,
+) -> None:
+    if not isinstance(keyword_phrases, list):
+        return
+    for i, p in enumerate(keyword_phrases):
+        if i >= max_phrases:
+            break
+        ns = _normalize_skill(str(p))
+        if not ns or len(ns) > 60:
+            continue
+        key = ns.lower()
+        if key in seen:
+            continue
+        if _skill_supported_by_cv_text(ns, cv_blob_lower):
             seen.add(key)
             skills.append(ns)
 
@@ -164,29 +321,65 @@ def _prioritized_skill_sort(skills: list[str], prioritize: Any) -> list[str]:
     return sorted(skills, key=sort_key)
 
 
-def apply_rules(base_cv: dict[str, Any], rules: OptimizeRules) -> dict[str, Any]:
-    """Deterministically apply ATS rules to the structured CV.
+def _add_ats_suggested_skills(
+    *,
+    skills: list[str],
+    seen: set[str],
+    ats_hints: Any,
+    cv_blob_lower: str,
+) -> None:
+    if not isinstance(ats_hints, dict):
+        return
+    raw = ats_hints.get("suggested_skills_to_add")
+    if not isinstance(raw, list):
+        return
+    for s in raw:
+        ns = _normalize_skill(str(s))
+        if not ns:
+            continue
+        key = ns.lower()
+        if key in seen:
+            continue
+        if _skill_supported_by_cv_text(ns, cv_blob_lower):
+            seen.add(key)
+            skills.append(ns)
 
-    This intentionally avoids rewriting long-form prose; use LLM rewrites for summary/bullets only.
-    """
-    out = {
-        "name": (base_cv.get("name") or "").strip(),
-        "summary": base_cv.get("summary") or "",
-        "experience": base_cv.get("experience") or [],
-        "skills": base_cv.get("skills") or [],
-    }
 
-    cv_blob = _cv_text_blob(base_cv)
-
-    skills, seen = _dedupe_skills(out.get("skills"))
-    _add_missing_skills_conservative(
+def merge_rule_skills_into_cv(cv: dict[str, Any], rules: OptimizeRules, ats_hints: Any | None = None) -> None:
+    """Append skills from rules if supported by the current CV text (e.g. after bullet rewrites)."""
+    cv_blob = _cv_text_blob(cv)
+    skills, seen = _dedupe_skills(cv.get("skills"))
+    _add_missing_skills_from_rules(
         skills=skills,
         seen=seen,
         missing_skills=rules.get("missing_skills"),
         cv_blob_lower=cv_blob,
     )
-
+    _merge_keyword_phrases_as_skills(
+        skills=skills,
+        seen=seen,
+        keyword_phrases=rules.get("keyword_phrases"),
+        cv_blob_lower=cv_blob,
+    )
+    _add_ats_suggested_skills(skills=skills, seen=seen, ats_hints=ats_hints, cv_blob_lower=cv_blob)
     prioritize = ((rules.get("skills_rules") or {}).get("prioritize") or []) if isinstance(rules.get("skills_rules"), dict) else []
-    out["skills"] = _prioritized_skill_sort(skills, prioritize)
+    cv["skills"] = _prioritized_skill_sort(skills, prioritize)
+
+
+def apply_rules(base_cv: dict[str, Any], rules: OptimizeRules, ats_hints: Any | None = None) -> dict[str, Any]:
+    """Deterministically apply ATS rules to the structured CV.
+
+    This intentionally avoids rewriting long-form prose; use LLM rewrites for summary/bullets only.
+    """
+    edu = base_cv.get("education")
+    out = {
+        "name": (base_cv.get("name") or "").strip(),
+        "summary": base_cv.get("summary") or "",
+        "experience": base_cv.get("experience") or [],
+        "skills": base_cv.get("skills") or [],
+        "education": edu if isinstance(edu, list) else [],
+    }
+
+    merge_rule_skills_into_cv(out, rules, ats_hints)
     return out
 

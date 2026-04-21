@@ -3,14 +3,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
 import time
 from datetime import datetime, timezone
 
 import pika
 
+from cv_optimize_job_mongo import cv_format_job_error, cv_job_push_event, cv_job_set
 from cv_optimize_pipeline import optimize_docx_for_topic
-from db import get_cv_optimize_jobs_collection, get_generated_downloads_collection
+from db import get_generated_downloads_collection
+from topic_saved_ats_cv import topic_persist_ats_optimized_cv
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,17 @@ def _extract_fields(msg: dict) -> tuple[str, str, str, str] | None:
     return job_id, user_id, topic_id, job_description
 
 
-def _complete_job_success(job_id: str, file_id: str, suggestions: list, *, _ch, method) -> None:
-    _mark_job(
+def _complete_job_success(
+    job_id: str,
+    file_id: str,
+    suggestions: list,
+    *,
+    user_id: str,
+    topic_id: str,
+    _ch,
+    method,
+) -> None:
+    cv_job_set(
         job_id,
         {
             "status": "done",
@@ -74,48 +84,29 @@ def _complete_job_success(job_id: str, file_id: str, suggestions: list, *, _ch, 
             "message": "Done — ready to download",
         },
     )
+    try:
+        topic_persist_ats_optimized_cv(user_id=user_id, topic_id=topic_id, file_id=file_id)
+    except Exception:
+        logger.exception("Could not persist saved ATS CV for job %s topic=%s", job_id, topic_id)
     logger.info("Job %s done", job_id)
     _ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 def _complete_job_failed(job_id: str, exc: Exception, *, _ch, method) -> None:
     logger.exception("Job %s failed: %s", job_id, str(exc)[:200])
-    _mark_job(
+    cv_job_set(
         job_id,
         {
             "status": "failed",
             "updated_at": _now(),
             "completed_at": _now(),
-            "error": str(exc)[:500],
+            "error": cv_format_job_error(exc),
             "stage": "failed",
             "progress": 100,
             "message": "Failed",
         },
     )
     _ch.basic_ack(delivery_tag=method.delivery_tag)
-
-
-def _mark_job(job_id: str, updates: dict):
-    jobs = get_cv_optimize_jobs_collection()
-    jobs.update_one({"_id": job_id}, {"$set": updates})
-
-
-def _push_event(job_id: str, stage: str, progress: int, message: str):
-    jobs = get_cv_optimize_jobs_collection()
-    now = _now()
-    ev = {"ts": now, "stage": stage, "progress": int(progress), "message": message}
-    jobs.update_one(
-        {"_id": job_id},
-        {
-            "$set": {
-                "stage": stage,
-                "progress": int(progress),
-                "message": message,
-                "updated_at": now,
-            },
-            "$push": {"events": {"$each": [ev], "$slice": -30}},
-        },
-    )
 
 
 def main():
@@ -142,14 +133,16 @@ def main():
                 job_id, user_id, topic_id, job_description = fields
 
                 logger.info("Job %s started (topic=%s)", job_id, topic_id)
-                _mark_job(job_id, {"status": "running", "started_at": _now(), "updated_at": _now(), "error": None})
-                _push_event(job_id, "starting", 5, "Worker picked up the job")
+                cv_job_set(job_id, {"status": "running", "started_at": _now(), "updated_at": _now(), "error": None})
+                cv_job_push_event(job_id, "starting", 5, "Worker picked up the job")
                 try:
                     result = _run(job_id, user_id, topic_id, job_description)
                     _complete_job_success(
                         job_id,
                         str(result["file_id"]),
                         result.get("suggestions") or [],
+                        user_id=user_id,
+                        topic_id=topic_id,
                         _ch=_ch,
                         method=method,
                     )
@@ -169,7 +162,7 @@ def _run(job_id: str, user_id: str, topic_id: str, job_description: str):
 
     async def run_async():
         def on_progress(stage: str, pct: int, message: str):
-            _push_event(job_id, stage, pct, message)
+            cv_job_push_event(job_id, stage, pct, message)
 
         return await optimize_docx_for_topic(
             user_id=user_id,
@@ -180,6 +173,7 @@ def _run(job_id: str, user_id: str, topic_id: str, job_description: str):
             cv_renderer_url=CV_RENDERER_URL,
             upload_dir=UPLOAD_DIR,
             on_progress=on_progress,
+            pipeline_job_id=job_id,
         )
 
     result = asyncio.run(run_async())

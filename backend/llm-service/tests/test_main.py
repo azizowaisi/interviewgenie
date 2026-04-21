@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 def _client_with_env(monkeypatch, allow_mock: bool):
     monkeypatch.setenv("LLM_ALLOW_MOCK", "1" if allow_mock else "0")
+    monkeypatch.setenv("LLM_STARTUP_WARMUP", "0")  # avoid background Ollama calls during tests
     import main  # local module
     importlib.reload(main)
     return TestClient(main.app)

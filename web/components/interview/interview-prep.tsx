@@ -25,6 +25,8 @@ type Topic = {
   cv_id?: string | null;
   cv_filename?: string | null;
   created_at?: string;
+  saved_ats_cv_file_id?: string | null;
+  saved_ats_cv_at?: string | null;
 };
 
 type AtsResult = {
@@ -309,6 +311,22 @@ export function InterviewPrep() {
                   <div>
                     <p className="font-medium">{t.topic}{t.company_name ? ` - ${t.company_name}` : ""}</p>
                     <p className="text-xs text-muted-foreground">Current CV: {t.cv_filename || "Not uploaded"}</p>
+                    {t.saved_ats_cv_file_id ? (
+                      <p className="mt-1 text-xs">
+                        <a
+                          className="font-medium text-primary underline-offset-4 hover:underline"
+                          href={`/api/app/topics/${encodeURIComponent(t.id)}/saved-ats-cv`}
+                          download="ats_optimized_cv.docx"
+                        >
+                          Download saved ATS CV (.docx)
+                        </a>
+                        {t.saved_ats_cv_at ? (
+                          <span className="ml-2 text-muted-foreground">
+                            (saved {new Date(t.saved_ats_cv_at).toLocaleString()})
+                          </span>
+                        ) : null}
+                      </p>
+                    ) : null}
                   </div>
                   <Button
                     type="button"

@@ -52,6 +52,7 @@ services:
     build:
       context: ./backend/api-service
       dockerfile: Dockerfile
+    restart: unless-stopped
     command: ["python", "/app/cv_optimize_worker.py"]
     environment:
       MONGODB_URI: mongodb://mongo:27017
@@ -74,6 +75,47 @@ services:
         condition: service_started
       cv-renderer-service:
         condition: service_started
+
+  cv-engine-worker:
+    build:
+      context: ./backend/api-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "/app/cv_engine_worker.py"]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: interviewgenie
+      LLM_SERVICE_URL: http://llm-service:8000
+      LLM_OPTIMIZE_TIMEOUT_SECONDS: "1200"
+      CV_ENGINE_LLM_TIMEOUT_SECONDS: "1200"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_HEARTBEAT_SECONDS: "600"
+      RABBITMQ_BLOCKED_TIMEOUT_SECONDS: "600"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      llm-service:
+        condition: service_started
+
+  cv-engine-aggregator:
+    build:
+      context: ./backend/api-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "/app/cv_engine_aggregator_worker.py"]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: interviewgenie
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_HEARTBEAT_SECONDS: "600"
+      RABBITMQ_BLOCKED_TIMEOUT_SECONDS: "600"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   # Align major with k8s/mongo/statefulset.yaml (8.0.x line avoids jumping straight to 8.2+ on older FCV data).
   mongo:
