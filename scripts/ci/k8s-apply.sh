@@ -7,6 +7,9 @@
 # Optional: K8S_IMAGE_TAG — CI uses sha-<full github sha>; local default latest if unset when set_image runs.
 # Optional: K8S_SKIP_SET_IMAGE=1 — no new tag this run (CI skips set image). We snapshot live images before
 #   `kubectl apply -k` and restore them after, so apply does not clobber currently pinned sha-* tags.
+# Optional: K8S_ROLLOUT_RESTART=1 — after `kubectl set image`, force a new ReplicaSet even when
+#   the tag is unchanged (e.g. same tag re-pushed) or to ensure pods re-evaluate pull behavior.
+# Optional: K8S_PRUNE_NODE_IMAGE_CACHE=1 — best-effort prune node image cache (crictl/docker) before rollouts.
 # Optional: K8S_SKIP_OLLAMA_PULL — if 1/true/yes, skip `ollama pull` at end (faster deploys when model is already on disk).
 # Optional: K8S_AUTO_RECOVER_IMAGE_PULL — defaults to enabled. When enabled and pods show
 #   ImagePullBackOff/ErrImagePull after apply, run scripts/k8s-recover-stuck-rollouts.sh --apply.
@@ -182,6 +185,35 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]];
     done
   fi
 fi
+
+# Optionally force rollouts even if Kubernetes thinks nothing changed.
+if [[ -n "${ROLLOUT_TARGETS:-}" ]]; then
+  case "${K8S_ROLLOUT_RESTART:-0}" in
+    1 | true | TRUE | yes | YES)
+      echo "=== kubectl rollout restart (K8S_ROLLOUT_RESTART=${K8S_ROLLOUT_RESTART}) ==="
+      for d in ${ROLLOUT_TARGETS}; do
+        kubectl rollout restart "deployment/${d}" -n "$NS" 2>/dev/null || true
+      done
+      ;;
+  esac
+fi
+
+# Best-effort prune node image cache (useful when tags are re-used or node is disk-full).
+case "${K8S_PRUNE_NODE_IMAGE_CACHE:-0}" in
+  1 | true | TRUE | yes | YES)
+    (
+      set +e
+      echo "=== Prune node image cache (best-effort) ==="
+      if command -v crictl >/dev/null 2>&1; then
+        sudo crictl rmi --prune >/dev/null 2>&1 || true
+      elif command -v docker >/dev/null 2>&1; then
+        sudo docker image prune -af >/dev/null 2>&1 || true
+      else
+        echo "No crictl/docker found; skipping node image prune."
+      fi
+    )
+    ;;
+esac
 
 # Restore snapshot for any deployment NOT updated this run (partial builds and skip-set-image).
 # This prevents kubectl apply -k from clobbering live sha-* tags with the sha-0000000 placeholder.
