@@ -2,6 +2,9 @@
 # Requires metrics-server (bundled with k3s). Tune maxReplicas to your node CPU/RAM.
 #
 # Rough capacity check (example): sum(requests.cpu) * maxReplicas < allocatable CPU on the node.
+#
+# api-service uses RWO PVC (cv-uploads): extra replicas stay Pending on a single node — maxReplicas=1 below.
+# To scale api horizontally use ReadWriteMany / object storage for uploads, then raise maxReplicas (see K8S-SCALING-AND-ROLLING.md).
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -13,14 +16,14 @@ spec:
     kind: Deployment
     name: api-service
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 1
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 65
+          averageUtilization: 70
     - type: Resource
       resource:
         name: memory
@@ -38,10 +41,7 @@ spec:
       stabilizationWindowSeconds: 0
       policies:
         - type: Pods
-          value: 2
-          periodSeconds: 30
-        - type: Percent
-          value: 100
+          value: 1
           periodSeconds: 30
       selectPolicy: Max
 ---
@@ -179,20 +179,20 @@ spec:
     kind: Deployment
     name: llm-service
   minReplicas: 1
-  maxReplicas: 3
+  maxReplicas: 4
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: 60
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 85
+          averageUtilization: 80
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300
@@ -204,7 +204,10 @@ spec:
       stabilizationWindowSeconds: 0
       policies:
         - type: Pods
-          value: 3
+          value: 2
+          periodSeconds: 20
+        - type: Percent
+          value: 100
           periodSeconds: 30
       selectPolicy: Max
 ---

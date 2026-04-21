@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from cv_docx_optimizer import call_llm_generate, parse_llm_json_object
+from cv_optimize_rules import format_ats_hints_for_prompt
 
 
-def build_summary_rewrite_prompt(*, base_cv: dict[str, Any], job_description: str, summary_rules: dict[str, Any]) -> str:
+def build_summary_rewrite_prompt(
+    *,
+    base_cv: dict[str, Any],
+    job_description: str,
+    summary_rules: dict[str, Any],
+    ats_hints: dict[str, Any] | None = None,
+) -> str:
     jd = (job_description or "").strip()
     cv_s = json.dumps(
         {
@@ -24,6 +32,7 @@ def build_summary_rewrite_prompt(*, base_cv: dict[str, Any], job_description: st
     except Exception:
         max_lines_i = 3
 
+    ats_block = format_ats_hints_for_prompt(ats_hints)
     return f"""Rewrite ONLY the professional summary in a concise ATS-friendly way.
 
 Job description:
@@ -35,12 +44,14 @@ Base CV (JSON):
 ---
 {cv_s}
 ---
+{ats_block}
 
 Constraints:
 - {fmt}
 - Max {max_lines_i} lines
 - Keep it truthful; do not invent facts
-- Avoid fluff and generic claims
+- Follow the professional summary guidance from the ATS analysis above when it matches what the CV can support
+- Avoid fluff and generic claims (e.g. avoid empty "team player" unless tied to a concrete outcome)
 
 Return ONLY valid JSON (no markdown) with this exact shape:
 {{"summary":"..."}}
@@ -54,12 +65,23 @@ async def rewrite_summary(
     summary_rules: dict[str, Any],
     llm_service_url: str,
     timeout: float,
+    ats_hints: dict[str, Any] | None = None,
 ) -> str:
-    prompt = build_summary_rewrite_prompt(base_cv=base_cv, job_description=job_description, summary_rules=summary_rules)
+    prompt = build_summary_rewrite_prompt(
+        base_cv=base_cv,
+        job_description=job_description,
+        summary_rules=summary_rules,
+        ats_hints=ats_hints,
+    )
     import asyncio
 
     async with asyncio.timeout(timeout):
-        raw = await call_llm_generate(prompt, llm_service_url, timeout=timeout)
+        try:
+            np = int(os.getenv("CV_OPTIMIZE_SUMMARY_NUM_PREDICT", "120"))
+        except Exception:
+            np = 120
+        np = max(32, min(np, 512))
+        raw = await call_llm_generate(prompt, llm_service_url, timeout=timeout, num_predict=np)
     if not raw:
         return (base_cv.get("summary") or "").strip()
     try:
@@ -79,6 +101,7 @@ def build_bullets_rewrite_prompt(
     bullets: list[str],
     job_description: str,
     bullet_rules: dict[str, Any],
+    ats_hints: dict[str, Any] | None = None,
 ) -> str:
     jd = (job_description or "").strip()
     br = bullet_rules if isinstance(bullet_rules, dict) else {}
@@ -94,6 +117,8 @@ def build_bullets_rewrite_prompt(
 
     metric_rule = "Require a metric in every bullet (only if implied by original; do not invent numbers)" if require_metric else "Metrics optional"
 
+    ats_block = format_ats_hints_for_prompt(ats_hints)
+
     return f"""Rewrite the bullets to be ATS-friendly and high impact.
 
 Job description:
@@ -105,11 +130,14 @@ Experience entry (JSON):
 ---
 {bullets_s}
 ---
+{ats_block}
 
 Rules:
 - Format: {fmt}
 - {metric_rule}
 - Keep it truthful; do not add tools/achievements not supported by the original bullet
+- Apply the experience bullet guidance from the ATS analysis above (action + scope + metric) when the original bullet supports it
+- Preserve explicit technology and product names from the originals (languages, clouds, databases, frameworks) so ATS can match them
 - Keep each bullet one line; start with a strong action verb
 
 Return ONLY valid JSON (no markdown) with this exact shape:
@@ -126,6 +154,7 @@ async def rewrite_bullets_batch(
     bullet_rules: dict[str, Any],
     llm_service_url: str,
     timeout: float,
+    ats_hints: dict[str, Any] | None = None,
 ) -> list[str]:
     src = [b.strip() for b in bullets if isinstance(b, str) and b.strip()]
     if not src:
@@ -136,11 +165,17 @@ async def rewrite_bullets_batch(
         bullets=src,
         job_description=job_description,
         bullet_rules=bullet_rules,
+        ats_hints=ats_hints,
     )
     import asyncio
 
     async with asyncio.timeout(timeout):
-        raw = await call_llm_generate(prompt, llm_service_url, timeout=timeout)
+        try:
+            np = int(os.getenv("CV_OPTIMIZE_BULLETS_NUM_PREDICT", "200"))
+        except Exception:
+            np = 200
+        np = max(48, min(np, 768))
+        raw = await call_llm_generate(prompt, llm_service_url, timeout=timeout, num_predict=np)
     if not raw:
         return src
     try:

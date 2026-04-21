@@ -232,3 +232,143 @@ def compute_ats(
         "skills_section_suggestions": skills_section_suggestions,
         "experience_suggestions": experience_suggestions,
     }
+
+
+_DIGIT_RE = re.compile(r"\d")
+
+
+def compute_experience_entry_suggestions(*, cv_structure: dict, jd_text: str, missing_skills: list[str] | None = None) -> list[dict]:
+    """Create targeted suggestions for specific experience entries.
+
+    Output is designed to be:
+    - actionable on the ATS page
+    - directly reusable by the CV optimizer (rewrite only these indices)
+    """
+    if not isinstance(cv_structure, dict):
+        return []
+    exp = cv_structure.get("experience")
+    exp_list = exp if isinstance(exp, list) else []
+    if not exp_list:
+        return []
+
+    jd_norm = _normalize(jd_text or "")
+    jd_tokens = _tokenize(jd_norm)
+    missing = [str(x).strip() for x in (missing_skills or []) if str(x).strip()]
+    missing_l = [m.lower() for m in missing]
+
+    jd_has_metrics_language = any(x in jd_norm for x in ("%", "percent", "reduced", "increased", "improved", "grew"))
+
+    out: list[dict] = []
+    for i, item in enumerate(exp_list):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        company = str(item.get("company") or "").strip()
+        bullets = item.get("bullets") if isinstance(item.get("bullets"), list) else []
+        bullets_s = [str(b).strip() for b in bullets if isinstance(b, str) and str(b).strip()]
+        if not bullets_s:
+            continue
+
+        blob = _normalize(" ".join([role, company] + bullets_s))
+        blob_tokens = _tokenize(blob)
+
+        reasons: list[str] = []
+        guidance: list[str] = []
+
+        if any(len(b) > 170 for b in bullets_s):
+            reasons.append("Bullets are too long for ATS scanning")
+            guidance.append("Split long bullets into 1-line bullets; keep one idea per bullet.")
+        if any(b.count(".") >= 2 for b in bullets_s):
+            reasons.append("Bullets read like paragraphs (multi-sentence)")
+            guidance.append("Rewrite bullets to one sentence each; start with an action verb.")
+        if jd_has_metrics_language and not any(_DIGIT_RE.search(b) for b in bullets_s):
+            reasons.append("Job description emphasizes impact but this entry has no metric signal")
+            guidance.append("Add one metric per bullet when the original implies it (latency, cost, uptime, conversion).")
+
+        # Missing-skill surfacing: if the CV overall is missing a skill, but this entry contains it (or close token),
+        # tell the user to surface it in these bullets.
+        to_surface: list[str] = []
+        if missing_l:
+            for m in missing_l[:10]:
+                if not m or len(m) < 3:
+                    continue
+                if m in blob:
+                    to_surface.append(m)
+        if to_surface:
+            reasons.append("Relevant skills are present but not surfaced clearly")
+            guidance.append("Make sure these keywords are explicitly mentioned in bullets (if truthful): " + ", ".join(sorted(set(to_surface))[:6]))
+
+        # JD alignment signal: if the entry shares few JD tokens, suggest a rewrite to align phrasing if relevant.
+        overlap = len(jd_tokens & blob_tokens)
+        if jd_tokens and overlap < max(2, min(6, len(jd_tokens) // 25)):
+            reasons.append("Low keyword overlap with job description (may need phrasing alignment)")
+            guidance.append("If this entry is relevant to the target role, rewrite bullets using closer job-description wording (without inventing).")
+
+        if not reasons:
+            continue
+
+        out.append(
+            {
+                "index": i,
+                "role": role,
+                "company": company,
+                "reasons": reasons[:6],
+                "guidance": guidance[:6],
+            }
+        )
+
+    # Keep it small and stable so we only rewrite what matters.
+    return out[:6]
+
+
+def compute_rewrite_targets(*, cv_structure: dict, jd_text: str) -> dict:
+    """Return deterministic rewrite targets based on CV structure quality signals.
+
+    This intentionally does NOT use an LLM; it is a cheap, explainable gate so we only rewrite
+    sections that are likely to improve ATS matching and readability.
+    """
+    jd_norm = _normalize(jd_text or "")
+    jd_has_metrics_language = any(x in jd_norm for x in ("%", "percent", "reduced", "increased", "improved", "grew"))
+
+    summary = (cv_structure.get("summary") or "").strip() if isinstance(cv_structure, dict) else ""
+    summary_lines = [ln.strip() for ln in summary.splitlines() if ln.strip()]
+    summary_too_long = len(summary_lines) > 3 or len(summary) > 420
+
+    # If JD has clear impact language, prefer rewriting a summary that doesn't mention any numbers at all.
+    summary_missing_metric_signal = bool(jd_has_metrics_language and summary and not _DIGIT_RE.search(summary))
+    rewrite_summary = bool(summary_too_long or summary_missing_metric_signal)
+
+    exp = cv_structure.get("experience") if isinstance(cv_structure, dict) else None
+    exp_list = exp if isinstance(exp, list) else []
+    rewrite_experience_indices: list[int] = []
+    reasons_by_index: dict[str, list[str]] = {}
+
+    for i, item in enumerate(exp_list):
+        if not isinstance(item, dict):
+            continue
+        bullets = item.get("bullets") if isinstance(item.get("bullets"), list) else []
+        bullets_s = [str(b).strip() for b in bullets if isinstance(b, str) and str(b).strip()]
+        if not bullets_s:
+            continue
+
+        reasons: list[str] = []
+        # Heuristics: long / multi-sentence / no metric when JD is metric-y.
+        if any(len(b) > 170 for b in bullets_s):
+            reasons.append("has very long bullets")
+        if any(b.count(".") >= 2 for b in bullets_s):
+            reasons.append("has multi-sentence bullets")
+        if jd_has_metrics_language and not any(_DIGIT_RE.search(b) for b in bullets_s):
+            reasons.append("no metric signal found in bullets (JD emphasizes impact)")
+
+        if reasons:
+            rewrite_experience_indices.append(i)
+            reasons_by_index[str(i)] = reasons
+
+    # Keep list stable + small by default (rewrite only the most likely-problematic entries).
+    rewrite_experience_indices = sorted(set(rewrite_experience_indices))[:6]
+
+    return {
+        "rewrite_summary": rewrite_summary,
+        "rewrite_experience_indices": rewrite_experience_indices,
+        "rewrite_reasons": reasons_by_index,
+    }

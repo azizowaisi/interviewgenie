@@ -28,6 +28,16 @@ type AtsResult = {
   professional_summary_suggestions?: string[];
   skills_section_suggestions?: string[];
   experience_suggestions?: string[];
+  rewrite_summary?: boolean;
+  rewrite_experience_indices?: number[];
+  rewrite_reasons?: Record<string, string[]>;
+  experience_entry_suggestions?: {
+    index: number;
+    role?: string;
+    company?: string;
+    reasons?: string[];
+    guidance?: string[];
+  }[];
 };
 
 export function UploadAnalyze() {
@@ -225,6 +235,47 @@ export function UploadAnalyze() {
                 ))}
               </ul>
             </div>
+
+            <div className="md:col-span-2">
+              <p className="mb-2 text-sm font-medium text-muted-foreground">Targeted experience entries to update</p>
+              <div className="grid gap-3">
+                {(result.experience_entry_suggestions?.length ? result.experience_entry_suggestions : []).map((it) => (
+                  <div key={`exp-suggest-${it.index}`} className="rounded-xl border border-border bg-secondary/20 p-4 text-sm">
+                    <p className="font-medium">
+                      Entry #{it.index}
+                      {it.role ? ` — ${it.role}` : ""}
+                      {it.company ? ` @ ${it.company}` : ""}
+                    </p>
+                    {!!it.reasons?.length && (
+                      <>
+                        <p className="mt-2 text-xs font-medium text-muted-foreground">Why update</p>
+                        <ul className="list-inside list-disc space-y-1">
+                          {it.reasons.map((r, idx) => (
+                            <li key={`exp-reason-${it.index}-${idx}`}>{r}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {!!it.guidance?.length && (
+                      <>
+                        <p className="mt-2 text-xs font-medium text-muted-foreground">How to rewrite</p>
+                        <ul className="list-inside list-disc space-y-1">
+                          {it.guidance.map((g, idx) => (
+                            <li key={`exp-guide-${it.index}-${idx}`}>{g}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                ))}
+                {!result.experience_entry_suggestions?.length && (
+                  <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
+                    No specific experience entries flagged. If you generate an ATS CV now, it should skip most (or all)
+                    experience rewrites.
+                  </div>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -234,8 +285,11 @@ export function UploadAnalyze() {
           <CardHeader>
             <CardTitle>Download ATS CV</CardTitle>
             <CardDescription>
-              After the results above, you can generate a DOCX file with an ATS-updated version of the CV you already
-              uploaded for this job — no file picker needed.
+              Generate a DOCX using the same CV and job as above. The builder uses your{" "}
+              <span className="font-medium text-foreground">latest ATS run for this job</span> (scores and guidance) plus
+              the job description, so suggestions and the file stay consistent. Run Generate ATS first if you have not
+              yet. The finished file is <span className="font-medium text-foreground">saved on the server</span> for this
+              job until you upload a new CV on the Start page — you can download again from here or Start.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">

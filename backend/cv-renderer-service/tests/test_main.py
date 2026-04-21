@@ -1,3 +1,6 @@
+from io import BytesIO
+
+from docx import Document
 from fastapi.testclient import TestClient
 
 import main
@@ -24,4 +27,15 @@ def test_render_docx_returns_docx_bytes():
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
     assert len(r.content) > 500
+
+    doc = Document(BytesIO(r.content))
+    parts = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                parts.append(cell.text)
+    flat = "\n".join(parts)
+    assert "Ada Lovelace" in flat
+    assert "PROFESSIONAL SUMMARY" in flat
+    assert "Python" in flat and "Docker" in flat
 

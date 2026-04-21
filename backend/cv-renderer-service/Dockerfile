@@ -16,7 +16,7 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
+COPY main.py cv_docx_template.py .
 COPY tests ./tests
 COPY requirements-dev.txt .
 

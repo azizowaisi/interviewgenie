@@ -12,6 +12,9 @@ DB_NAME = os.getenv("MONGODB_DB", "interviewgenie")
 
 _client: Optional[MongoClient] = None
 _users_indexes_ready = False
+_cv_optimize_jobs_indexes_ready = False
+_cv_assemblies_indexes_ready = False
+_cv_engine_runs_indexes_ready = False
 
 
 def get_db() -> Database:
@@ -123,8 +126,45 @@ def get_candidate_jobs_collection():
 
 
 def get_cv_optimize_jobs_collection():
-    return get_db().cv_optimize_jobs
+    global _cv_optimize_jobs_indexes_ready
+    coll = get_db().cv_optimize_jobs
+    if not _cv_optimize_jobs_indexes_ready:
+        try:
+            coll.create_index([("user_id", ASCENDING), ("created_at", ASCENDING)], name="user_created")
+        except Exception:
+            pass
+        _cv_optimize_jobs_indexes_ready = True
+    return coll
 
 
 def get_generated_downloads_collection():
     return get_db().generated_downloads
+
+
+def get_cv_engine_runs_collection():
+    global _cv_engine_runs_indexes_ready
+    coll = get_db().cv_engine_runs
+    if not _cv_engine_runs_indexes_ready:
+        try:
+            coll.create_index([("user_id", ASCENDING), ("created_at", ASCENDING)], name="cv_engine_user_created")
+        except Exception:
+            pass
+        _cv_engine_runs_indexes_ready = True
+    return coll
+
+
+def get_cv_assemblies_collection():
+    """Section-level CV assembly state for modular / event-driven pipeline (same process today)."""
+    global _cv_assemblies_indexes_ready
+    coll = get_db().cv_assemblies
+    if not _cv_assemblies_indexes_ready:
+        try:
+            coll.create_index([("user_id", ASCENDING), ("updated_at", ASCENDING)], name="assembly_user_updated")
+            coll.create_index(
+                [("user_id", ASCENDING), ("topic_id", ASCENDING), ("jd_hash", ASCENDING), ("base_cv_hash", ASCENDING), ("updated_at", ASCENDING)],
+                name="assembly_resume_fingerprint",
+            )
+        except Exception:
+            pass
+        _cv_assemblies_indexes_ready = True
+    return coll

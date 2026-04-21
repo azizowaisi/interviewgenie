@@ -66,13 +66,14 @@ spec:
                   name: web-auth0-env
                   key: AUTH0_CLIENT_ID
                   optional: true
+          # Single replica typical (RWO cv-uploads PVC on one node). Size for production traffic on A1.Flex.
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
               memory: "512Mi"
-              cpu: "500m"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
           readinessProbe:
             httpGet:
               path: /health

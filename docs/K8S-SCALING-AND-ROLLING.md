@@ -11,6 +11,8 @@
 
 **HPA** changes **replica counts** for Deployments. It does **not** increase the physical size of your Oracle VM. If traffic grows beyond what one machine can run, add RAM/CPU, add agent nodes, or move heavy work (e.g. Ollama) off-cluster.
 
+**Oracle Cloud (OKE) / Flex:** To **autoscale the pool of worker nodes** when pods are unschedulable, use **Cluster Autoscaler** + a **node pool** with min/max node counts — that adds **new VMs**, unlike HPA. **VM.Standard.A1.Flex** also allows **vertical resize** (more OCPUs/RAM on the same instance) in the console; restart/reconcile workloads after resize.
+
 ---
 
 ## Readiness + rolling strategy (this repo)
@@ -28,8 +30,8 @@
 
 Manifests: `k8s/hpa/stateless-services.yaml`
 
-- Targets: `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`.
-- **Not** `api-service` / **ollama** (PVC constraints as above).
+- Targets: `audio-service`, `stt-service`, `question-service`, `llm-service`, `formatter-service`, and **`api-service` with `maxReplicas: 1`** on the default **single-node + RWO uploads** install (extra api pods would stay Pending).
+- **Not** meaningful multi-replica: **ollama** (RWO model PVC — one pod). To scale **api** horizontally, fix storage first (RWX / S3), then raise **api-service** `maxReplicas` in `k8s/hpa/stateless-services.yaml`.
 - Requires **metrics-server**. On k3s:
 
   ```bash

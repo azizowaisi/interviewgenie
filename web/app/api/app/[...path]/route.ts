@@ -108,7 +108,7 @@ async function forward(req: NextRequest, segments: string[]) {
   }
   target.search = req.nextUrl.search;
 
-  async function upstream(target: URL, headers: Headers): Promise<Response> {
+  async function upstreamOnce(target: URL, headers: Headers): Promise<Response> {
     const init: RequestInit = {
       method: req.method,
       headers,
@@ -121,6 +121,27 @@ async function forward(req: NextRequest, segments: string[]) {
       if (ct) headers.set("Content-Type", ct);
     }
     return fetch(target, init);
+  }
+
+  async function upstream(target: URL, headers: Headers): Promise<Response> {
+    // During local dev we rebuild/restart api-service frequently; a short retry makes status polling resilient.
+    const canRetry = req.method === "GET" || req.method === "HEAD";
+    const attempts = canRetry ? 4 : 1;
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await upstreamOnce(target, headers);
+      } catch (e) {
+        lastErr = e;
+        // Only retry on "network-ish" errors (ECONNREFUSED / fetch failed).
+        const msg = e instanceof Error ? e.message : "";
+        if (!canRetry) break;
+        if (msg && !msg.includes("ECONNREFUSED") && !msg.includes("fetch failed")) break;
+        const delayMs = 150 * Math.pow(2, i); // 150, 300, 600, 1200ms
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+    throw lastErr;
   }
 
   const headers = new Headers();
