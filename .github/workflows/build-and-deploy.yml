@@ -49,6 +49,10 @@ on:
         description: "Push images only; do not run deploy jobs"
         type: boolean
         default: false
+      fast_build:
+        description: "Build amd64 only (skip arm64) — ~50% faster"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-main
@@ -211,9 +215,14 @@ jobs:
         id: plat
         env:
           CI_DOCKER_PLATFORMS: ${{ vars.CI_DOCKER_PLATFORMS }}
+          INPUT_FAST_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.fast_build == true && 'true' || 'false' }}
         run: |
           set -euo pipefail
-          if [ -n "${CI_DOCKER_PLATFORMS:-}" ]; then
+          # Fast build: amd64 only (skip arm64/QEMU) — ~50% faster
+          if [ "${INPUT_FAST_BUILD:-}" = "true" ]; then
+            P="linux/amd64"
+            echo "Fast build: using amd64 only (skipping arm64)"
+          elif [ -n "${CI_DOCKER_PLATFORMS:-}" ]; then
             case ",${CI_DOCKER_PLATFORMS}," in
               *,linux/arm64,*|*,arm64,*) P="linux/arm64" ;;
               *)
@@ -226,7 +235,7 @@ jobs:
           fi
           echo "platforms=${P}" >> "$GITHUB_OUTPUT"
           case ",${P}," in
-            *,linux/arm64,*|*,arm64,*) echo "need_qemu=true" >> "$GITHUB_OUTPUT" ;;
+            *,linux/arm64,*|*,arm64*) echo "need_qemu=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "need_qemu=false" >> "$GITHUB_OUTPUT" ;;
           esac
           echo "Using PLATFORMS=${P}" >> "$GITHUB_STEP_SUMMARY"
