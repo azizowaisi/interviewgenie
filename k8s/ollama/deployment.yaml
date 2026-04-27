@@ -37,7 +37,7 @@ spec:
               mountPath: /root/.ollama
         - name: pull-mistral-model
           image: ollama/ollama:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command:
             - sh
             - -c

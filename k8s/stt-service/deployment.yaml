@@ -23,7 +23,7 @@ spec:
       containers:
         - name: stt-service
           image: azizowaisi/interview-ai-stt-service:sha-0000000
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           resources:

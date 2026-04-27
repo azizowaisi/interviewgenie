@@ -26,7 +26,7 @@ spec:
       containers:
         - name: monitoring-service
           image: azizowaisi/interview-ai-monitoring-service:sha-0000000
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 3001
               name: http

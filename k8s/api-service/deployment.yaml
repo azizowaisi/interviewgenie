@@ -25,7 +25,7 @@ spec:
         - name: api-service
           image: azizowaisi/interview-ai-api-service:sha-0000000
           # IfNotPresent avoids Docker Hub rate limits; production pins immutable sha-* tags via CI.
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 8001
           volumeMounts:

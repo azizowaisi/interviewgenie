@@ -23,7 +23,7 @@ spec:
       containers:
         - name: cv-parser-service
           image: azizowaisi/interview-ai-cv-parser-service:sha-0000000
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           env:
             - name: PDF_PARSE_MAX_PAGES
               value: "4"
