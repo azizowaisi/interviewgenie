@@ -3,7 +3,7 @@
 # Caching: GHA cache (per service scope) + optional Docker registry :cache tag.
 #
 # Required env: IMAGE_SLUG — api-service | audio-service | stt-service | question-service |
-#                          llm-service | formatter-service | monitoring-service | web
+#                          llm-service | cv-renderer-service | formatter-service | monitoring-service | web
 # Required env: DH_USER, IMAGE_TAG (e.g. sha-abc123def456)
 # Optional: PLATFORMS (CI sets this; default matches workflow: multi-arch)
 # Optional: WEB_DOCKER_PLATFORMS — when IMAGE_SLUG=web and this is non-empty, overrides PLATFORMS
@@ -28,6 +28,7 @@ case "${SLUG}" in
   question-service) CONTEXT_DIR="./backend/question-service" ;;
   llm-service) CONTEXT_DIR="./backend/llm-service" ;;
   formatter-service) CONTEXT_DIR="./backend/formatter-service" ;;
+  cv-renderer-service) CONTEXT_DIR="./backend/cv-renderer-service" ;;
   cv-parser-service) CONTEXT_DIR="./backend/cv-parser-service" ;;
   monitoring-service) CONTEXT_DIR="./backend/monitoring-service" ;;
   web) CONTEXT_DIR="./web" ;;

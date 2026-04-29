@@ -28,6 +28,7 @@ DEPLOYS=(
   stt-service
   question-service
   llm-service
+  cv-renderer-service
   formatter-service
   cv-parser-service
   monitoring-service
@@ -40,6 +41,7 @@ SERVICE_PORTS=(
   stt-service:8000
   question-service:8000
   llm-service:8000
+  cv-renderer-service:8000
   formatter-service:8000
   cv-parser-service:8000
   monitoring-service:3001
@@ -141,31 +143,32 @@ checks = [
     ("stt-service", 8000),
     ("question-service", 8000),
     ("llm-service", 8000),
+    ("cv-renderer-service", 8000),
     ("formatter-service", 8000),
     ("cv-parser-service", 8000),
     ("monitoring-service", 3001),
     ("web", 3002),
 ]
 
-  optional = {s.strip() for s in os.environ.get("OPTIONAL_SERVICES_CSV", "").split(",") if s.strip()}
-  failed_required = []
-  failed_optional = []
+optional = {s.strip() for s in os.environ.get("OPTIONAL_SERVICES_CSV", "").split(",") if s.strip()}
+failed_required = []
+failed_optional = []
 for host, port in checks:
     try:
         with socket.create_connection((host, port), timeout=4):
             print(f"OK   tcp://{host}:{port}")
     except Exception as exc:
-      if host in optional:
-        print(f"WARN tcp://{host}:{port} -> {exc} (optional)")
-        failed_optional.append((host, port))
-      else:
-        print(f"FAIL tcp://{host}:{port} -> {exc}")
-        failed_required.append((host, port))
+        if host in optional:
+            print(f"WARN tcp://{host}:{port} -> {exc} (optional)")
+            failed_optional.append((host, port))
+        else:
+            print(f"FAIL tcp://{host}:{port} -> {exc}")
+            failed_required.append((host, port))
 
-  if failed_required:
+if failed_required:
     sys.exit(1)
 
-  if failed_optional:
+if failed_optional:
     print("WARN optional connectivity failures:", ", ".join(f"{h}:{p}" for h, p in failed_optional))
 PY
 

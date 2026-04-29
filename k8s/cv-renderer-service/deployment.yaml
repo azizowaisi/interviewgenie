@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cv-renderer-service
+  namespace: interview-ai
+  labels:
+    app: cv-renderer-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cv-renderer-service
+  template:
+    metadata:
+      labels:
+        app: cv-renderer-service
+    spec:
+      containers:
+        - name: cv-renderer-service
+          image: azizowaisi/interview-ai-cv-renderer-service:sha-0000000
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10

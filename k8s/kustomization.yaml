@@ -24,6 +24,8 @@ resources:
   - question-service/service.yaml
   - llm-service/deployment.yaml
   - llm-service/service.yaml
+  - cv-renderer-service/deployment.yaml
+  - cv-renderer-service/service.yaml
   - formatter-service/deployment.yaml
   - formatter-service/service.yaml
   - cv-parser-service/deployment.yaml

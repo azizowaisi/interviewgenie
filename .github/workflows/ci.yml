@@ -23,7 +23,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  SERVICES: api-service audio-service stt-service question-service llm-service formatter-service cv-parser-service monitoring-service
+  SERVICES: api-service audio-service stt-service question-service llm-service cv-renderer-service formatter-service cv-parser-service monitoring-service
 
 jobs:
   # Path filter + build flags (aligned with build-and-deploy detect job).
@@ -38,6 +38,7 @@ jobs:
       build_stt_service: ${{ steps.resolve.outputs.build_stt_service }}
       build_question_service: ${{ steps.resolve.outputs.build_question_service }}
       build_llm_service: ${{ steps.resolve.outputs.build_llm_service }}
+      build_cv_renderer_service: ${{ steps.resolve.outputs.build_cv_renderer_service }}
       build_formatter_service: ${{ steps.resolve.outputs.build_formatter_service }}
       build_cv_parser_service: ${{ steps.resolve.outputs.build_cv_parser_service }}
       build_monitoring_service: ${{ steps.resolve.outputs.build_monitoring_service }}
@@ -69,6 +70,8 @@ jobs:
               - 'backend/llm-service/**'
             formatter_service:
               - 'backend/formatter-service/**'
+            cv_renderer_service:
+              - 'backend/cv-renderer-service/**'
             cv_parser_service:
               - 'backend/cv-parser-service/**'
             monitoring_service:
@@ -96,6 +99,7 @@ jobs:
           FILTER_QUESTION_SERVICE: ${{ steps.filter.outputs.question_service }}
           FILTER_LLM_SERVICE: ${{ steps.filter.outputs.llm_service }}
           FILTER_FORMATTER_SERVICE: ${{ steps.filter.outputs.formatter_service }}
+          FILTER_CV_RENDERER_SERVICE: ${{ steps.filter.outputs.cv_renderer_service }}
           FILTER_CV_PARSER_SERVICE: ${{ steps.filter.outputs.cv_parser_service }}
           FILTER_MONITORING_SERVICE: ${{ steps.filter.outputs.monitoring_service }}
           FILTER_WEB: ${{ steps.filter.outputs.web }}

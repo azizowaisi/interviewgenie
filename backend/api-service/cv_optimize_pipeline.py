@@ -223,6 +223,29 @@ async def _generate_rules_with_progress(
     progress: callable,
     ats_hints: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    def _fallback_rules_from_ats() -> dict[str, Any]:
+        out: dict[str, Any] = {"rewrite_summary": True, "rewrite_experience_indices": []}
+        if not isinstance(ats_hints, dict):
+            return out
+        rs = ats_hints.get("rewrite_summary")
+        rexp = ats_hints.get("rewrite_experience_indices")
+        if isinstance(rs, bool):
+            out["rewrite_summary"] = rs
+        if isinstance(rexp, list):
+            vals: list[int] = []
+            for v in rexp:
+                try:
+                    i = int(v)
+                except Exception:
+                    continue
+                if i >= 0:
+                    vals.append(i)
+            out["rewrite_experience_indices"] = vals
+        ms = ats_hints.get("suggested_skills_to_add")
+        if isinstance(ms, list) and ms:
+            out["missing_skills"] = [str(x).strip() for x in ms if str(x).strip()][:24]
+        return out
+
     progress("rules_prompt", 35, "Preparing ATS rules for the LLM")
     progress("rules_llm", 45, "Generating ATS rules…")
     # If we already have structured ATS hints from /ats/analyze, skip the expensive rules LLM step.
@@ -260,8 +283,14 @@ async def _generate_rules_with_progress(
     if not raw_rules:
         raise HTTPException(502, detail="Empty response from LLM service (rules)")
     progress("rules_parse", 52, "Parsing ATS rules")
-    rules_obj = parse_llm_json_object(raw_rules)
-    return rules_obj if isinstance(rules_obj, dict) else {}
+    try:
+        rules_obj = parse_llm_json_object(raw_rules)
+        return rules_obj if isinstance(rules_obj, dict) else {}
+    except HTTPException:
+        # LLMs can sometimes emit prose/truncated JSON under CPU pressure.
+        # Do not fail the full pipeline; continue with ATS-derived deterministic defaults.
+        progress("rules_parse_fallback", 54, "Rules JSON malformed; using ATS-safe fallback rules")
+        return _fallback_rules_from_ats()
 
 
 async def warmup_llm(*, llm_service_url: str) -> None:

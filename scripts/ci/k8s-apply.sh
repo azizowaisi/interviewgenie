@@ -24,7 +24,7 @@ NS="${K8S_NAMESPACE:-interview-ai}"
 ROLLOUT_TIMEOUT="${K8S_ROLLOUT_TIMEOUT:-240s}"
 WAIT_FOR_ROLLOUT="${K8S_WAIT_FOR_ROLLOUT:-1}"
 # App Deployments that receive Hub images (must match set_image loop below).
-ALL_APP_DEPLOYMENTS="api-service audio-service stt-service question-service llm-service formatter-service cv-parser-service monitoring-service web"
+ALL_APP_DEPLOYMENTS="api-service audio-service stt-service question-service llm-service cv-renderer-service formatter-service cv-parser-service monitoring-service web"
 ROLLOUT_TARGETS="${ALL_APP_DEPLOYMENTS}"
 
 SNAP_DIR=""
@@ -176,6 +176,7 @@ if [[ -n "${DOCKERHUB_USERNAME:-}" ]] && [[ "${K8S_SKIP_SET_IMAGE:-}" != "1" ]];
         stt-service) set_image_for stt-service stt-service "$DH" ;;
         question-service) set_image_for question-service question-service "$DH" ;;
         llm-service) set_image_for llm-service llm-service "$DH" ;;
+        cv-renderer-service) set_image_for cv-renderer-service cv-renderer-service "$DH" ;;
         formatter-service) set_image_for formatter-service formatter-service "$DH" ;;
         monitoring-service) set_image_for monitoring-service monitoring-service "$DH" ;;
         web) set_image_for web web "$DH" ;;

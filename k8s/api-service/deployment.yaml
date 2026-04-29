@@ -40,6 +40,8 @@ spec:
               value: "/cv_storage"
             - name: LLM_SERVICE_URL
               value: "http://llm-service:8000"
+            - name: CV_RENDERER_URL
+              value: "http://cv-renderer-service:8000"
             # Production reliability profile for inline CV optimize flow on CPU-backed Ollama.
             - name: CV_OPTIMIZE_EXECUTION_MODE
               value: "inline"
