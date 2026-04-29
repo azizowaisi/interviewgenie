@@ -11,6 +11,11 @@ metadata:
     model: mistral
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app: ollama
@@ -65,6 +70,10 @@ spec:
               value: "127.0.0.1:11434"
             - name: OLLAMA_MODELS
               value: /root/.ollama/models
+            - name: OLLAMA_NUM_PARALLEL
+              value: "1"
+            - name: OLLAMA_MAX_LOADED_MODELS
+              value: "1"
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
@@ -79,11 +88,16 @@ spec:
               value: "0.0.0.0"
             - name: OLLAMA_MODELS
               value: /root/.ollama/models
-            # Two concurrent /generate calls (e.g. parallel CV sections) on 48 GiB node; set "1" only if OOM.
+            # Keep a single active generate on CPU nodes for stability.
             - name: OLLAMA_NUM_PARALLEL
-              value: "2"
+              value: "1"
             - name: OLLAMA_MAX_LOADED_MODELS
               value: "1"
+            # Avoid mid-request termination of long CPU generations.
+            - name: OLLAMA_LOAD_TIMEOUT
+              value: "20m"
+            - name: OLLAMA_KEEP_ALIVE
+              value: "30m"
           volumeMounts:
             - name: models
               mountPath: /root/.ollama

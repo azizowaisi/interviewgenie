@@ -156,12 +156,16 @@ async def _call_llm_generate_with_progress_pulse(
     num_predict: int | None = None,
 ) -> str:
     """Wait on the LLM and refresh the status line periodically so the job does not look stuck."""
+    import contextlib
     try:
         interval = float(os.getenv("CV_OPTIMIZE_LLM_PULSE_SECONDS", "12"))
     except Exception:
         interval = 12.0
     interval = max(5.0, min(interval, 60.0))
 
+    # NOTE: httpx "timeout" is not a hard deadline — it's per-operation. If the server keeps the
+    # connection alive (e.g., slow drip / proxy buffering), it can exceed the intended wall clock.
+    # Enforce a hard deadline here to avoid the common "stuck at 45%" production failure mode.
     task = asyncio.create_task(call_llm_generate(prompt, llm_service_url, timeout=timeout, num_predict=num_predict))
     elapsed = 0.0
     while True:
@@ -169,6 +173,14 @@ async def _call_llm_generate_with_progress_pulse(
         if task in done:
             return task.result()
         elapsed += interval
+        if elapsed >= timeout:
+            task.cancel()
+            with contextlib.suppress(Exception):
+                await task
+            raise HTTPException(
+                504,
+                detail=f"LLM timeout after {int(timeout)}s at stage={stage}. Ollama/CPU models may be overloaded; try again or reduce job size.",
+            )
         em = int(elapsed // 60)
         es = int(elapsed % 60)
         if em:

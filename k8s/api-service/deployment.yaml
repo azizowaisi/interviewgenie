@@ -40,6 +40,21 @@ spec:
               value: "/cv_storage"
             - name: LLM_SERVICE_URL
               value: "http://llm-service:8000"
+            # Production reliability profile for inline CV optimize flow on CPU-backed Ollama.
+            - name: CV_OPTIMIZE_EXECUTION_MODE
+              value: "inline"
+            - name: LLM_OPTIMIZE_TIMEOUT_SECONDS
+              value: "1500"
+            - name: CV_OPTIMIZE_RULES_TIMEOUT_SECONDS
+              value: "900"
+            - name: CV_OPTIMIZE_LLM_PULSE_SECONDS
+              value: "8"
+            - name: CV_OPTIMIZE_RULES_NUM_PREDICT
+              value: "24"
+            - name: CV_OPTIMIZE_SUMMARY_NUM_PREDICT
+              value: "60"
+            - name: CV_OPTIMIZE_BULLETS_NUM_PREDICT
+              value: "80"
             # Traefik strips /api/svc before traffic reaches this pod; OpenAPI + root JSON use public paths.
             - name: PUBLIC_API_PATH_PREFIX
               value: "/api/svc"

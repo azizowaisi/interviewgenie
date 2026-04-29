@@ -23,7 +23,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  SERVICES: api-service audio-service stt-service question-service llm-service formatter-service monitoring-service
+  SERVICES: api-service audio-service stt-service question-service llm-service formatter-service cv-parser-service monitoring-service
 
 jobs:
   # Path filter + build flags (aligned with build-and-deploy detect job).
@@ -39,6 +39,7 @@ jobs:
       build_question_service: ${{ steps.resolve.outputs.build_question_service }}
       build_llm_service: ${{ steps.resolve.outputs.build_llm_service }}
       build_formatter_service: ${{ steps.resolve.outputs.build_formatter_service }}
+      build_cv_parser_service: ${{ steps.resolve.outputs.build_cv_parser_service }}
       build_monitoring_service: ${{ steps.resolve.outputs.build_monitoring_service }}
       build_web: ${{ steps.resolve.outputs.build_web }}
       tests_any: ${{ steps.resolve.outputs.tests_any }}
