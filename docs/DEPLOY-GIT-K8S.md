@@ -22,14 +22,14 @@ Manifests include **readiness probes**, **rolling update** strategies, and **Hor
 
 **Deploy** passes **`DOCKERHUB_TOKEN`** into **`k8s-apply.sh`**, which creates a namespace **pull secret** and patches service accounts so **mongo** and app images pull with **authenticated** Docker Hub limits.
 
-Full diagram and checklist: **`docs/ORACLE-ARCHITECTURE.md`**.
+Full diagram and checklist: see **`docs/DEPLOY-WEB-ADMIN-GIT.md`** and **`docs/K8S-LLM-FULL-ARCHITECTURE.md`**.
 
 ### HTTPS / Let’s Encrypt (Electron & CLI TLS errors)
 
 If browsers show **certificate** errors, Traefik is often still on the **default self-signed** cert. Ensure:
 
 1. **`IngressRoute` TLS** — `k8s/ingress/ingressroute.yaml` includes `tls.certResolver: le` and `domains` for your hostname (resolver name **`le`** matches Traefik `HelmChartConfig`).
-2. **ACME email** — Default in `k8s/traefik/helmchartconfig.yaml` is **`azizowaisi@teckiz.com`**. To use another address, edit that file or set GitHub secret **`LETSENCRYPT_EMAIL`** (SSH deploy overwrites the default when the secret is non-empty).
+2. **ACME email** — Default in `k8s/traefik/helmchartconfig.yaml` is an example (`you@example.com`). To use your real address, edit that file or set GitHub secret **`LETSENCRYPT_EMAIL`** (SSH deploy overwrites the default when the secret is non-empty).
 3. **Challenge type** — The chart uses **TLS-ALPN-01** on **port 443** (not HTTP-01 on 80), so it still works when Traefik redirects **HTTP → HTTPS** on port 80. Port **443** must be reachable from the internet.
 
 After upgrading from an older manifest that had a second `IngressRoute` named **`interview-ai-ws`**, remove it once:  
@@ -91,7 +91,7 @@ export DOCKERHUB_USERNAME=youruser   # optional, if cluster pulls from Hub
 
 ## Recommended approach (Oracle VM): self-hosted runner (no public 6443)
 
-For a single VM like your Oracle instance (`132.226.198.193`), the cleanest approach is to run a **GitHub self-hosted runner on the VM** and let it run `kubectl apply` locally. This avoids exposing the Kubernetes API (port **6443**) to the internet.
+For a single VM, the cleanest approach is to run a **GitHub self-hosted runner on the VM** and let it run `kubectl apply` locally. This avoids exposing the Kubernetes API (port **6443**) to the internet.
 
 You will:
 
@@ -225,7 +225,7 @@ Add these GitHub repo secrets:
 
 | Secret | Example | Notes |
 |--------|---------|------|
-| `SSH_HOST` | `132.226.198.193` | Your VM public IP |
+| `SSH_HOST` | `203.0.113.10` | Your VM public IP |
 | `SSH_USER` | `ubuntu` | Or whatever user you SSH as |
 | `SSH_PRIVATE_KEY` | *(private key text)* | The private key that matches an authorized key on the VM |
 | `LETSENCRYPT_EMAIL` | `you@company.com` | Required for TLS |
@@ -233,7 +233,7 @@ Add these GitHub repo secrets:
 
 Also ensure:
 
-- DNS `A` record: `interviewgenie.teckiz.com` → `132.226.198.193`
+- DNS `A` record: `interviewgenie.example.com` → `203.0.113.10`
 - OCI ingress rules open **80/443** (and **22** for SSH)
 
 Set repository variable **`DEPLOY_MODE`** = `ssh` **and** the SSH secrets above; then pushes to `main` run the `deploy_ssh_bootstrap` job.

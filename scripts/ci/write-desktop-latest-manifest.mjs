@@ -21,7 +21,7 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const version = String(pkg.version || "0.0.0").trim();
 const downloadPage =
   process.env.DESKTOP_DOWNLOAD_PAGE?.trim() ||
-  "https://interviewgenie.teckiz.com/#desktop-app";
+  "https://interviewgenie.example.com/#desktop-app";
 const minVersion =
   process.env.DESKTOP_MIN_VERSION?.trim() || version;
 

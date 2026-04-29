@@ -8,9 +8,9 @@ Goal: **same behavior as local full stack** — Next.js on **3002** semantics, *
 
 | Record | Type | Value |
 |--------|------|--------|
-| `interviewgenie.teckiz.com` | A | Your VM / load balancer public IP |
-| `www.interviewgenie.teckiz.com` | A | *(optional)* same IP |
-| `admin.interviewgenie.teckiz.com` | A | **Same IP** as main site |
+| `interviewgenie.example.com` | A | Your VM / load balancer public IP |
+| `www.interviewgenie.example.com` | A | *(optional)* same IP |
+| `admin.interviewgenie.example.com` | A | **Same IP** as main site |
 
 Ingress uses **Traefik** + **Let’s Encrypt** (`certResolver: le`). Ports **80** and **443** must be open from the internet.
 
@@ -40,7 +40,7 @@ You can keep **`DEPLOY_MODE` as a repository secret** (as you already do); the w
 
 ### Optional Variables (custom domains / host lists)
 
-If you use hostnames **other than** `*.interviewgenie.teckiz.com`, set:
+If you use hostnames **other than** `*.interviewgenie.example.com`, set:
 
 | Variable | Example |
 |----------|---------|
@@ -93,12 +93,12 @@ export DOCKERHUB_USERNAME=your-dockerhub-user
 
 | Local | Production |
 |-------|------------|
-| http://localhost:3002 | `https://interviewgenie.teckiz.com` → **web:3002** (default route); **`/`** is Next.js only |
+| http://localhost:3002 | `https://interviewgenie.example.com` → **web:3002** (default route); **`/`** is Next.js only |
 | http://localhost:8001 | **`/api/svc/*`** (Traefik strips prefix) → **api-service:8001** — e.g. `/api/svc/health`, `/api/svc/docs` |
 | `http://localhost:8000/mock/...` | **`/api/audio/*`** (strip prefix) → **audio-service:8000** |
-| `ws://localhost:8000/ws/...` | `wss://interviewgenie.teckiz.com/ws/...` → **audio-service:8000** |
+| `ws://localhost:8000/ws/...` | `wss://interviewgenie.example.com/ws/...` → **audio-service:8000** |
 | http://localhost:3001 (stub) | **No stub in k8s** — Next BFF calls **`http://monitoring-service:3001`** inside the cluster |
-| `/admin` on main host redirects | `https://admin.interviewgenie.teckiz.com` → **web:3002** (middleware serves `/admin`) |
+| `/admin` on main host redirects | `https://admin.interviewgenie.example.com` → **web:3002** (middleware serves `/admin`) |
 
 Manifests: `k8s/ingress/ingressroute.yaml`, `k8s/ingress/admin-ingressroute.yaml`, `k8s/web-service/deployment.yaml` (`API_URL`, `AUDIO_URL`, `MONITORING_URL`).
 
@@ -128,11 +128,11 @@ Without **`MONITORING_ADMIN_TOKEN`** on **web** while the secret exists on **mon
 
 ```bash
 kubectl get pods -n interview-ai
-curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.teckiz.com/
-curl -fsS -o /dev/null -w "%{http_code}\n" https://admin.interviewgenie.teckiz.com/
-curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.teckiz.com/api/svc/health
+curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.example.com/
+curl -fsS -o /dev/null -w "%{http_code}\n" https://admin.interviewgenie.example.com/
+curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.example.com/api/svc/health
 # Optional: bare /health should 308 to /api/svc/health (Next middleware)
-curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.teckiz.com/health
+curl -fsS -o /dev/null -w "%{http_code}\n" https://interviewgenie.example.com/health
 ```
 
 LLM (first time):

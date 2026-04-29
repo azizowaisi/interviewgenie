@@ -1,6 +1,12 @@
-# AI Real-Time Interview Assistant (Interview Genie)
+# InterviewGenie — real-time AI interview assistant + ATS CV optimizer
 
-**Offline-capable, open-source** interview assistant: speak into the mic, get a **STAR-format** answer (Situation, Task, Action, Result) from a local LLM. Voice uses **Whisper** (local speech-to-text); answers use **Ollama** (local LLM). Run with **Docker Compose** on one machine, or deploy with **Kubernetes** (e.g. k3s).
+**Offline-capable, open-source** interview prep toolkit:
+
+- **Real-time voice interview assistant**: speak into the mic → get a short **STAR-format** answer (Situation, Task, Action, Result) that **streams** back token-by-token.
+- **ATS CV optimizer**: upload a CV + job description → generate an ATS-friendly `.docx` locally (LLM + deterministic renderer).
+- **Optional Auth0 login**: run fully **no-login** in local/dev, or enable Auth0 for production-style sessions and saved history.
+
+Voice uses **Whisper** (local speech-to-text). Answers and CV optimization use **Ollama** (local LLM). Run with **Docker Compose** on one machine, or deploy with **Kubernetes** (commonly **k3s** on a single VM).
 
 ---
 
@@ -125,7 +131,7 @@ kubectl exec -n interview-ai deploy/ollama -- ollama pull mistral
 
 Manifests under **`k8s/`** define routing: web BFF, WebSocket to audio, API paths to **api-service**, optional admin host. STT expects a **Whisper** endpoint (`WHISPER_URL`); add a Whisper workload or an external URL as needed.
 
-**Further reading:** [docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md), [docs/DEPLOY-WEB-ADMIN-GIT.md](docs/DEPLOY-WEB-ADMIN-GIT.md), [docs/AUTH0-WEBSITE.md](docs/AUTH0-WEBSITE.md), [docs/MONITORING-ADMIN.md](docs/MONITORING-ADMIN.md), [docs/VUE-FRONTENDS.md](docs/VUE-FRONTENDS.md), [docs/K8S-SCALING-AND-ROLLING.md](docs/K8S-SCALING-AND-ROLLING.md), [docs/K8S-LLM-FULL-ARCHITECTURE.md](docs/K8S-LLM-FULL-ARCHITECTURE.md) (LLM/Ollama resource path on one node).
+**Further reading:** [docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md), [docs/DEPLOY-WEB-ADMIN-GIT.md](docs/DEPLOY-WEB-ADMIN-GIT.md), [docs/AUTH0-WEBSITE.md](docs/AUTH0-WEBSITE.md), [docs/MONITORING-ADMIN.md](docs/MONITORING-ADMIN.md), [docs/K8S-SCALING-AND-ROLLING.md](docs/K8S-SCALING-AND-ROLLING.md), [docs/K8S-LLM-FULL-ARCHITECTURE.md](docs/K8S-LLM-FULL-ARCHITECTURE.md) (LLM/Ollama resource path on one node).
 
 ---
 
@@ -152,7 +158,15 @@ Answers **stream** to the client. **Audio service** can call LLM **`/warmup`** o
 - **LLM Service:** `OLLAMA_HOST` (default `http://ollama:11434`), `OLLAMA_MODEL` (default `mistral`)
 - **Whisper Service:** `WHISPER_MODEL` — `base` (default) or `small`
 
-Auth0 for the **website** (callbacks, API audience, social logins): **`docs/AUTH0-WEBSITE.md`**. If login or **Save Job** has failed for days: **`docs/AUTH0-END-TO-END-FIX.md`** (ordered kubectl + secret patch). CI and Kubernetes secrets: **`docs/GITHUB-ENVIRONMENT.md`**. Local: copy **`web/.env.local.example`** → **`web/.env.local`** (and see **`web/.env.example`**).
+### Local env files
+
+- Repo root: copy **`.env.example`** → **`.env`** (gitignored) for local Compose defaults and build args.
+- Web app (recommended for Auth0/middleware): copy **`web/.env.local.example`** → **`web/.env.local`** (gitignored). The values can match the root `.env`.
+- Web service routing: see **`web/.env.example`** for `API_URL`, `AUDIO_URL`, `MONITORING_URL`, and `NEXT_PUBLIC_*` build-time variables.
+
+### Auth0 (optional)
+
+Auth0 for the **website** (callbacks, API audience, social logins): **`docs/AUTH0-WEBSITE.md`**. If login or **Save Job** has failed for days: **`docs/AUTH0-END-TO-END-FIX.md`** (ordered kubectl + secret patch). CI and Kubernetes secrets: **`docs/GITHUB-ENVIRONMENT.md`**.
 
 ---
 
@@ -200,8 +214,18 @@ Details: **[docs/DEPLOY-GIT-K8S.md](docs/DEPLOY-GIT-K8S.md)**, **[docs/BRANCH-PR
 ## Security notes
 
 - Use **TLS** and **`wss://`** when exposing the stack publicly.
-- Keep secrets in env / Kubernetes Secrets, not in git.
+- Keep secrets in env / Kubernetes Secrets, **not** in git (including in comments or “example” files).
 - Restrict or authenticate admin and API surfaces as needed.
+
+### If a secret was ever committed
+
+If you discover (or are notified) that an OAuth/Auth0 credential was committed at any point:
+
+- **Rotate it immediately** in the provider dashboard (e.g. Auth0 application **Client Secret**).
+- **Invalidate any derived sessions/tokens** as appropriate for your tenant/app.
+- Update your deployment secrets (`web-auth0-env` in k8s, or local `.env` / `web/.env.local`) and restart pods/containers.
+
+This repo ships only placeholder values in env examples; your real values must live in **gitignored files** or **Kubernetes Secrets**.
 
 ---
 

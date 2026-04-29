@@ -391,7 +391,7 @@
     </main>
   </div>
   <!-- Injected at runtime by Electron main.js from INTERVIEWGENIE_* env (defaults: production) -->
-  <script type="application/json" id="interviewgenie-backend-config">{"apiBase":"https://interviewgenie.teckiz.com/api/svc","audioBase":"https://interviewgenie.teckiz.com/api/audio","wsUrl":"wss://interviewgenie.teckiz.com/ws/audio"}</script>
+  <script type="application/json" id="interviewgenie-backend-config">{"apiBase":"https://interviewgenie.example.com/api/svc","audioBase":"https://interviewgenie.example.com/api/audio","wsUrl":"wss://interviewgenie.example.com/ws/audio"}</script>
   <script>
 (function () {
   var DEFAULT_WS_URL;
@@ -400,13 +400,13 @@
   try {
     var el = document.getElementById('interviewgenie-backend-config');
     var cfg = el ? JSON.parse(el.textContent) : {};
-    DEFAULT_API_BASE = cfg.apiBase || 'https://interviewgenie.teckiz.com/api/svc';
-    DEFAULT_AUDIO_BASE = cfg.audioBase || 'https://interviewgenie.teckiz.com/api/audio';
-    DEFAULT_WS_URL = cfg.wsUrl || 'wss://interviewgenie.teckiz.com/ws/audio';
+    DEFAULT_API_BASE = cfg.apiBase || 'https://interviewgenie.example.com/api/svc';
+    DEFAULT_AUDIO_BASE = cfg.audioBase || 'https://interviewgenie.example.com/api/audio';
+    DEFAULT_WS_URL = cfg.wsUrl || 'wss://interviewgenie.example.com/ws/audio';
   } catch (e) {
-    DEFAULT_API_BASE = 'https://interviewgenie.teckiz.com';
-    DEFAULT_AUDIO_BASE = 'https://interviewgenie.teckiz.com';
-    DEFAULT_WS_URL = 'wss://interviewgenie.teckiz.com/ws/audio';
+    DEFAULT_API_BASE = 'https://interviewgenie.example.com';
+    DEFAULT_AUDIO_BASE = 'https://interviewgenie.example.com';
+    DEFAULT_WS_URL = 'wss://interviewgenie.example.com/ws/audio';
   }
   var startBtn = document.getElementById('startBtn');
   var stopBtn = document.getElementById('stopBtn');

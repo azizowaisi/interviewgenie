@@ -14,7 +14,8 @@ spec:
     certificatesResolvers:
       le:
         acme:
-          email: azizowaisi@teckiz.com
+          # Set this to your real email (or override via GitHub secret LETSENCRYPT_EMAIL in CI deploy).
+          email: you@example.com
           storage: /data/acme.json
           tlsChallenge: true
     persistence:

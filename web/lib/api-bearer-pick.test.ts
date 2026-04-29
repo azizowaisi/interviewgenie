@@ -28,7 +28,7 @@ describe("pickJwtBearer", () => {
 });
 
 describe("pickJwtBearerForApi", () => {
-  const apiAud = "https://api.interviewgenie.teckiz.com";
+  const apiAud = "https://api.interviewgenie.example.com";
 
   it("prefers id_token even when access token has wrong audience", () => {
     const now = Math.floor(Date.now() / 1000);
@@ -47,7 +47,7 @@ describe("pickJwtBearerForApi", () => {
 });
 
 describe("shouldSetAuthorizationFromSdkAccessToken", () => {
-  const apiAud = "https://api.interviewgenie.teckiz.com";
+  const apiAud = "https://api.interviewgenie.example.com";
 
   it("does not forward SDK token when audience is required but missing or wrong (fall back to id_token)", () => {
     expect(shouldSetAuthorizationFromSdkAccessToken(apiAud, { token: "opaque-default", audience: undefined })).toBe(

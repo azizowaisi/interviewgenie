@@ -9,7 +9,7 @@
     return true;
   };
 
-  const DEFAULT_WS_URL = 'wss://interviewgenie.teckiz.com/ws/audio';
+  const DEFAULT_WS_URL = 'wss://interviewgenie.example.com/ws/audio';
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
   const statusEl = document.getElementById('status');

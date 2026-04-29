@@ -17,10 +17,10 @@ Set as **repository Variables** (recommended) unless you treat hostnames as sens
 
 | Name | Type | Example production value | Notes |
 |------|------|--------------------------|--------|
-| `WEB_PUBLIC_APP_URL` | Variable | `https://interviewgenie.teckiz.com` | Public site origin (no trailing slash). **Required** for production builds; if empty, CI falls back to `http://localhost:3002`. |
-| `WEB_ADMIN_SITE_URL` | Variable | `https://admin.interviewgenie.teckiz.com` | Admin UI origin; leave empty if you do not use a separate admin hostname. |
-| `WEB_ADMIN_HOSTS` | Variable | `admin.interviewgenie.teckiz.com` | Comma-separated hostnames for the admin site. |
-| `WEB_MAIN_APP_HOSTS` | Variable | `interviewgenie.teckiz.com,www.interviewgenie.teckiz.com` | Comma-separated main app hostnames (middleware / redirects). |
+| `WEB_PUBLIC_APP_URL` | Variable | `https://interviewgenie.example.com` | Public site origin (no trailing slash). **Required** for production builds; if empty, CI falls back to `http://localhost:3002`. |
+| `WEB_ADMIN_SITE_URL` | Variable | `https://admin.interviewgenie.example.com` | Admin UI origin; leave empty if you do not use a separate admin hostname. |
+| `WEB_ADMIN_HOSTS` | Variable | `admin.interviewgenie.example.com` | Comma-separated hostnames for the admin site. |
+| `WEB_MAIN_APP_HOSTS` | Variable | `interviewgenie.example.com,www.interviewgenie.example.com` | Comma-separated main app hostnames (middleware / redirects). |
 
 Used by: `build-and-deploy.yml`, `ci.yml` (matrix web build), `gha-build-single-image.sh`, `gha-docker-build-push.sh`.
 

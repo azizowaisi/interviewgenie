@@ -70,7 +70,7 @@ spec:
                 - -e
                 - |
                   const http = require("http");
-                  const hosts = ["interviewgenie.teckiz.com", "admin.interviewgenie.teckiz.com"];
+                  const hosts = ["interviewgenie.example.com", "admin.interviewgenie.example.com"];
                   let i = 0;
                   function fail() {
                     process.exit(1);
@@ -103,6 +103,6 @@ spec:
               port: 3002
               httpHeaders:
                 - name: Host
-                  value: interviewgenie.teckiz.com
+                  value: interviewgenie.example.com
             initialDelaySeconds: 15
             periodSeconds: 20

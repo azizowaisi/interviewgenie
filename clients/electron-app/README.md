@@ -7,7 +7,7 @@ npm install
 npm start
 ```
 
-By default the app talks to **production**: FastAPI at `https://interviewgenie.teckiz.com/api/svc`, audio HTTP at `https://interviewgenie.teckiz.com/api/audio`, and `wss://interviewgenie.teckiz.com/ws/audio` (live audio). Run with `npm start` — no env vars needed.
+By default the app talks to **production** (example): FastAPI at `https://interviewgenie.example.com/api/svc`, audio HTTP at `https://interviewgenie.example.com/api/audio`, and `wss://interviewgenie.example.com/ws/audio` (live audio). Run with `npm start` — no env vars needed.
 
 ### Use a local backend (Docker)
 
@@ -61,7 +61,7 @@ For production, set `INTERVIEWGENIE_AUTH0_CALLBACK_URL` to your production callb
 
 Your server may still be on **Traefik’s default self-signed** cert until **Let’s Encrypt** succeeds (see repo `k8s/ingress/ingressroute.yaml` + real ACME email in `k8s/traefik/helmchartconfig.yaml`, port **80** open).
 
-**Built-in behavior:** the Electron **main process** skips TLS verification **only** for the default production hostname (`interviewgenie.teckiz.com`), so the app works with the default Traefik cert. That is **less safe** against network attackers; once you have a real LE cert, enable strict mode:
+**Built-in behavior:** the Electron **main process** skips TLS verification **only** for the default production hostname (`interviewgenie.example.com`), so the app works with the default Traefik cert. That is **less safe** against network attackers; once you have a real LE cert, enable strict mode:
 
 ```bash
 export INTERVIEWGENIE_TLS_STRICT=1

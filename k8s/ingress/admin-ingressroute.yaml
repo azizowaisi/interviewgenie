@@ -1,5 +1,5 @@
-# Operations UI: https://admin.interviewgenie.teckiz.com → web (/admin).
-# DNS: A record admin → same IP as main site (e.g. 132.226.198.193).
+# Operations UI: https://admin.interviewgenie.example.com → web (/admin).
+# DNS: A record admin → same IP as main site (e.g. 203.0.113.10).
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -12,9 +12,9 @@ spec:
   tls:
     certResolver: le
     domains:
-      - main: admin.interviewgenie.teckiz.com
+      - main: admin.interviewgenie.example.com
   routes:
-    - match: Host(`admin.interviewgenie.teckiz.com`)
+    - match: Host(`admin.interviewgenie.example.com`)
       kind: Rule
       services:
         - name: web

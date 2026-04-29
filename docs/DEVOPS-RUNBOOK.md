@@ -15,7 +15,7 @@ Single entry point for **CI/CD**, **Kubernetes**, **secrets**, and **operational
 
 **Incremental builds:** Only changed services get image matrix legs (`scripts/ci/gha-resolve-detect-outputs.sh`). Deploy uses partial `kubectl set image` (`K8S_UPDATE_DEPLOYMENTS`).
 
-**Speed:** See **[DEPLOY-SPEED.md](./DEPLOY-SPEED.md)** — especially `WEB_DOCKER_PLATFORMS=linux/amd64` when the cluster is amd64-only, and `CI_DOCKER_PLATFORMS` for all images.
+**Speed:** If CI is slow, consider building fewer platforms where safe (e.g. `WEB_DOCKER_PLATFORMS=linux/amd64` when your web workloads are amd64-only) and use self-hosted runners for k3s deploys (see **[DEPLOY-GIT-K8S.md](./DEPLOY-GIT-K8S.md)**).
 
 ---
 
@@ -77,13 +77,11 @@ Authoritative list: **[GITHUB-ENVIRONMENT.md](./GITHUB-ENVIRONMENT.md)**.
 
 ## 7. Self-hosted runner (optional)
 
-**`DEPLOY_MODE=self_hosted`** — runner on or beside the cluster reduces push/pull latency and avoids QEMU for arm builds. See **DEPLOY-SPEED.md** and **DEPLOY-GIT-K8S.md**.
+**`DEPLOY_MODE=self_hosted`** — runner on or beside the cluster reduces push/pull latency and avoids QEMU for arm builds. See **DEPLOY-GIT-K8S.md**.
 
 ---
 
 ## Related docs
 
 - **[DEPLOY-GIT-K8S.md](./DEPLOY-GIT-K8S.md)** — Git + k8s flow  
-- **[DEPLOY-SPEED.md](./DEPLOY-SPEED.md)** — CI latency and variables  
-- **[ORACLE-ARCHITECTURE.md](./ORACLE-ARCHITECTURE.md)** — Oracle / Ampere notes  
-- **[VERSIONS.md](./VERSIONS.md)** — runtime versions  
+- **[GITHUB-ENVIRONMENT.md](./GITHUB-ENVIRONMENT.md)** — CI variables and secrets

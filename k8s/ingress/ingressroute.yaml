@@ -1,7 +1,7 @@
 # Traefik IngressRoute: Next.js owns / and /api/app, /api/mon, …; backends under /api/svc + /api/audio.
 # Order: most specific matches first (Traefik ranks longer rules higher by default).
 #
-# - https://interviewgenie.teckiz.com/           → Next.js (web:3002) — same as local http://localhost:3002/
+# - https://interviewgenie.example.com/         → Next.js (web:3002) — same as local http://localhost:3002/
 # - /ws/*                                        → audio-service (WebSocket)
 # - /api/audio/*  (strip /api/audio)             → audio-service HTTP (/mock/*, /health, …)
 # - /api/svc/*    (strip /api/svc)               → api-service FastAPI (/health, /docs, /topics, …)
@@ -18,10 +18,10 @@ spec:
   tls:
     certResolver: le
     domains:
-      - main: interviewgenie.teckiz.com
+      - main: interviewgenie.example.com
   routes:
     # WebSocket pipeline (Electron / clients)
-    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/ws`)
+    - match: Host(`interviewgenie.example.com`) && PathPrefix(`/ws`)
       kind: Rule
       services:
         - name: audio-service
@@ -29,7 +29,7 @@ spec:
           nativeLB: true
 
     # Audio: REST (mock/*, health) — same public prefix the Next BFF uses; Traefik sends here directly.
-    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/api/audio`)
+    - match: Host(`interviewgenie.example.com`) && PathPrefix(`/api/audio`)
       kind: Rule
       middlewares:
         - name: strip-api-audio
@@ -39,7 +39,7 @@ spec:
           nativeLB: true
 
     # FastAPI: REST, Swagger, Vue workspace (/app), /assets — public base path /api/svc
-    - match: Host(`interviewgenie.teckiz.com`) && PathPrefix(`/api/svc`)
+    - match: Host(`interviewgenie.example.com`) && PathPrefix(`/api/svc`)
       kind: Rule
       middlewares:
         - name: strip-api-svc
@@ -49,7 +49,7 @@ spec:
           nativeLB: true
 
     # Next.js: marketing + interview UI + /api/app, /api/mon, /api/start-interview, /api/evaluate, /_next, …
-    - match: Host(`interviewgenie.teckiz.com`)
+    - match: Host(`interviewgenie.example.com`)
       kind: Rule
       services:
         - name: web

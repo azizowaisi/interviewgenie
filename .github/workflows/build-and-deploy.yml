@@ -349,7 +349,7 @@ jobs:
           fi
           printf '%s' "${DH_TOKEN}" | docker login -u "${DH_USER}" --password-stdin
 
-      - name: Build & push image (single service; see docs/DEPLOY-SPEED.md)
+      - name: Build & push image (single service)
         id: docker_push
         env:
           IMAGE_SLUG: ${{ matrix.slug }}
@@ -788,7 +788,7 @@ jobs:
             fi
 
             if [ -n \"\${LE_MAIL}\" ]; then
-              sed -i \"s|azizowaisi@teckiz.com|\${LE_MAIL}|g\" \$HOME/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml || true
+              sed -i \"s|you@example.com|\${LE_MAIL}|g\" \$HOME/interviewgenie-k8s/k8s/traefik/helmchartconfig.yaml || true
             fi
 
             chmod +x \$HOME/interviewgenie-k8s/scripts/ci/k8s-apply.sh

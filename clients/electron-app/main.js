@@ -11,10 +11,10 @@ const WebSocket = require('ws');
  *   INTERVIEWGENIE_API_BASE=http://127.0.0.1:8001 etc.
  */
 /** FastAPI is mounted at /api/svc on the public host (see k8s/ingress/ingressroute.yaml). */
-const PRODUCTION_API_BASE = 'https://interviewgenie.teckiz.com/api/svc';
+const PRODUCTION_API_BASE = 'https://interviewgenie.example.com/api/svc';
 /** Audio HTTP (/mock/*, /health) uses /api/audio (strip prefix → audio-service). */
-const PRODUCTION_AUDIO_BASE = 'https://interviewgenie.teckiz.com/api/audio';
-const PRODUCTION_WS_URL = 'wss://interviewgenie.teckiz.com/ws/audio';
+const PRODUCTION_AUDIO_BASE = 'https://interviewgenie.example.com/api/audio';
+const PRODUCTION_WS_URL = 'wss://interviewgenie.example.com/ws/audio';
 
 const DEFAULT_API_BASE = process.env.INTERVIEWGENIE_API_BASE || PRODUCTION_API_BASE;
 const DEFAULT_AUDIO_BASE = process.env.INTERVIEWGENIE_AUDIO_BASE || PRODUCTION_AUDIO_BASE;
@@ -50,7 +50,7 @@ function relaxTlsHostnameSet() {
   try {
     return new Set([new URL(PRODUCTION_API_BASE).hostname]);
   } catch {
-    return new Set(['interviewgenie.teckiz.com']);
+    return new Set(['interviewgenie.example.com']);
   }
 }
 
@@ -759,7 +759,7 @@ ipcMain.handle('send-text-question', async (event, url, text, cvId, topicId) => 
       if (!resolved)
         done({
           error:
-            'Connection failed. Check network and that the server is up (default: wss://interviewgenie.teckiz.com/ws/audio). For local backend set INTERVIEWGENIE_WS_URL=ws://127.0.0.1:8000/ws/audio',
+            'Connection failed. Check network and that the server is up (default: wss://interviewgenie.example.com/ws/audio). For local backend set INTERVIEWGENIE_WS_URL=ws://127.0.0.1:8000/ws/audio',
         });
     });
     ws.on('close', () => {

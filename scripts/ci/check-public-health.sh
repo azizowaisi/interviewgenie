@@ -2,7 +2,7 @@
 # Public URL health check for production availability.
 set -euo pipefail
 
-PUBLIC_URL="${PUBLIC_URL:-https://interviewgenie.teckiz.com}"
+PUBLIC_URL="${PUBLIC_URL:-https://interviewgenie.example.com}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-8}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 CURL_TIMEOUT="${CURL_TIMEOUT:-12}"

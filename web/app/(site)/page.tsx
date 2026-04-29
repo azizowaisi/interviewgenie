@@ -185,8 +185,8 @@ const homeJsonLd = {
     {
       "@type": "Organization",
       name: "InterviewGenie",
-      url: "https://interviewgenie.ai",
-      sameAs: ["https://github.com/azizowaisi/interviewgenie"],
+      url: "https://interviewgenie.example.com",
+      sameAs: ["https://github.com/your-org/interviewgenie"],
     },
     {
       "@type": "SoftwareApplication",
@@ -428,7 +428,7 @@ export default function LandingPage() {
               >
                 <div className="mb-2 flex gap-0.5">
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                    <Star key={`${t.name}-star-${i}`} className="h-4 w-4 fill-yellow-400 text-yellow-400" />
                   ))}
                 </div>
                 <p className="mb-4 text-sm leading-relaxed text-muted-foreground">&ldquo;{t.quote}&rdquo;</p>

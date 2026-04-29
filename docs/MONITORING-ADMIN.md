@@ -1,4 +1,4 @@
-# Operations host (`admin.interviewgenie.teckiz.com`)
+# Operations host (`admin.interviewgenie.example.com`)
 
 The **admin hostname** points at the **Next.js `web` deployment** (port **3002**). That app serves the infrastructure UI and proxies **`/api/mon/*`** to the in-cluster **`monitoring-service`** (FastAPI + Kubernetes API). The raw monitoring JSON API and legacy Vue build still live on the **`monitoring-service`** pod; they are not exposed on the public admin URL unless you add a separate route.
 
@@ -11,21 +11,21 @@ The **admin hostname** points at the **Next.js `web` deployment** (port **3002**
 
 ## DNS & TLS
 
-1. Create **`A`** record: `admin.interviewgenie.teckiz.com` → your VM IP (same as main app).
+1. Create **`A`** record: `admin.interviewgenie.example.com` → your VM IP (same as main app).
 2. Apply manifests (`kubectl apply -k k8s/`). Traefik **IngressRoute** `interview-ai-admin` requests a Let’s Encrypt cert for the admin host.
 
 ## URLs
 
 | URL | Purpose |
 |-----|---------|
-| `https://admin.interviewgenie.teckiz.com/` | **Next.js** infrastructure UI (root path rewrites internally to `/admin`) |
-| `https://admin.interviewgenie.teckiz.com/interview` (etc.) | Redirects to the **main app** at `https://interviewgenie.teckiz.com/...` |
+| `https://admin.interviewgenie.example.com/` | **Next.js** infrastructure UI (root path rewrites internally to `/admin`) |
+| `https://admin.interviewgenie.example.com/interview` (etc.) | Redirects to the **main app** at `https://interviewgenie.example.com/...` |
 
 The **main marketing / interview site** does not link to this host. Build-time defaults for hostnames live in `web/Dockerfile` (`NEXT_PUBLIC_*` args); override with `docker build --build-arg ...` if your domains differ.
 
 ## monitoring-service (backend for `/api/mon`)
 
-- **Vue 3 + Vite** sources: `backend/monitoring-service/frontend/` (legacy bundled UI; optional to rebuild). See **`docs/VUE-FRONTENDS.md`**.
+- **Vue 3 + Vite** sources: `backend/monitoring-service/frontend/` (legacy bundled UI; optional to rebuild).
 - **Token**: If `ADMIN_TOKEN` is set on **monitoring-service**, set **`MONITORING_ADMIN_TOKEN`** on the **`web`** deployment so server-side BFF can send `X-Admin-Token`.
 
 ## metrics-server (k3s)
